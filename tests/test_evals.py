@@ -104,8 +104,25 @@ class TestRunner:
         assert report.pass_rate == 0.5
         passed, failed = report.results
         assert passed.passed and passed.tool_calls == 1
+        assert passed.tool_errors == 0
+        assert report.tool_error_rate == 0.0
         assert not failed.passed
         assert "不会出现的文本" in failed.failures[0]
+
+    async def test_tool_errors_counted(self):
+        task = EvalTask(
+            name="calls_unknown_tool",
+            prompt="x",
+            checks=[{"type": "no_tool_errors"}],
+        )
+        script = [
+            AssistantTurn(None, [ToolCall("c1", "ghost_tool", "{}")]),
+            AssistantTurn("done"),
+        ]
+        report = await run_eval([task], lambda: FakeModel(script))
+        assert report.results[0].tool_errors == 1
+        assert report.tool_error_rate == 1.0
+        assert not report.results[0].passed
 
     async def test_budget_exhausted_counts_as_failure(self):
         task = EvalTask(

@@ -1,0 +1,111 @@
+{
+  "model": "deepseek/deepseek-chat",
+  "role": "planner",
+  "timestamp": "2026-06-10 17:23:56",
+  "pass_rate": 1.0,
+  "tool_error_rate": 0.0,
+  "total_tokens": 13256,
+  "estimated_cost_usd": 0.0038217200000000002,
+  "results": [
+    {
+      "name": "echo_exact",
+      "passed": true,
+      "failures": [],
+      "turns": 2,
+      "tool_calls": 1,
+      "tool_errors": 0,
+      "prompt_tokens": 1139,
+      "completion_tokens": 60
+    },
+    {
+      "name": "add_numbers",
+      "passed": true,
+      "failures": [],
+      "turns": 2,
+      "tool_calls": 1,
+      "tool_errors": 0,
+      "prompt_tokens": 1161,
+      "completion_tokens": 70
+    },
+    {
+      "name": "note_roundtrip",
+      "passed": true,
+      "failures": [],
+      "turns": 3,
+      "tool_calls": 2,
+      "tool_errors": 0,
+      "prompt_tokens": 1912,
+      "completion_tokens": 128
+    },
+    {
+      "name": "direct_answer",
+      "passed": true,
+      "failures": [],
+      "turns": 1,
+      "tool_calls": 0,
+      "tool_errors": 0,
+      "prompt_tokens": 543,
+      "completion_tokens": 11
+    },
+    {
+      "name": "tool_choice",
+      "passed": true,
+      "failures": [],
+      "turns": 2,
+      "tool_calls": 1,
+      "tool_errors": 0,
+      "prompt_tokens": 1155,
+      "completion_tokens": 79
+    },
+    {
+      "name": "enum_argument",
+      "passed": true,
+      "failures": [],
+      "turns": 2,
+      "tool_calls": 1,
+      "tool_errors": 0,
+      "prompt_tokens": 1161,
+      "completion_tokens": 76
+    },
+    {
+      "name": "multi_step_math",
+      "passed": true,
+      "failures": [],
+      "turns": 3,
+      "tool_calls": 2,
+      "tool_errors": 0,
+      "prompt_tokens": 1906,
+      "completion_tokens": 151
+    },
+    {
+      "name": "recover_from_wrong_tool_name",
+      "passed": true,
+      "failures": [],
+      "turns": 2,
+      "tool_calls": 1,
+      "tool_errors": 0,
+      "prompt_tokens": 1179,
+      "completion_tokens": 84
+    },
+    {
+      "name": "required_args_complete",
+      "passed": true,
+      "failures": [],
+      "turns": 2,
+      "tool_calls": 1,
+      "tool_errors": 0,
+      "prompt_tokens": 1169,
+      "completion_tokens": 81
+    },
+    {
+      "name": "missing_note_handled",
+      "passed": true,
+      "failures": [],
+      "turns": 2,
+      "tool_calls": 1,
+      "tool_errors": 0,
+      "prompt_tokens": 1145,
+      "completion_tokens": 46
+    }
+  ]
+}

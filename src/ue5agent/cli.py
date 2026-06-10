@@ -106,6 +106,7 @@ def eval_command(
     tasks: Path = Path("evals/tasks/basic.yaml"),
     models: Path = DEFAULT_MODELS,
     role: str = "planner",
+    out: Path | None = typer.Option(None, "--out", help="把报告另存为 JSON（基线归档用）"),
 ) -> None:
     """跑迷你评测集：每个任务在干净沙盒中运行，输出通过率与失败原因。"""
     config = _require_models(models)
@@ -114,12 +115,14 @@ def eval_command(
 
     task_list = load_tasks(tasks)
     client = LiteLLMClient(config)
+    model_ref = client.model_for(role)
     report = asyncio.run(run_eval(task_list, lambda: client, role=role))
 
-    table = Table(title=f"评测报告（角色：{role}，模型：{client.model_for(role)}）")
+    table = Table(title=f"评测报告（角色：{role}，模型：{model_ref}）")
     table.add_column("任务")
     table.add_column("结果")
     table.add_column("轮数", justify="right")
+    table.add_column("工具错误", justify="right")
     table.add_column("token", justify="right")
     table.add_column("失败原因")
     for result in report.results:
@@ -127,17 +130,60 @@ def eval_command(
             result.name,
             "[green]通过[/green]" if result.passed else "[red]失败[/red]",
             str(result.turns),
+            str(result.tool_errors),
             str(result.prompt_tokens + result.completion_tokens),
             "；".join(result.failures),
         )
     console.print(table)
+    cost = _estimate_cost(model_ref, report.total_prompt_tokens, report.total_completion_tokens)
+    cost_text = f" · 估算成本 ${cost:.4f}" if cost is not None else ""
     console.print(
         f"通过率 [bold]{report.pass_rate:.0%}[/bold]"
         f"（{sum(1 for r in report.results if r.passed)}/{len(report.results)}）"
-        f" · 总 token {report.total_tokens}"
+        f" · 工具错误率 {report.tool_error_rate:.0%}"
+        f" · 总 token {report.total_tokens}{cost_text}"
     )
+    if out:
+        _dump_report(out, model_ref, role, report, cost)
+        console.print(f"[dim]报告已存 {out}[/dim]")
     if report.pass_rate < 1.0:
         raise typer.Exit(1)
+
+
+def _estimate_cost(model_ref: str, prompt_tokens: int, completion_tokens: int) -> float | None:
+    """按 litellm 价格表估算（美元）；查不到价格时返回 None。"""
+    try:
+        import litellm
+
+        info = litellm.model_cost.get(model_ref) or litellm.model_cost.get(
+            model_ref.split("/", 1)[-1]
+        )
+        if not info:
+            return None
+        return prompt_tokens * info.get("input_cost_per_token", 0) + completion_tokens * info.get(
+            "output_cost_per_token", 0
+        )
+    except Exception:
+        return None
+
+
+def _dump_report(out: Path, model_ref: str, role: str, report: Any, cost: float | None) -> None:
+    import json
+    import time
+    from dataclasses import asdict
+
+    payload = {
+        "model": model_ref,
+        "role": role,
+        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "pass_rate": report.pass_rate,
+        "tool_error_rate": report.tool_error_rate,
+        "total_tokens": report.total_tokens,
+        "estimated_cost_usd": cost,
+        "results": [asdict(result) for result in report.results],
+    }
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 @app.command()

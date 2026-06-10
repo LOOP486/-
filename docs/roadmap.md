@@ -11,8 +11,8 @@
 - [x] MCP 客户端：stdio 挂载、工具前缀、按 server 配授权
 - [x] ue_build MCP server：UBT 编译 + 结构化诊断解析（含单测）
 - [ ] 对真实 UE 工程实测 ubt_compile，补齐解析遗漏的报错形态
-- [ ] chat 会话内多轮记忆（当前每条输入独立开局）
-- [ ] 历史压缩 compact_history 实现（当前直通占位）
+- [x] chat 会话内多轮记忆
+- [x] 历史压缩 compact_history 实现（确定性摘要版）
 - [ ] 验收：任一模型完成「加一个 gameplay 功能并编译通过」
 
 ## Phase 1：编辑器桥（让 agent 看见蓝图）
@@ -42,9 +42,9 @@
 
 agent 开发自身的复杂度清单。共同特征：不动架构，往既有接缝加模块。
 
-- [ ] 弱模型容错（Phase 0–1）：工具参数 schema 校验、坏 JSON 修复、幻觉工具名的纠正回传——加在 registry.dispatch 链上；多模型支持是否成立取决于此
-- [ ] 迷你评测集（Phase 1，不等 Phase 3）：10–20 个任务的 smoke eval，独立 harness 调 loop，每次提示词/工具描述改动跑分
-- [ ] 可观测性（Phase 1）：session_log 升级为完整 trace（逐轮消息、token、成本），加回放查看命令——加在 loop 的事件点上
-- [ ] API 故障面（Phase 1）：限流退避重试、超时、按 provider failover
+- [x] 弱模型容错：参数 schema 校验、坏 JSON 修复、幻觉工具名纠正（registry.dispatch 链）
+- [x] 迷你评测集：10 任务 smoke + `ue5agent eval`（通过率/工具错误率/token/成本）；DeepSeek 基线已归档（evals/baselines/）
+- [x] 可观测性：trace 事件（耗时/token/预览）+ `ue5agent trace` 回放
+- [x] API 故障面：指数退避重试、超时、角色级 fallback 链
 - [ ] 流式输出与任务中断（Phase 2）
 - [ ] 会话持久化与恢复（Phase 2）

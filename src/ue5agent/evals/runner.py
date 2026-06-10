@@ -35,6 +35,7 @@ class TaskRunResult:
     failures: list[str]
     turns: int
     tool_calls: int
+    tool_errors: int
     prompt_tokens: int
     completion_tokens: int
 
@@ -52,6 +53,22 @@ class EvalReport:
     @property
     def total_tokens(self) -> int:
         return sum(r.prompt_tokens + r.completion_tokens for r in self.results)
+
+    @property
+    def total_prompt_tokens(self) -> int:
+        return sum(r.prompt_tokens for r in self.results)
+
+    @property
+    def total_completion_tokens(self) -> int:
+        return sum(r.completion_tokens for r in self.results)
+
+    @property
+    def tool_error_rate(self) -> float:
+        """工具调用错误率：[error]/[denied] 结果占全部工具调用的比例。"""
+        calls = sum(r.tool_calls for r in self.results)
+        if calls == 0:
+            return 0.0
+        return sum(r.tool_errors for r in self.results) / calls
 
 
 def load_tasks(path: Path) -> list[EvalTask]:
@@ -92,12 +109,14 @@ async def _run_task(task: EvalTask, model: ChatModel, role: str) -> TaskRunResul
         failure = evaluate_check(check, outcome)
         if failure:
             failures.append(failure)
+    tool_errors = sum(1 for r in registry.results if r.startswith(("[error]", "[denied]")))
     return TaskRunResult(
         name=task.name,
         passed=not failures,
         failures=failures,
         turns=result.turns if result else task.max_turns,
         tool_calls=result.tool_call_count if result else len(registry.calls),
+        tool_errors=tool_errors,
         prompt_tokens=result.prompt_tokens if result else 0,
         completion_tokens=result.completion_tokens if result else 0,
     )

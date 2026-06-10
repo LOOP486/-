@@ -25,7 +25,7 @@
 
 - 决策：按完整 Agent Kernel 形态重构——TaskSession 状态机、Planner/Verifier/Recovery、runs/ 产物目录、权限 4 级、judge 角色；**先真模型基线（K0）再细化 kernel**。
 - 里程碑：K0 真模型基线 → K1 数据结构与 trace → K2 工具管线 → K3 权限与 repo_tools → K4 Runner 状态机 → K5 切换清理 → K6 能力注册表。
-- **K0 阻塞于用户提供 API key**（建议先 DeepSeek）。
+- **K0 已完成（2026-06-10）**：DeepSeek 三遍满分零方差，基线见 [../evals/baselines/deepseek-chat-2026-06-10.md](../evals/baselines/deepseek-chat-2026-06-10.md)。关键发现：basic 档已饱和，未采集到失败形态——K4 动工前需先建 hard 档任务跑出真实失败（已列入 K1 前置小任务）。
 
 ## 后续阶段（Phase 0.5 之后）
 
@@ -43,7 +43,8 @@ fork flopperam → 裁剪 → 蓝图只读导出四件套（见 ADR-0005）。�
 
 | 事项 | 阻塞 |
 |---|---|
-| 至少一个模型 API key（建议先 DeepSeek；最好加一个对照模型） | K0 |
-| UE 引擎根目录 + 测试用 .uproject | M6、M7 |
-| GitHub/Gitee 远端仓库（CI 生效与备份） | 仅 CI |
+| UE 引擎根目录 + 测试用 .uproject（待驱动修复后提供） | M6、M7 |
+| 对照模型 API key（可选，GPT/Claude 任一，用于多模型对比） | 仅多模型评测 |
 | 模块化资产包 + 关卡 metrics 表 | Phase 2（白盒搭建） |
+
+已到位：DeepSeek API key（.env）；GitHub 远端（LOOP486）。
