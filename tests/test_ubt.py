@@ -54,3 +54,31 @@ def test_duplicates_removed():
 
 def test_clean_output_yields_nothing():
     assert parse_output("Building MyGameEditor...\nTotal time: 12.3s\n") == []
+
+
+# 2026-06-10 真机样本：工具链缺失时 UBT 的失败输出没有 ERROR: 前缀
+REAL_TOOLCHAIN_MISSING = r"""
+Using bundled DotNet SDK version: 8.0.412 win-x64
+Running UnrealBuildTool: dotnet "UnrealBuildTool.dll" agent_testEditor Win64 Development
+Log file: C:\Users\x\AppData\Local\UnrealBuildTool\Log.txt
+Creating makefile for agent_testEditor (no existing makefile)
+Platform Win64 is not a valid platform to build. Check that the SDK is installed properly.
+
+Result: Failed (OtherCompilationError)
+Total execution time: 0.84 seconds
+"""
+
+
+def test_real_sample_toolchain_missing():
+    diagnostics = parse_output(REAL_TOOLCHAIN_MISSING)
+    assert len(diagnostics) == 1
+    assert diagnostics[0].kind == "error"
+    assert diagnostics[0].code == "OtherCompilationError"
+    assert "not a valid platform" in diagnostics[0].message
+
+
+def test_result_failed_without_context_line():
+    diagnostics = parse_output("Log file: C:\\x\\Log.txt\nResult: Failed (RulesError)\n")
+    assert len(diagnostics) == 1
+    assert diagnostics[0].code == "RulesError"
+    assert "raw_tail" in diagnostics[0].message

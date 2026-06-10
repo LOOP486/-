@@ -20,6 +20,17 @@ _LINK_DIAGNOSTIC = re.compile(
 )
 # UBT 自身错误，如：ERROR: Missing precompiled manifest ...
 _UBT_ERROR = re.compile(r"^\s*ERROR:\s*(?P<message>.+)$")
+# UBT 失败汇总行，如：Result: Failed (OtherCompilationError)
+# 真实失败（如工具链缺失）常常只有一行无前缀说明 + 这行汇总（2026-06 真机样本）
+_UBT_RESULT_FAILED = re.compile(r"^\s*Result:\s*Failed\s*\((?P<reason>[^)]+)\)")
+_BOILERPLATE_PREFIXES = (
+    "Using bundled",
+    "Running UnrealBuildTool",
+    "Log file:",
+    "Total execution",
+    "Creating makefile",
+    "Building ",
+)
 
 
 @dataclass
@@ -48,10 +59,23 @@ class BuildResult:
 def parse_output(output: str) -> list[Diagnostic]:
     diagnostics: list[Diagnostic] = []
     seen: set[tuple] = set()  # UBT 并行构建会重复打印同一条诊断
+    last_context: str | None = None  # 最近一行无前缀的说明文字，给 Result: Failed 当消息用
     for raw_line in output.splitlines():
-        diagnostic = _parse_line(raw_line.strip())
+        line = raw_line.strip()
+        diagnostic = _parse_line(line)
         if diagnostic is None:
-            continue
+            failed = _UBT_RESULT_FAILED.match(line)
+            if failed:
+                diagnostic = Diagnostic(
+                    kind="error",
+                    message=last_context or "UBT 构建失败（未解析出具体诊断，见 raw_tail）",
+                    code=failed.group("reason"),
+                )
+            elif line and not line.startswith(_BOILERPLATE_PREFIXES):
+                last_context = line
+                continue
+            else:
+                continue
         key = (diagnostic.file, diagnostic.line, diagnostic.code, diagnostic.message)
         if key not in seen:
             seen.add(key)
