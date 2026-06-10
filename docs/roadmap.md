@@ -35,5 +35,16 @@
 
 - [ ] 自动化测试闭环（Functional Test 生成与运行）
 - [ ] 子代理体系（上下文隔离 + 按角色配模型）
-- [ ] 评测基准工程与跑分（一次通过率/迭代次数/人工干预次数）
+- [ ] 完整评测基准工程与跑分（一次通过率/迭代次数/人工干预次数）
 - [ ] CI（GitHub Actions：ruff + pytest）
+
+## 横切：agent 工程化（贯穿各阶段，按优先级排序）
+
+agent 开发自身的复杂度清单。共同特征：不动架构，往既有接缝加模块。
+
+- [ ] 弱模型容错（Phase 0–1）：工具参数 schema 校验、坏 JSON 修复、幻觉工具名的纠正回传——加在 registry.dispatch 链上；多模型支持是否成立取决于此
+- [ ] 迷你评测集（Phase 1，不等 Phase 3）：10–20 个任务的 smoke eval，独立 harness 调 loop，每次提示词/工具描述改动跑分
+- [ ] 可观测性（Phase 1）：session_log 升级为完整 trace（逐轮消息、token、成本），加回放查看命令——加在 loop 的事件点上
+- [ ] API 故障面（Phase 1）：限流退避重试、超时、按 provider failover
+- [ ] 流式输出与任务中断（Phase 2）
+- [ ] 会话持久化与恢复（Phase 2）
