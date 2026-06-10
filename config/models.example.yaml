@@ -18,3 +18,7 @@ roles:
   planner: anthropic/claude-sonnet-4-6 # 主控与规划：用最强的模型
   coder: deepseek/deepseek-chat # 批量代码：性价比优先
   vision: openai/gpt-4o # 截图审查：必须是多模态模型，否则视觉验证不可用
+
+# 可选：角色级降级链——主模型限流/不可用时依次尝试
+# fallbacks:
+#   planner: [openai/gpt-4o, deepseek/deepseek-chat]

@@ -25,21 +25,32 @@ class ProviderConfig(BaseModel):
 
 
 class ModelsConfig(BaseModel):
-    """models.yaml：providers + 角色到模型的路由表。"""
+    """models.yaml：providers + 角色到模型的路由表 + 角色级降级链。"""
 
     providers: dict[str, ProviderConfig]
     roles: dict[str, str] = Field(description="角色 -> 'provider/model'")
+    fallbacks: dict[str, list[str]] = Field(
+        default_factory=dict, description="角色 -> 主模型不可用时依次尝试的备选"
+    )
 
     @model_validator(mode="after")
     def _check_roles(self) -> ModelsConfig:
         for role, ref in self.roles.items():
-            provider = ref.split("/", 1)[0]
-            if provider not in self.providers:
-                raise ValueError(f"角色 {role} 引用了未定义的 provider：{provider}")
+            self._check_provider(f"角色 {role}", ref)
         for required in REQUIRED_ROLES:
             if required not in self.roles:
                 raise ValueError(f"缺少必需角色：{required}")
+        for role, refs in self.fallbacks.items():
+            if role not in self.roles:
+                raise ValueError(f"fallbacks 中的角色 {role} 未在 roles 定义")
+            for ref in refs:
+                self._check_provider(f"角色 {role} 的 fallback", ref)
         return self
+
+    def _check_provider(self, where: str, ref: str) -> None:
+        provider = ref.split("/", 1)[0]
+        if provider not in self.providers:
+            raise ValueError(f"{where} 引用了未定义的 provider：{provider}")
 
     @property
     def has_vision(self) -> bool:
