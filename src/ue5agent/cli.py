@@ -101,6 +101,45 @@ def _render_event(event: dict[str, Any]) -> None:
         )
 
 
+@app.command("eval")
+def eval_command(
+    tasks: Path = Path("evals/tasks/basic.yaml"),
+    models: Path = DEFAULT_MODELS,
+    role: str = "planner",
+) -> None:
+    """跑迷你评测集：每个任务在干净沙盒中运行，输出通过率与失败原因。"""
+    config = _require_models(models)
+    from ue5agent.evals.runner import load_tasks, run_eval
+    from ue5agent.llm.client import LiteLLMClient
+
+    task_list = load_tasks(tasks)
+    client = LiteLLMClient(config)
+    report = asyncio.run(run_eval(task_list, lambda: client, role=role))
+
+    table = Table(title=f"评测报告（角色：{role}，模型：{client.model_for(role)}）")
+    table.add_column("任务")
+    table.add_column("结果")
+    table.add_column("轮数", justify="right")
+    table.add_column("token", justify="right")
+    table.add_column("失败原因")
+    for result in report.results:
+        table.add_row(
+            result.name,
+            "[green]通过[/green]" if result.passed else "[red]失败[/red]",
+            str(result.turns),
+            str(result.prompt_tokens + result.completion_tokens),
+            "；".join(result.failures),
+        )
+    console.print(table)
+    console.print(
+        f"通过率 [bold]{report.pass_rate:.0%}[/bold]"
+        f"（{sum(1 for r in report.results if r.passed)}/{len(report.results)}）"
+        f" · 总 token {report.total_tokens}"
+    )
+    if report.pass_rate < 1.0:
+        raise typer.Exit(1)
+
+
 @app.command()
 def chat(models: Path = DEFAULT_MODELS, agent: Path = DEFAULT_AGENT) -> None:
     """交互式会话：连接 MCP 工具后进入 agent 循环。"""

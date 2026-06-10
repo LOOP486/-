@@ -1,0 +1,67 @@
+# 基础工具调用评测：度量模型选对工具、参数齐全、多步串联、从错误恢复的能力
+# 跑法：uv run ue5agent eval [--role coder]
+
+- name: echo_exact
+  prompt: 调用 echo 工具，原样返回文本「白盒搭建」。
+  checks:
+    - { type: tool_called, tool: echo, args_contain: 白盒搭建 }
+    - { type: no_tool_errors }
+
+- name: add_numbers
+  prompt: 用 add 工具计算 17 加 25，并在最终答复中给出结果。
+  checks:
+    - { type: tool_called, tool: add }
+    - { type: final_contains, text: "42" }
+
+- name: note_roundtrip
+  prompt: 先用 write_note 把内容「UE5」保存为名为 engine 的笔记，再用 read_note 读出来，最后答复笔记内容。
+  checks:
+    - { type: tool_called, tool: write_note, args_contain: engine }
+    - { type: tool_called, tool: read_note }
+    - { type: final_contains, text: UE5 }
+
+- name: direct_answer
+  prompt: 1 加 1 等于几？直接回答，不要调用任何工具。
+  max_turns: 2
+  checks:
+    - { type: tool_not_called, tool: add }
+    - { type: final_contains, text: "2" }
+    - { type: max_turns, value: 2 }
+
+- name: tool_choice
+  prompt: 把文本「hello」保存为名为 greeting 的笔记。
+  checks:
+    - { type: tool_called, tool: write_note, args_contain: greeting }
+    - { type: tool_not_called, tool: echo }
+    - { type: no_tool_errors }
+
+- name: enum_argument
+  prompt: 用 convert 工具把 250 厘米换算成米，并答复结果。
+  checks:
+    - { type: tool_called, tool: convert, args_contain: m }
+    - { type: final_contains, text: "2.5" }
+    - { type: no_tool_errors }
+
+- name: multi_step_math
+  prompt: 用 add 工具先算 3 加 4，再把得到的结果与 10 相加，答复最终结果。
+  checks:
+    - { type: tool_called_times, tool: add, at_least: 2 }
+    - { type: final_contains, text: "17" }
+
+- name: recover_from_wrong_tool_name
+  prompt: 请使用 echo_text 工具输出「abc」。（如果没有这个工具，用功能最接近的）
+  checks:
+    - { type: tool_called, tool: echo, args_contain: abc }
+    - { type: final_contains, text: abc }
+
+- name: required_args_complete
+  prompt: 保存一条笔记，记录「明天编译 MyGameEditor」，笔记名自己定。
+  checks:
+    - { type: tool_called, tool: write_note }
+    - { type: no_tool_errors }
+
+- name: missing_note_handled
+  prompt: 读取名为 ghost 的笔记；如果它不存在，答复「不存在」。
+  checks:
+    - { type: tool_called, tool: read_note, args_contain: ghost }
+    - { type: final_contains, text: 不存在 }
