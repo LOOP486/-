@@ -1,0 +1,103 @@
+"""Agent 主循环：模型与工具往复调用，直到产出最终答复或耗尽迭代预算。"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any
+
+from ue5agent.core.context import truncate
+from ue5agent.llm.types import AssistantTurn, ChatModel
+from ue5agent.session_log import SessionLog
+from ue5agent.tools.registry import ToolRegistry
+
+SYSTEM_PROMPT = """\
+你是面向 Unreal Engine 5 工程的开发 agent。
+
+工作原则：
+1. 改动前先用工具读懂相关代码与资产，不凭记忆臆断引擎 API。
+2. 新逻辑用 C++ 实现；蓝图只做只读分析。
+3. 任何修改类任务，结束前必须出示验证证据（编译输出、测试结果或截图），\
+没有证据不得声称完成。
+4. 工具调用失败时阅读错误信息并调整方案，不要原样重试。
+"""
+
+
+@dataclass
+class LoopResult:
+    final_text: str
+    turns: int
+    tool_call_count: int
+
+
+class BudgetExhausted(Exception):
+    """迭代预算耗尽仍未产出最终答复。"""
+
+
+class AgentLoop:
+    def __init__(
+        self,
+        llm: ChatModel,
+        registry: ToolRegistry,
+        *,
+        system_prompt: str = SYSTEM_PROMPT,
+        max_iterations: int = 40,
+        max_tool_result_chars: int = 30_000,
+        session_log: SessionLog | None = None,
+    ):
+        self._llm = llm
+        self._registry = registry
+        self._system_prompt = system_prompt
+        self._max_iterations = max_iterations
+        self._max_tool_result_chars = max_tool_result_chars
+        self._log = session_log
+
+    async def run(self, user_input: str, *, role: str = "planner") -> LoopResult:
+        """单任务入口。TODO(roadmap Phase 0)：跨任务的会话内多轮记忆。"""
+        messages: list[dict[str, Any]] = [
+            {"role": "system", "content": self._system_prompt},
+            {"role": "user", "content": user_input},
+        ]
+        if self._log:
+            self._log.write("run_start", role=role, user_input=user_input)
+        tool_call_count = 0
+        for turn in range(1, self._max_iterations + 1):
+            assistant = await self._llm.acomplete(role, messages, tools=self._registry.specs())
+            messages.append(_assistant_message(assistant))
+            if not assistant.tool_calls:
+                result = LoopResult(assistant.content or "", turn, tool_call_count)
+                if self._log:
+                    self._log.write("run_end", turns=turn, tool_calls=tool_call_count)
+                return result
+            for call in assistant.tool_calls:
+                tool_result = await self._registry.dispatch(call.name, call.arguments)
+                tool_call_count += 1
+                if self._log:
+                    self._log.write(
+                        "tool_call",
+                        tool=call.name,
+                        arguments=call.arguments,
+                        result_chars=len(tool_result),
+                    )
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": call.id,
+                        "content": truncate(tool_result, self._max_tool_result_chars),
+                    }
+                )
+        raise BudgetExhausted(f"迭代 {self._max_iterations} 轮仍未产出最终答复")
+
+
+def _assistant_message(turn: AssistantTurn) -> dict[str, Any]:
+    """把 AssistantTurn 还原为 OpenAI 格式的历史消息。"""
+    message: dict[str, Any] = {"role": "assistant", "content": turn.content}
+    if turn.tool_calls:
+        message["tool_calls"] = [
+            {
+                "id": call.id,
+                "type": "function",
+                "function": {"name": call.name, "arguments": call.arguments},
+            }
+            for call in turn.tool_calls
+        ]
+    return message

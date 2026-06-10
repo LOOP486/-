@@ -1,0 +1,20 @@
+# agent.yaml —— 工程与运行配置
+# 用法：复制本文件为 config/agent.yaml 后按需修改（agent.yaml 不入库）
+
+engine:
+  root: "C:/Program Files/Epic Games/UE_5.5"
+  version: "5.5"
+
+project:
+  uproject: "D:/MyGame/MyGame.uproject"
+
+# 要挂载的 MCP server；permission 是该 server 全部工具的默认授权级别
+# read：自动放行 / write：需用户确认 / dangerous：默认拒绝
+mcp_servers:
+  ue_build:
+    command: ["uv", "run", "python", "-m", "ue5agent.mcp_servers.ue_build"]
+    permission: read
+
+limits:
+  max_iterations: 40
+  max_tool_result_chars: 30000

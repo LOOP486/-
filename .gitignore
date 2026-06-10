@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+dist/
+build/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# 本机配置与密钥（example 文件入库，真实配置不入库）
+config/models.yaml
+config/agent.yaml
+.env
+
+# 运行产物
+logs/
+sessions/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# 系统
+Thumbs.db
+Desktop.ini

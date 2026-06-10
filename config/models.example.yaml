@@ -1,0 +1,20 @@
+# models.yaml —— 模型与角色路由
+# 用法：复制本文件为 config/models.yaml 后填写（models.yaml 不入库）
+# 模型引用格式为 provider/model，provider 必须在下方 providers 中定义
+# litellm 模型名对照：https://docs.litellm.ai/docs/providers
+
+providers:
+  anthropic:
+    api_key_env: ANTHROPIC_API_KEY
+  deepseek:
+    base_url: https://api.deepseek.com
+    api_key_env: DEEPSEEK_API_KEY
+  openai:
+    # 走自定义中转时取消注释并修改
+    # base_url: https://your-proxy.example.com/v1
+    api_key_env: OPENAI_API_KEY
+
+roles:
+  planner: anthropic/claude-sonnet-4-6 # 主控与规划：用最强的模型
+  coder: deepseek/deepseek-chat # 批量代码：性价比优先
+  vision: openai/gpt-4o # 截图审查：必须是多模态模型，否则视觉验证不可用
