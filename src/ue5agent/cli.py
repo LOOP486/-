@@ -62,11 +62,12 @@ def trace(
     path: Path | None = typer.Argument(None, help="trace 文件；缺省取 sessions/ 最新一份"),
 ) -> None:
     """回放查看一次会话：逐轮模型决策、工具调用、耗时与 token。"""
+    from ue5agent.agent.events import latest_trace
     from ue5agent.session_log import latest_session, read_events
 
-    target = path or latest_session(Path("sessions"))
+    target = path or latest_trace(Path("runs")) or latest_session(Path("sessions"))
     if target is None or not target.exists():
-        console.print("[red]找不到 trace 文件（sessions/ 为空？）[/red]")
+        console.print("[red]找不到 trace 文件（runs/ 与 sessions/ 均为空？）[/red]")
         raise typer.Exit(1)
     console.print(f"[dim]{target}[/dim]")
     for event in read_events(target):
@@ -208,16 +209,25 @@ def _cli_confirm(tool_name: str, arguments: dict[str, Any]) -> bool:
 
 async def _chat(config: ModelsConfig, settings: AgentSettings) -> None:
     # litellm 导入耗时数秒，放到真正需要时再加载
+    from ue5agent.agent.events import RunWriter
+    from ue5agent.agent.state import Budgets, TaskSession
     from ue5agent.core.loop import AgentLoop
     from ue5agent.core.permissions import PermissionGate
     from ue5agent.llm.client import LiteLLMClient
-    from ue5agent.session_log import SessionLog
     from ue5agent.tools.mcp_client import McpManager
     from ue5agent.tools.registry import ToolRegistry
 
     llm = LiteLLMClient(config)
     registry = ToolRegistry(PermissionGate(confirmer=_cli_confirm))
-    log = SessionLog(Path("sessions"))
+    session = TaskSession.new(
+        "interactive-chat",
+        budgets=Budgets(
+            max_iterations=settings.limits.max_iterations,
+            max_tool_result_chars=settings.limits.max_tool_result_chars,
+            compact_budget_chars=settings.limits.compact_budget_chars,
+        ),
+    )
+    log = RunWriter(Path("runs"), session)
     async with McpManager(settings.mcp_servers) as manager:
         await manager.register_all(registry)
         loop = AgentLoop(
@@ -240,5 +250,7 @@ async def _chat(config: ModelsConfig, settings: AgentSettings) -> None:
             console.print(result.final_text)
             console.print(
                 f"[dim]{result.turns} 轮 · {result.tool_call_count} 次工具调用 · "
-                f"日志 {log.path}[/dim]"
+                f"trace {log.trace_path}[/dim]"
             )
+        session.status = "done"
+        log.save_session()

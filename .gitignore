@@ -17,6 +17,7 @@ config/agent.yaml
 # 运行产物
 logs/
 sessions/
+runs/
 
 # IDE
 .idea/

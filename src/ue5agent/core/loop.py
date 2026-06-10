@@ -4,12 +4,18 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol
 
 from ue5agent.core.context import compact_history, truncate
 from ue5agent.llm.types import AssistantTurn, ChatModel
-from ue5agent.session_log import SessionLog
 from ue5agent.tools.registry import ToolRegistry
+
+
+class TraceSink(Protocol):
+    """trace 写入协议：SessionLog（旧）与 agent.events.RunWriter（新）均满足。"""
+
+    def write(self, event: str, **data: Any) -> None: ...
+
 
 SYSTEM_PROMPT = """\
 你是面向 Unreal Engine 5 工程的开发 agent。
@@ -46,7 +52,7 @@ class AgentLoop:
         max_iterations: int = 40,
         max_tool_result_chars: int = 30_000,
         compact_budget_chars: int = 200_000,
-        session_log: SessionLog | None = None,
+        session_log: TraceSink | None = None,
     ):
         self._llm = llm
         self._registry = registry
