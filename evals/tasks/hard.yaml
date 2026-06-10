@@ -1,0 +1,66 @@
+# hard 档：在 basic 档饱和后用于采集真实失败形态（K0 产出，K4 设计输入）
+# 压力方向：长依赖链、紧预算、JSON 转义、防编造、多写校验
+# 跑法：uv run ue5agent eval --tasks evals/tasks/hard.yaml
+
+- name: long_chain
+  prompt: 用工具完成链式计算：先算 3 加 4，再把结果与 10 相加，再把最终数字以笔记名 sum 保存，最后读出 sum 笔记并答复其内容。
+  max_turns: 8
+  checks:
+    - { type: tool_called_times, tool: add, at_least: 2 }
+    - { type: tool_called, tool: write_note, args_contain: sum }
+    - { type: tool_called, tool: read_note, args_contain: sum }
+    - { type: final_contains, text: "17" }
+    - { type: no_tool_errors }
+
+- name: tight_budget
+  prompt: 用 add 工具算出 (8+9)+(2+5) 的值并答复。尽量少用轮次。
+  max_turns: 4
+  checks:
+    - { type: tool_called_times, tool: add, at_least: 2 }
+    - { type: final_contains, text: "24" }
+    - { type: max_turns, value: 4 }
+
+- name: json_escaping
+  prompt: "用 echo 工具原样复述这段文本（含引号与反斜杠）：He said \"UE5\\Engine\" is ready"
+  checks:
+    - { type: tool_called, tool: echo, args_contain: UE5 }
+    - { type: final_contains, text: UE5 }
+    - { type: no_tool_errors }
+
+- name: no_fabrication
+  prompt: 读取名为 secret 的笔记，把其中记录的数字与 100 相加，答复计算结果。
+  checks:
+    - { type: tool_called, tool: read_note, args_contain: secret }
+    - { type: tool_not_called, tool: add }
+
+- name: unit_chain
+  prompt: 先用 convert 把 350 厘米换算成毫米，再用 add 把换算结果与 500 相加，答复最终数字。
+  checks:
+    - { type: tool_called, tool: convert, args_contain: mm }
+    - { type: tool_called, tool: add }
+    - { type: final_contains, text: "4000" }
+    - { type: no_tool_errors }
+
+- name: overwrite_and_verify
+  prompt: 先把名为 cfg 的笔记内容设为 alpha，再把它改成 beta，最后读出来确认，答复笔记当前内容。
+  checks:
+    - { type: tool_called_times, tool: write_note, at_least: 2 }
+    - { type: tool_called, tool: read_note, args_contain: cfg }
+    - { type: final_contains, text: beta }
+
+- name: parallel_independent
+  prompt: 分别用 add 计算 12 加 34、以及 56 加 78，把两个结果都写进最终答复。
+  max_turns: 5
+  checks:
+    - { type: tool_called_times, tool: add, at_least: 2 }
+    - { type: final_contains, text: "46" }
+    - { type: final_contains, text: "134" }
+
+- name: triple_note_bookkeeping
+  prompt: 创建三条笔记：a 存 1，b 存 2，c 存 3。然后读出 b，答复它的内容。
+  max_turns: 8
+  checks:
+    - { type: tool_called_times, tool: write_note, at_least: 3 }
+    - { type: tool_called, tool: read_note, args_contain: b }
+    - { type: final_contains, text: "2" }
+    - { type: no_tool_errors }
