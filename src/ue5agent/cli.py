@@ -140,16 +140,18 @@ async def _chat(config: ModelsConfig, settings: AgentSettings) -> None:
             registry,
             max_iterations=settings.limits.max_iterations,
             max_tool_result_chars=settings.limits.max_tool_result_chars,
+            compact_budget_chars=settings.limits.compact_budget_chars,
             session_log=log,
         )
         console.print(f"[dim]已加载 {len(registry)} 个工具；输入 exit 退出[/dim]")
+        history: list[dict[str, Any]] = []
         while True:
             user_input = console.input("[bold cyan]you ›[/bold cyan] ").strip()
             if user_input.lower() in {"exit", "quit"}:
                 break
             if not user_input:
                 continue
-            result = await loop.run(user_input)
+            result = await loop.run(user_input, history=history)
             console.print(result.final_text)
             console.print(
                 f"[dim]{result.turns} 轮 · {result.tool_call_count} 次工具调用 · "

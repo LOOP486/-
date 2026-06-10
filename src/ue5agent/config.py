@@ -75,6 +75,7 @@ class McpServerConfig(BaseModel):
 class LimitsConfig(BaseModel):
     max_iterations: int = 40
     max_tool_result_chars: int = 30_000
+    compact_budget_chars: int = 200_000
 
 
 class AgentSettings(BaseModel):

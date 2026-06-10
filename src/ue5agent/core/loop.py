@@ -6,7 +6,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from ue5agent.core.context import truncate
+from ue5agent.core.context import compact_history, truncate
 from ue5agent.llm.types import AssistantTurn, ChatModel
 from ue5agent.session_log import SessionLog
 from ue5agent.tools.registry import ToolRegistry
@@ -45,6 +45,7 @@ class AgentLoop:
         system_prompt: str = SYSTEM_PROMPT,
         max_iterations: int = 40,
         max_tool_result_chars: int = 30_000,
+        compact_budget_chars: int = 200_000,
         session_log: SessionLog | None = None,
     ):
         self._llm = llm
@@ -52,22 +53,30 @@ class AgentLoop:
         self._system_prompt = system_prompt
         self._max_iterations = max_iterations
         self._max_tool_result_chars = max_tool_result_chars
+        self._compact_budget_chars = compact_budget_chars
         self._log = session_log
 
-    async def run(self, user_input: str, *, role: str = "planner") -> LoopResult:
-        """单任务入口。TODO(roadmap Phase 0)：跨任务的会话内多轮记忆。"""
-        messages: list[dict[str, Any]] = [
-            {"role": "system", "content": self._system_prompt},
-            {"role": "user", "content": user_input},
-        ]
+    async def run(
+        self,
+        user_input: str,
+        *,
+        role: str = "planner",
+        history: list[dict[str, Any]] | None = None,
+    ) -> LoopResult:
+        """任务入口。传入同一个 history 列表即可跨输入延续会话（loop 原地追加）。"""
+        messages = history if history is not None else []
+        if not messages:
+            messages.append({"role": "system", "content": self._system_prompt})
+        messages.append({"role": "user", "content": user_input})
         if self._log:
             self._log.write("run_start", role=role, user_input=user_input)
         tool_call_count = 0
         prompt_tokens = 0
         completion_tokens = 0
         for turn in range(1, self._max_iterations + 1):
+            view = compact_history(messages, self._compact_budget_chars)
             started = time.monotonic()
-            assistant = await self._llm.acomplete(role, messages, tools=self._registry.specs())
+            assistant = await self._llm.acomplete(role, view, tools=self._registry.specs())
             llm_duration_ms = round((time.monotonic() - started) * 1000)
             if assistant.usage:
                 prompt_tokens += assistant.usage.prompt_tokens
