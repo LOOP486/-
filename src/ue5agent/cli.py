@@ -58,6 +58,50 @@ def check_config(models: Path = DEFAULT_MODELS, agent: Path = DEFAULT_AGENT) -> 
 
 
 @app.command()
+def trace(
+    path: Path | None = typer.Argument(None, help="trace 文件；缺省取 sessions/ 最新一份"),
+) -> None:
+    """回放查看一次会话：逐轮模型决策、工具调用、耗时与 token。"""
+    from ue5agent.session_log import latest_session, read_events
+
+    target = path or latest_session(Path("sessions"))
+    if target is None or not target.exists():
+        console.print("[red]找不到 trace 文件（sessions/ 为空？）[/red]")
+        raise typer.Exit(1)
+    console.print(f"[dim]{target}[/dim]")
+    for event in read_events(target):
+        _render_event(event)
+
+
+def _render_event(event: dict[str, Any]) -> None:
+    kind = event.get("event")
+    if kind == "run_start":
+        console.rule(f"任务：{str(event.get('user_input', ''))[:80]}")
+    elif kind == "llm_turn":
+        tokens = f"{event.get('prompt_tokens', 0)}+{event.get('completion_tokens', 0)} tok"
+        tools = ", ".join(event.get("tool_names") or []) or "（直接答复）"
+        console.print(
+            f"[bold]轮 {event.get('turn')}[/bold] "
+            f"[dim]{event.get('duration_ms', 0)}ms · {tokens}[/dim] → {tools}"
+        )
+        if event.get("content_preview"):
+            console.print(f"  [dim]{event['content_preview']}[/dim]")
+    elif kind == "tool_call":
+        console.print(
+            f"  ↳ {event.get('tool')} [dim]{event.get('duration_ms', 0)}ms · "
+            f"{event.get('result_chars', 0)} 字符[/dim]"
+        )
+        if event.get("result_preview"):
+            console.print(f"    [dim]{event['result_preview']}[/dim]")
+    elif kind == "run_end":
+        console.print(
+            f"[green]完成[/green] {event.get('turns')} 轮 · "
+            f"{event.get('tool_calls')} 次工具调用 · "
+            f"{event.get('prompt_tokens', 0)}+{event.get('completion_tokens', 0)} tok"
+        )
+
+
+@app.command()
 def chat(models: Path = DEFAULT_MODELS, agent: Path = DEFAULT_AGENT) -> None:
     """交互式会话：连接 MCP 工具后进入 agent 循环。"""
     config = _require_models(models)

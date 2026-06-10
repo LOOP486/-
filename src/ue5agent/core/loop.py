@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -27,6 +28,8 @@ class LoopResult:
     final_text: str
     turns: int
     tool_call_count: int
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
 
 
 class BudgetExhausted(Exception):
@@ -60,23 +63,55 @@ class AgentLoop:
         if self._log:
             self._log.write("run_start", role=role, user_input=user_input)
         tool_call_count = 0
+        prompt_tokens = 0
+        completion_tokens = 0
         for turn in range(1, self._max_iterations + 1):
+            started = time.monotonic()
             assistant = await self._llm.acomplete(role, messages, tools=self._registry.specs())
+            llm_duration_ms = round((time.monotonic() - started) * 1000)
+            if assistant.usage:
+                prompt_tokens += assistant.usage.prompt_tokens
+                completion_tokens += assistant.usage.completion_tokens
+            if self._log:
+                self._log.write(
+                    "llm_turn",
+                    turn=turn,
+                    duration_ms=llm_duration_ms,
+                    prompt_tokens=assistant.usage.prompt_tokens if assistant.usage else 0,
+                    completion_tokens=assistant.usage.completion_tokens if assistant.usage else 0,
+                    tool_names=[call.name for call in assistant.tool_calls],
+                    content_preview=(assistant.content or "")[:200],
+                )
             messages.append(_assistant_message(assistant))
             if not assistant.tool_calls:
-                result = LoopResult(assistant.content or "", turn, tool_call_count)
                 if self._log:
-                    self._log.write("run_end", turns=turn, tool_calls=tool_call_count)
-                return result
+                    self._log.write(
+                        "run_end",
+                        turns=turn,
+                        tool_calls=tool_call_count,
+                        prompt_tokens=prompt_tokens,
+                        completion_tokens=completion_tokens,
+                    )
+                return LoopResult(
+                    assistant.content or "",
+                    turn,
+                    tool_call_count,
+                    prompt_tokens,
+                    completion_tokens,
+                )
             for call in assistant.tool_calls:
+                started = time.monotonic()
                 tool_result = await self._registry.dispatch(call.name, call.arguments)
+                tool_duration_ms = round((time.monotonic() - started) * 1000)
                 tool_call_count += 1
                 if self._log:
                     self._log.write(
                         "tool_call",
                         tool=call.name,
-                        arguments=call.arguments,
+                        arguments=call.arguments[:500],
+                        duration_ms=tool_duration_ms,
                         result_chars=len(tool_result),
+                        result_preview=tool_result[:200],
                     )
                 messages.append(
                     {

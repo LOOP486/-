@@ -47,6 +47,10 @@ ignore = ["RUF001", "RUF002", "RUF003"]
 [tool.ruff.lint.isort]
 known-first-party = ["ue5agent"]
 
+[tool.ruff.lint.flake8-bugbear]
+# typer 的参数声明惯用法依赖调用作默认值
+extend-immutable-calls = ["typer.Argument", "typer.Option"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"

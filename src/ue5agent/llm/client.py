@@ -8,7 +8,7 @@ from typing import Any
 import litellm
 
 from ue5agent.config import ModelsConfig
-from ue5agent.llm.types import AssistantTurn, ToolCall
+from ue5agent.llm.types import AssistantTurn, ToolCall, Usage
 
 
 class LiteLLMClient:
@@ -48,4 +48,19 @@ class LiteLLMClient:
             ToolCall(id=call.id, name=call.function.name, arguments=call.function.arguments or "{}")
             for call in (message.tool_calls or [])
         ]
-        return AssistantTurn(content=message.content, tool_calls=tool_calls, raw=response)
+        return AssistantTurn(
+            content=message.content,
+            tool_calls=tool_calls,
+            usage=_extract_usage(response),
+            raw=response,
+        )
+
+
+def _extract_usage(response: Any) -> Usage | None:
+    raw = getattr(response, "usage", None)
+    if raw is None:
+        return None
+    return Usage(
+        prompt_tokens=getattr(raw, "prompt_tokens", 0) or 0,
+        completion_tokens=getattr(raw, "completion_tokens", 0) or 0,
+    )

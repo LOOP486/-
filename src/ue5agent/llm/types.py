@@ -18,9 +18,16 @@ class ToolCall:
 
 
 @dataclass
+class Usage:
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+
+
+@dataclass
 class AssistantTurn:
     content: str | None
     tool_calls: list[ToolCall] = field(default_factory=list)
+    usage: Usage | None = None
     raw: Any = None
 
 
