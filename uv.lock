@@ -1994,6 +1994,7 @@ name = "ue5agent"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "jsonschema" },
     { name = "litellm" },
     { name = "mcp" },
     { name = "pydantic" },
@@ -2014,6 +2015,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "jsonschema", specifier = ">=4.26.0" },
     { name = "litellm", specifier = ">=1.60" },
     { name = "mcp", specifier = ">=1.2" },
     { name = "pydantic", specifier = ">=2.7" },

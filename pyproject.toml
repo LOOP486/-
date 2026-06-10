@@ -5,6 +5,7 @@ description = "面向 UE5 游戏开发的 agent：C++ 功能实现、蓝图理�
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "jsonschema>=4.26.0",
     "litellm>=1.60",
     "mcp>=1.2",
     "pydantic>=2.7",

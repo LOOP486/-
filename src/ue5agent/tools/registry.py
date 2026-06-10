@@ -5,12 +5,13 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from difflib import get_close_matches
 from typing import Any
 
 from ue5agent.core.permissions import PermissionGate, PermissionLevel, ToolDenied
+from ue5agent.tools.validation import parse_arguments, validate_arguments
 
 ToolHandler = Callable[..., Awaitable[str]]
 
@@ -53,12 +54,17 @@ class ToolRegistry:
 
     async def dispatch(self, name: str, arguments_json: str) -> str:
         if name not in self._tools:
-            return f"[error] 未知工具：{name}"
+            similar = get_close_matches(name, list(self._tools), n=1)
+            hint = f"，是不是想用 {similar[0]}？" if similar else ""
+            return f"[error] 未知工具：{name}{hint}"
         tool = self._tools[name]
         try:
-            arguments = json.loads(arguments_json or "{}")
-        except json.JSONDecodeError as exc:
-            return f"[error] 工具参数不是合法 JSON：{exc}"
+            arguments = parse_arguments(arguments_json)
+        except ValueError as exc:
+            return f"[error] {exc}"
+        violations = validate_arguments(tool.parameters, arguments)
+        if violations:
+            return "[error] 参数不符合 schema：" + "；".join(violations)
         try:
             self._gate.check(name, tool.level, arguments)
         except ToolDenied as exc:
