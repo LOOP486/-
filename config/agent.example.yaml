@@ -19,6 +19,9 @@ mcp_servers:
   repo_tools:
     command: ["uv", "run", "python", "-m", "ue5agent.mcp_servers.repo_tools"]
     permission: write_safe # 注意：其中 repo_restore 若要使用，应拆出来按 dangerous 挂载
+  ue_editor:
+    command: ["uv", "run", "python", "-m", "ue5agent.mcp_servers.ue_editor"]
+    permission: read # 编辑器桥只读工具；前置：UE 编辑器开启（UnrealMCP 插件）
 
 limits:
   max_iterations: 40

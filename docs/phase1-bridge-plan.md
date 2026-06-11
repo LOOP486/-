@@ -10,12 +10,14 @@ agent 能回答「这个蓝图做了什么、谁在用它」，并具备资产�
 
 ## 里程碑
 
-### P1.1 插件兼容性与最小链路（进行中）
+### P1.1 插件兼容性与最小链路（✅ 2026-06-11）
 
-- [ ] UnrealMCP 插件随 agent_testEditor 在 UE5.7+VS2026 编译通过（失败则按报错适配）
-- [ ] 上游 Python server 接入我们的 MCP 配置（agent.yaml 挂载，权限 read 起步）
-- [ ] 编辑器开启状态下走通一条只读调用（如 get_actors_in_level）
-- 验收：chat 里问场景内容能得到真实回答
+- [x] UnrealMCP 插件随 agent_testEditor 在 UE5.7+VS2026 编译通过（0 错误）
+- [x] 自研瘦桥 server（mcp_servers/ue_editor：TCP 客户端 + 4 个只读工具），
+  弃用上游 2000 行 Python server——只暴露挑选过的只读命令，顺带完成 P1.2 大半
+- [x] 编辑器在线实测：editor_actors 读出 71 个 Actor；bp_read 读出
+  BP_ThirdPersonCharacter（父类/函数/事件图节点，中文节点标题正常）
+- 验收达成：agent 经同一 MCP 链路即可回答场景与蓝图问题
 
 ### P1.2 裁剪与分级
 
