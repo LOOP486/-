@@ -1,0 +1,132 @@
+"""K2：参数规范化、结果信封、失败签名熔断。"""
+
+from ue5agent.agent.tool_pipeline import (
+    FailureTracker,
+    ToolPipeline,
+    normalize_arguments,
+)
+from ue5agent.core.permissions import PermissionGate, PermissionLevel
+from ue5agent.tools.registry import ToolRegistry, ToolSpec
+
+SCHEMA = {
+    "type": "object",
+    "properties": {
+        "count": {"type": "integer"},
+        "ratio": {"type": "number"},
+        "enabled": {"type": "boolean"},
+        "file_path": {"type": "string"},
+        "text": {"type": "string"},
+    },
+}
+
+
+class TestNormalize:
+    def test_numeric_and_bool_coercion(self):
+        result = normalize_arguments(SCHEMA, {"count": " 42 ", "ratio": "2.5", "enabled": "True"})
+        assert result == {"count": 42, "ratio": 2.5, "enabled": True}
+
+    def test_path_separators_unified(self):
+        result = normalize_arguments(SCHEMA, {"file_path": "C:\\Game\\Source\\Foo.cpp"})
+        assert result["file_path"] == "C:/Game/Source/Foo.cpp"
+
+    def test_non_path_strings_untouched(self):
+        result = normalize_arguments(SCHEMA, {"text": "a\\b 保持原样"})
+        assert result["text"] == "a\\b 保持原样"
+
+    def test_unconvertible_left_for_schema_check(self):
+        assert normalize_arguments(SCHEMA, {"count": "many"})["count"] == "many"
+
+
+def make_pipeline(handler_results: list[str]) -> tuple[ToolPipeline, ToolRegistry]:
+    registry = ToolRegistry(PermissionGate())
+    results = list(handler_results)
+
+    async def flaky(text: str = "") -> str:
+        return results.pop(0)
+
+    registry.register(
+        ToolSpec(
+            name="flaky",
+            description="按脚本返回",
+            parameters={"type": "object", "properties": {"text": {"type": "string"}}},
+            level=PermissionLevel.READ,
+            handler=flaky,
+        )
+    )
+    return ToolPipeline(registry, PermissionGate(), tracker=FailureTracker(threshold=3)), registry
+
+
+class TestFailureEscalation:
+    async def test_consecutive_same_error_escalates(self):
+        pipeline, _ = make_pipeline(["[error] boom", "[error] boom", "[error] boom"])
+        await pipeline.run("flaky", "{}")
+        second = await pipeline.run("flaky", "{}")
+        assert second.consecutive == 2
+        assert "[提示]" not in second.text
+        third = await pipeline.run("flaky", "{}")
+        assert third.consecutive == 3
+        assert "连续 3 次" in third.text
+        assert third.error_kind == "tool_error"
+
+    async def test_success_resets_counter(self):
+        pipeline, _ = make_pipeline(["[error] boom", "ok", "[error] boom"])
+        await pipeline.run("flaky", "{}")
+        ok = await pipeline.run("flaky", "{}")
+        assert ok.ok and ok.consecutive == 0
+        again = await pipeline.run("flaky", "{}")
+        assert again.consecutive == 1
+
+    async def test_unknown_tool_counted(self):
+        pipeline, _ = make_pipeline([])
+        for _ in range(3):
+            outcome = await pipeline.run("ghost", "{}")
+        assert outcome.error_kind == "unknown_tool"
+        assert "连续 3 次" in outcome.text
+
+
+class TestEnvelope:
+    async def test_ok_outcome(self):
+        pipeline, _ = make_pipeline(["done"])
+        outcome = await pipeline.run("flaky", '{"text": "x"}')
+        assert outcome.ok
+        assert outcome.text == "done"
+        assert outcome.error_kind is None
+
+    async def test_registry_dispatch_still_returns_text(self):
+        _, registry = make_pipeline([])
+
+        async def echo(text: str) -> str:
+            return text
+
+        registry.register(
+            ToolSpec(
+                name="echo",
+                description="",
+                parameters={"type": "object", "properties": {"text": {"type": "string"}}},
+                level=PermissionLevel.READ,
+                handler=echo,
+            )
+        )
+        assert await registry.dispatch("echo", '{"text": "hi"}') == "hi"
+
+    async def test_coercion_repairs_schema_violation(self):
+        """规范化在校验前：数字字符串不再触发 schema 报错。"""
+        registry = ToolRegistry(PermissionGate())
+
+        async def add_one(count: int) -> str:
+            return str(count + 1)
+
+        registry.register(
+            ToolSpec(
+                name="add_one",
+                description="",
+                parameters={
+                    "type": "object",
+                    "properties": {"count": {"type": "integer"}},
+                    "required": ["count"],
+                },
+                level=PermissionLevel.READ,
+                handler=add_one,
+            )
+        )
+        assert await registry.dispatch("add_one", '{"count": "41"}') == "42"

@@ -1,17 +1,16 @@
 """工具注册表：本地工具与 MCP 工具统一成 OpenAI function calling 形态。
 
-工具失败/被拒绝时返回带标记的文本回传给模型（而不是中断循环），由模型自行调整。
+K2 起调用链在 agent/tool_pipeline.py；registry 只管注册与 schema，
+dispatch 保留为兼容入口（委托给内部管线），K5 收口时再评估是否移除。
 """
 
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from difflib import get_close_matches
 from typing import Any
 
-from ue5agent.core.permissions import PermissionGate, PermissionLevel, ToolDenied
-from ue5agent.tools.validation import parse_arguments, validate_arguments
+from ue5agent.core.permissions import PermissionGate, PermissionLevel
 
 ToolHandler = Callable[..., Awaitable[str]]
 
@@ -30,6 +29,7 @@ class ToolRegistry:
     def __init__(self, gate: PermissionGate):
         self._gate = gate
         self._tools: dict[str, ToolSpec] = {}
+        self._pipeline = None
 
     def __len__(self) -> int:
         return len(self._tools)
@@ -38,6 +38,12 @@ class ToolRegistry:
         if spec.name in self._tools:
             raise ValueError(f"工具重名：{spec.name}")
         self._tools[spec.name] = spec
+
+    def get(self, name: str) -> ToolSpec | None:
+        return self._tools.get(name)
+
+    def names(self) -> list[str]:
+        return list(self._tools)
 
     def specs(self) -> list[dict[str, Any]]:
         return [
@@ -53,23 +59,9 @@ class ToolRegistry:
         ]
 
     async def dispatch(self, name: str, arguments_json: str) -> str:
-        if name not in self._tools:
-            similar = get_close_matches(name, list(self._tools), n=1)
-            hint = f"，是不是想用 {similar[0]}？" if similar else ""
-            return f"[error] 未知工具：{name}{hint}"
-        tool = self._tools[name]
-        try:
-            arguments = parse_arguments(arguments_json)
-        except ValueError as exc:
-            return f"[error] {exc}"
-        violations = validate_arguments(tool.parameters, arguments)
-        if violations:
-            return "[error] 参数不符合 schema：" + "；".join(violations)
-        try:
-            self._gate.check(name, tool.level, arguments)
-        except ToolDenied as exc:
-            return f"[denied] {exc}"
-        try:
-            return await tool.handler(**arguments)
-        except Exception as exc:
-            return f"[error] {type(exc).__name__}: {exc}"
+        """兼容入口：委托给 ToolPipeline（函数级导入避免循环依赖）。"""
+        if self._pipeline is None:
+            from ue5agent.agent.tool_pipeline import ToolPipeline
+
+            self._pipeline = ToolPipeline(self, self._gate)
+        return await self._pipeline.dispatch(name, arguments_json)
