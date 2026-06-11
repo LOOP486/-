@@ -207,6 +207,29 @@ def _cli_confirm(tool_name: str, arguments: dict[str, Any]) -> bool:
     return typer.confirm("允许执行？")
 
 
+def _build_checkpoint_hook(settings: AgentSettings):
+    """工程在 git 管理下时返回自动 checkpoint 钩子，否则 None（WRITE_PROJECT 将被拒）。"""
+    from ue5agent.mcp_servers.repo_tools import gitops
+
+    if settings.project is None:
+        return None
+    repo = settings.project.uproject.parent
+    if not gitops.is_git_repo(repo):
+        console.print(f"[yellow]提示：{repo} 不在 git 管理下，工程写操作将被拒绝[/yellow]")
+        return None
+
+    def hook() -> bool:
+        try:
+            result = gitops.checkpoint(repo, "auto: before WRITE_PROJECT tool")
+            console.print(f"[dim]已自动 checkpoint：{result['ref']}[/dim]")
+            return True
+        except RuntimeError as exc:
+            console.print(f"[red]checkpoint 失败：{exc}[/red]")
+            return False
+
+    return hook
+
+
 async def _chat(config: ModelsConfig, settings: AgentSettings) -> None:
     # litellm 导入耗时数秒，放到真正需要时再加载
     from ue5agent.agent.events import RunWriter
@@ -218,7 +241,9 @@ async def _chat(config: ModelsConfig, settings: AgentSettings) -> None:
     from ue5agent.tools.registry import ToolRegistry
 
     llm = LiteLLMClient(config)
-    registry = ToolRegistry(PermissionGate(confirmer=_cli_confirm))
+    registry = ToolRegistry(
+        PermissionGate(confirmer=_cli_confirm, checkpoint=_build_checkpoint_hook(settings))
+    )
     session = TaskSession.new(
         "interactive-chat",
         budgets=Budgets(

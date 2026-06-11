@@ -8,12 +8,17 @@ engine:
 project:
   uproject: "D:/MyGame/MyGame.uproject"
 
-# 要挂载的 MCP server；permission 是该 server 全部工具的默认授权级别
-# read：自动放行 / write：需用户确认 / dangerous：默认拒绝
+# 要挂载的 MCP server；permission 是该 server 全部工具的授权级别（4 级）
+# read / write_safe：自动放行
+# write_project：自动 checkpoint 后需确认（工程必须在 git 管理下）
+# dangerous：白名单 + 人工确认双条件，默认拒绝
 mcp_servers:
   ue_build:
     command: ["uv", "run", "python", "-m", "ue5agent.mcp_servers.ue_build"]
     permission: read
+  repo_tools:
+    command: ["uv", "run", "python", "-m", "ue5agent.mcp_servers.repo_tools"]
+    permission: write_safe # 注意：其中 repo_restore 若要使用，应拆出来按 dangerous 挂载
 
 limits:
   max_iterations: 40

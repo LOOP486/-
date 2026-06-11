@@ -69,7 +69,11 @@ class ProjectConfig(BaseModel):
 
 class McpServerConfig(BaseModel):
     command: list[str] = Field(description="stdio 启动命令")
-    permission: str = Field(default="read", pattern="^(read|write|dangerous)$")
+    permission: str = Field(
+        default="read",
+        pattern="^(read|write|write_safe|write_project|dangerous)$",
+        description="该 server 全部工具的授权级别；旧值 write 按 write_project 解释",
+    )
 
 
 class LimitsConfig(BaseModel):
