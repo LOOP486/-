@@ -13,7 +13,7 @@
 - [x] 对真实 UE 工程实测 ubt_compile（UE5.7 + VS2026：成功/工具链缺失/注入错误三种形态均验证，真机样本固化为测试）
 - [x] chat 会话内多轮记忆
 - [x] 历史压缩 compact_history 实现（确定性摘要版）
-- [ ] 验收：任一模型完成「加一个 gameplay 功能并编译通过」
+- [x] 验收：任一模型完成「加一个 gameplay 功能并编译通过」（2026-06-11，DeepSeek 自主完成 BlueprintFunctionLibrary：5 轮 7 工具调用，编译 7.51s 零错误，全程自动 checkpoint——**Phase 0 完成**）
 
 ## Phase 1：编辑器桥（让 agent 看见蓝图）
 
