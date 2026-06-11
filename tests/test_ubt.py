@@ -107,12 +107,20 @@ def test_build_timeout_returns_structured_failure(monkeypatch, tmp_path):
 
     from ue5agent.mcp_servers.ue_build import ubt
 
-    def fake_run(*args, **kwargs):
-        raise subprocess.TimeoutExpired(cmd="Build.bat", timeout=kwargs.get("timeout", 600))
+    killed = []
 
-    monkeypatch.setattr(ubt.subprocess, "run", fake_run)
+    class FakePopen:
+        def __init__(self, *args, **kwargs):
+            self.pid = 12345
+
+        def wait(self, timeout=None):
+            raise subprocess.TimeoutExpired(cmd="Build.bat", timeout=timeout)
+
+    monkeypatch.setattr(ubt.subprocess, "Popen", FakePopen)
+    monkeypatch.setattr(ubt, "_kill_tree", lambda pid: killed.append(pid))
     result = ubt.run_build(tmp_path, tmp_path / "x.uproject", "agent_testEditor")
     assert result.success is False
     assert result.error_count == 1
     assert result.diagnostics[0].code == "BuildTimeout"
     assert "超时" in result.diagnostics[0].message
+    assert killed == [12345]  # 必须连根杀进程树

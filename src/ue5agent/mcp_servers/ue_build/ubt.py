@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import contextlib
 import re
 import subprocess
+import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -132,46 +134,58 @@ def run_build(
 ) -> BuildResult:
     """编译目标。超时（默认 10 分钟）转为结构化失败，绝不让调用方无限阻塞。
 
-    UBT 的 -WaitMutex 在另一构建持锁时会无限等待；超时是唯一可靠的兜底。
+    实现要点（2026-06-11 真机僵死教训）：
+    - 输出落临时文件而非管道：UBT 的子进程（git/UBA）会继承管道句柄，
+      它们僵死时管道读取端永久阻塞；
+    - 超时用 taskkill /T 杀整个进程树，避免孤儿 dotnet 继续持有资源。
     """
     command = build_command(engine_root, uproject, target, configuration)
+    log_fd, log_name = tempfile.mkstemp(suffix=".ubt.log")
+    log_path = Path(log_name)
     try:
-        process = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=timeout_seconds,
-        )
-    except subprocess.TimeoutExpired as exc:
-        partial = (exc.stdout or "") + "\n" + (exc.stderr or "")
-        if isinstance(partial, bytes):
-            partial = partial.decode("utf-8", errors="replace")
-        return BuildResult(
-            success=False,
-            exit_code=-1,
-            error_count=1,
-            warning_count=0,
-            diagnostics=[
-                Diagnostic(
-                    kind="error",
-                    message=(
-                        f"编译超时（{timeout_seconds}s 未结束，已终止）。"
-                        "常见原因：另一构建或编辑器持有 UBT 锁，或首次全量编译过慢。"
-                    ),
-                    code="BuildTimeout",
+        with open(log_fd, "w", encoding="utf-8", errors="replace") as out:
+            process = subprocess.Popen(command, stdout=out, stderr=subprocess.STDOUT)
+            try:
+                exit_code = process.wait(timeout=timeout_seconds)
+            except subprocess.TimeoutExpired:
+                _kill_tree(process.pid)
+                partial = log_path.read_text(encoding="utf-8", errors="replace")
+                return BuildResult(
+                    success=False,
+                    exit_code=-1,
+                    error_count=1,
+                    warning_count=0,
+                    diagnostics=[
+                        Diagnostic(
+                            kind="error",
+                            message=(
+                                f"编译超时（{timeout_seconds}s 未结束，已终止进程树）。"
+                                "常见原因：另一构建/编辑器持锁，或首次全量编译过慢。"
+                            ),
+                            code="BuildTimeout",
+                        )
+                    ],
+                    raw_tail=partial[-4000:],
                 )
-            ],
-            raw_tail=partial[-4000:],
-        )
-    output = (process.stdout or "") + "\n" + (process.stderr or "")
+        output = log_path.read_text(encoding="utf-8", errors="replace")
+    finally:
+        with contextlib.suppress(OSError):
+            log_path.unlink()
     diagnostics = parse_output(output)
     return BuildResult(
-        success=process.returncode == 0,
-        exit_code=process.returncode,
+        success=exit_code == 0,
+        exit_code=exit_code,
         error_count=sum(1 for d in diagnostics if d.kind == "error"),
         warning_count=sum(1 for d in diagnostics if d.kind == "warning"),
         diagnostics=diagnostics,
         raw_tail=output[-4000:],
+    )
+
+
+def _kill_tree(pid: int) -> None:
+    """Windows 下 kill() 只杀直接子进程，必须 /T 连根拔掉孙进程（dotnet/git/UBA）。"""
+    subprocess.run(
+        ["taskkill", "/PID", str(pid), "/T", "/F"],
+        capture_output=True,
+        timeout=30,
     )
