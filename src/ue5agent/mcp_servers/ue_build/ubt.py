@@ -128,17 +128,43 @@ def run_build(
     uproject: Path,
     target: str,
     configuration: str = "Development",
-    timeout_seconds: int = 1800,
+    timeout_seconds: int = 600,
 ) -> BuildResult:
+    """编译目标。超时（默认 10 分钟）转为结构化失败，绝不让调用方无限阻塞。
+
+    UBT 的 -WaitMutex 在另一构建持锁时会无限等待；超时是唯一可靠的兜底。
+    """
     command = build_command(engine_root, uproject, target, configuration)
-    process = subprocess.run(
-        command,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=timeout_seconds,
-    )
+    try:
+        process = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout_seconds,
+        )
+    except subprocess.TimeoutExpired as exc:
+        partial = (exc.stdout or "") + "\n" + (exc.stderr or "")
+        if isinstance(partial, bytes):
+            partial = partial.decode("utf-8", errors="replace")
+        return BuildResult(
+            success=False,
+            exit_code=-1,
+            error_count=1,
+            warning_count=0,
+            diagnostics=[
+                Diagnostic(
+                    kind="error",
+                    message=(
+                        f"编译超时（{timeout_seconds}s 未结束，已终止）。"
+                        "常见原因：另一构建或编辑器持有 UBT 锁，或首次全量编译过慢。"
+                    ),
+                    code="BuildTimeout",
+                )
+            ],
+            raw_tail=partial[-4000:],
+        )
     output = (process.stdout or "") + "\n" + (process.stderr or "")
     diagnostics = parse_output(output)
     return BuildResult(

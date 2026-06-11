@@ -100,3 +100,19 @@ def test_summary_line_suppressed_when_real_error_present():
     assert diagnostics[0].code == "C2065"
     assert diagnostics[0].line == 4
     assert "未声明的标识符" in diagnostics[0].message
+
+
+def test_build_timeout_returns_structured_failure(monkeypatch, tmp_path):
+    import subprocess
+
+    from ue5agent.mcp_servers.ue_build import ubt
+
+    def fake_run(*args, **kwargs):
+        raise subprocess.TimeoutExpired(cmd="Build.bat", timeout=kwargs.get("timeout", 600))
+
+    monkeypatch.setattr(ubt.subprocess, "run", fake_run)
+    result = ubt.run_build(tmp_path, tmp_path / "x.uproject", "agent_testEditor")
+    assert result.success is False
+    assert result.error_count == 1
+    assert result.diagnostics[0].code == "BuildTimeout"
+    assert "超时" in result.diagnostics[0].message

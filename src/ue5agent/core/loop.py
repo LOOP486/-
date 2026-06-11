@@ -52,6 +52,7 @@ class AgentLoop:
         max_iterations: int = 40,
         max_tool_result_chars: int = 30_000,
         compact_budget_chars: int = 200_000,
+        max_wall_seconds: float | None = 1800.0,
         session_log: TraceSink | None = None,
     ):
         self._llm = llm
@@ -60,6 +61,7 @@ class AgentLoop:
         self._max_iterations = max_iterations
         self._max_tool_result_chars = max_tool_result_chars
         self._compact_budget_chars = compact_budget_chars
+        self._max_wall_seconds = max_wall_seconds
         self._log = session_log
 
     async def run(
@@ -79,7 +81,18 @@ class AgentLoop:
         tool_call_count = 0
         prompt_tokens = 0
         completion_tokens = 0
+        deadline = (
+            time.monotonic() + self._max_wall_seconds
+            if self._max_wall_seconds is not None
+            else None
+        )
         for turn in range(1, self._max_iterations + 1):
+            if deadline is not None and time.monotonic() >= deadline:
+                if self._log:
+                    self._log.write("budget_warning", reason="wall_clock", turn=turn)
+                raise BudgetExhausted(
+                    f"墙钟预算 {self._max_wall_seconds:.0f}s 耗尽（第 {turn} 轮前）"
+                )
             view = compact_history(messages, self._compact_budget_chars)
             started = time.monotonic()
             assistant = await self._llm.acomplete(role, view, tools=self._registry.specs())

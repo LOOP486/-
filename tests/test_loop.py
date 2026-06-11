@@ -76,3 +76,11 @@ async def test_budget_exhausted():
     loop = AgentLoop(model, make_registry(), max_iterations=3)
     with pytest.raises(BudgetExhausted):
         await loop.run("测试")
+
+
+async def test_wall_clock_budget_stops_loop():
+    """墙钟预算为 0：第一轮前即判定耗尽，防止单个挂死工具拖垮整局。"""
+    model = FakeModel([AssistantTurn(content="不该到这")])
+    loop = AgentLoop(model, make_registry(), max_wall_seconds=0)
+    with pytest.raises(BudgetExhausted, match="墙钟预算"):
+        await loop.run("测试")

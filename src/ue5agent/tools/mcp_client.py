@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import os
 from contextlib import AsyncExitStack
 from typing import Any
 
@@ -26,7 +27,13 @@ class McpManager:
 
     async def __aenter__(self) -> McpManager:
         for name, config in self._configs.items():
-            params = StdioServerParameters(command=config.command[0], args=config.command[1:])
+            # 必须显式传 env：MCP SDK 默认只给子进程一个最小环境，
+            # 不含 UE_ENGINE_ROOT/UE_UPROJECT 等自定义变量，否则 ue_build 拿不到工程路径
+            params = StdioServerParameters(
+                command=config.command[0],
+                args=config.command[1:],
+                env=dict(os.environ),
+            )
             read, write = await self._stack.enter_async_context(stdio_client(params))
             session = await self._stack.enter_async_context(ClientSession(read, write))
             await session.initialize()
