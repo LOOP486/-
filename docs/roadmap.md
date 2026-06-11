@@ -10,7 +10,7 @@
 - [x] 权限网关：read/write/dangerous 三级 + 白名单 + CLI 确认
 - [x] MCP 客户端：stdio 挂载、工具前缀、按 server 配授权
 - [x] ue_build MCP server：UBT 编译 + 结构化诊断解析（含单测）
-- [ ] 对真实 UE 工程实测 ubt_compile，补齐解析遗漏的报错形态
+- [x] 对真实 UE 工程实测 ubt_compile（UE5.7 + VS2026：成功/工具链缺失/注入错误三种形态均验证，真机样本固化为测试）
 - [x] chat 会话内多轮记忆
 - [x] 历史压缩 compact_history 实现（确定性摘要版）
 - [ ] 验收：任一模型完成「加一个 gameplay 功能并编译通过」

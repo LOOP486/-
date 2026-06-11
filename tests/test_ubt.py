@@ -82,3 +82,21 @@ def test_result_failed_without_context_line():
     assert len(diagnostics) == 1
     assert diagnostics[0].code == "RulesError"
     assert "raw_tail" in diagnostics[0].message
+
+
+# 2026-06-11 真机样本：有具体编译错误时，Result: Failed 汇总行不应重复成第二条
+REAL_COMPILE_ERROR = r"""
+[1/7] Compile [x64] agent_test.cpp
+C:\Game\Source\agent_test\agent_test.cpp(4): error C2065: "ThisSymbolDoesNotExist": 未声明的标识符
+Total time in Unreal Build Accelerator local executor: 0.41 seconds
+Result: Failed (OtherCompilationError)
+Total execution time: 2.95 seconds
+"""
+
+
+def test_summary_line_suppressed_when_real_error_present():
+    diagnostics = parse_output(REAL_COMPILE_ERROR)
+    assert len(diagnostics) == 1
+    assert diagnostics[0].code == "C2065"
+    assert diagnostics[0].line == 4
+    assert "未声明的标识符" in diagnostics[0].message

@@ -29,7 +29,7 @@
 - **K1 已完成（2026-06-10）**：`agent/state.py`（TaskSession/PlanStep/Artifact/Budgets + 持久化）、`agent/events.py`（类型化 TraceEvent + RunWriter + runs/ 产物目录）；loop 经 TraceSink 协议解耦并直写新 trace；chat 落 runs/，trace 命令双目录兼容。
 - **K2 已完成（2026-06-10）**：`agent/tool_pipeline.py` 吸收调用链，新增参数规范化（数字/布尔温和转型、路径分隔符归一）、ToolOutcome 结果信封、失败签名熔断（连续同类错误升级提示，K4 recovery 的数据源）；registry 瘦身为注册表。
 - **K3 已完成（2026-06-10）**：权限升 4 级（READ/WRITE_SAFE/WRITE_PROJECT/DANGEROUS），WRITE_PROJECT 前置自动 checkpoint、DANGEROUS 白名单+确认双条件；repo_tools MCP server（checkpoint/status/list/restore，write-tree 快照不动工作区）；agent_test 工程已纳入 git。
-- **M6 已并行起步（同日）**：agent_test 工程（UE5.7）补 C++ 模块脚手架并配置完成；真实 UBT 实测暴露并修复了解析缺口（Result: Failed 无前缀错误）。**当前阻塞：本机无 VS/Windows SDK**，安装后即可跑通完整编译闭环。
+- **M6 编译闭环已验证（2026-06-11，VS2026 装机后）**：agent_test 真实构建 41.7s 成功；注入 C2065 错误→结构化诊断精确到文件/行号（MSVC 中文本地化输出兼容）→修复回绿。真机样本两批固化为测试。**剩余验收项：agent 自主「加 gameplay 功能→编译→修错」端到端**——需先给 agent 配文件读写工具（fs 工具集，列入 K4 前置）。
 
 ## 后续阶段（Phase 0.5 之后）
 

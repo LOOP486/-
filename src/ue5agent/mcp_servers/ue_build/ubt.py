@@ -28,6 +28,8 @@ _BOILERPLATE_PREFIXES = (
     "Running UnrealBuildTool",
     "Log file:",
     "Total execution",
+    "Total time in",
+    "Trace written",
     "Creating makefile",
     "Building ",
 )
@@ -66,6 +68,8 @@ def parse_output(output: str) -> list[Diagnostic]:
         if diagnostic is None:
             failed = _UBT_RESULT_FAILED.match(line)
             if failed:
+                if any(d.kind == "error" for d in diagnostics):
+                    continue  # 已解析出具体错误，汇总行不再重复
                 diagnostic = Diagnostic(
                     kind="error",
                     message=last_context or "UBT 构建失败（未解析出具体诊断，见 raw_tail）",
