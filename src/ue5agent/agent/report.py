@@ -13,6 +13,13 @@ _STATUS_LABEL = {
 }
 
 
+def _clip(text: str, limit: int) -> str:
+    """截断时给出明确标记——失败步骤的小结常含排查所需的参数 JSON，不能无声切碎。"""
+    if len(text) <= limit:
+        return text
+    return text[:limit] + "……（已截断，完整内容见 trace.jsonl）"
+
+
 def build_report(session: TaskSession, summaries: dict[str, str], final_answer: str = "") -> str:
     lines = [
         f"# 任务报告：{session.goal}",
@@ -32,7 +39,7 @@ def build_report(session: TaskSession, summaries: dict[str, str], final_answer: 
             lines.append(f"- 验收标准：{step.acceptance}")
         summary = summaries.get(step.id)
         if summary:
-            lines.append(f"- 执行小结：{summary[:300]}")
+            lines.append(f"- 执行小结：{_clip(summary, 2000)}")
         lines.append("")
     if session.artifacts:
         lines.append("## 产物")

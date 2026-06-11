@@ -8,11 +8,13 @@
 from __future__ import annotations
 
 import json
+import os
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-from ue5agent.mcp_servers.ue_editor.bridge import send_command
+from ue5agent.core.errors import mark_env_unready
+from ue5agent.mcp_servers.ue_editor.bridge import DEFAULT_PORT, probe_editor, send_command
 
 mcp = FastMCP("ue-editor")
 
@@ -21,12 +23,28 @@ def _call(command: str, params: dict[str, Any] | None = None) -> str:
     try:
         response = send_command(command, params)
     except ConnectionRefusedError:
-        return "[error] 连不上编辑器桥：请先打开 UE 编辑器（UnrealMCP 插件随工程加载）"
+        return mark_env_unready("连不上编辑器桥：请先打开 UE 编辑器（UnrealMCP 插件随工程加载）")
     except (OSError, ConnectionError, TimeoutError) as exc:
         return f"[error] 编辑器桥通信失败：{exc}"
     if response.get("status") == "error":
         return f"[error] {response.get('error', response)}"
     return json.dumps(response.get("result", response), ensure_ascii=False)
+
+
+@mcp.tool()
+def editor_status() -> str:
+    """探测 UE 编辑器桥是否在线。做任何编辑器相关操作前先调本工具确认环境就绪。
+
+    返回 online/offline——offline 是正常答复而非错误，表示需要先启动编辑器。
+    """
+    host = os.environ.get("UE_MCP_HOST", "127.0.0.1")
+    port = int(os.environ.get("UE_MCP_PORT", DEFAULT_PORT))
+    if probe_editor():
+        return f"online：编辑器桥可达（{host}:{port}）"
+    return (
+        f"offline：编辑器桥不可达（{host}:{port}）。需要先启动 UE 编辑器并加载工程"
+        "（UnrealMCP 插件随工程加载）；若挂载了 ue_lifecycle，可用 editor_launch 启动。"
+    )
 
 
 @mcp.tool()

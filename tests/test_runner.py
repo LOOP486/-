@@ -2,11 +2,15 @@
 
 import json
 
-from tests.test_loop import FakeModel, make_registry
+from tests.test_loop import FakeModel, make_registry, tool_turn
 from ue5agent.agent.events import RunWriter, read_events
+from ue5agent.agent.report import build_report
 from ue5agent.agent.runner import TaskRunner
-from ue5agent.agent.state import TaskSession
+from ue5agent.agent.state import PlanStep, TaskSession
+from ue5agent.core.errors import mark_env_unready
+from ue5agent.core.permissions import PermissionGate, PermissionLevel
 from ue5agent.llm.types import AssistantTurn
+from ue5agent.tools.registry import ToolRegistry, ToolSpec
 
 
 def plan(task_class: str, *intents_acceptance: tuple[str, str]) -> AssistantTurn:
@@ -143,6 +147,53 @@ async def test_step_exception_recorded_not_crash(tmp_path):
     outcome = await runner.run("异常场景")
     assert not outcome.success
     assert "失败" in outcome.report
+
+
+async def test_env_unready_aborts_without_retry(tmp_path):
+    """环境未就绪（编辑器桥连接被拒）：验收失败后不重试不烧预算，直接终止并给指引。"""
+    registry = ToolRegistry(PermissionGate())
+
+    async def wb_build(layout_json: str = "") -> str:
+        return mark_env_unready("落地失败：编辑器桥连接被拒")
+
+    registry.register(
+        ToolSpec(
+            name="wb_build",
+            description="白盒搭建",
+            parameters={"type": "object", "properties": {"layout_json": {"type": "string"}}},
+            level=PermissionLevel.WRITE_SAFE,
+            handler=wb_build,
+        )
+    )
+    model = FakeModel(
+        [
+            plan("standard", ("建主厅", "主厅就位"), ("建走廊", "走廊就位")),
+            tool_turn("wb_build", '{"layout_json": "{}"}'),
+            AssistantTurn(content="编辑器没开，搭不了"),
+            judge("fail", "无构建证据"),
+        ]
+    )
+    writer = RunWriter(tmp_path, TaskSession.new("环境未就绪"))
+    runner = TaskRunner(model, registry, writer)
+    outcome = await runner.run("搭白盒")
+    assert not outcome.success
+    step = writer.session.plan[0]
+    assert step.status == "failed"
+    assert step.attempts == 1  # 关键：环境性失败不消耗剩余重试
+    assert writer.session.plan[1].status == "skipped"
+    assert "环境未就绪" in outcome.report
+    events = read_events(writer.trace_path)
+    aborts = [e for e in events if e["event"] == "recover_action"]
+    assert aborts and "env_unready" in aborts[0]["reason"]
+
+
+def test_report_clips_long_summary_with_marker():
+    session = TaskSession.new("报告截断")
+    session.goal = "测试"
+    session.plan = [PlanStep(id="s1", intent="做事", status="failed", attempts=1)]
+    report = build_report(session, {"s1": "x" * 2500})
+    assert "已截断" in report
+    assert "x" * 2000 in report  # 截断阈值放宽到 2000，不再 300 字符切碎 JSON
 
 
 async def test_insufficient_evidence_retries(tmp_path):

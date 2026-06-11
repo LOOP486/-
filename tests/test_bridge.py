@@ -4,7 +4,7 @@ import json
 import socket
 import threading
 
-from ue5agent.mcp_servers.ue_editor.bridge import send_command
+from ue5agent.mcp_servers.ue_editor.bridge import probe_editor, send_command
 
 
 def fake_plugin_server(response: dict) -> int:
@@ -33,3 +33,23 @@ def test_send_command_reassembles_split_json():
     response = send_command("get_actors_in_level", port=port, timeout=5)
     assert response["status"] == "success"
     assert response["result"]["actors"][0]["name"] == "Floor"
+
+
+def test_probe_editor_true_when_port_listening():
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.bind(("127.0.0.1", 0))
+    server.listen(1)
+    port = server.getsockname()[1]
+    try:
+        assert probe_editor(port=port, timeout=1.0) is True
+    finally:
+        server.close()
+
+
+def test_probe_editor_false_when_port_closed():
+    # 先占一个端口再关掉，确保它当前无人监听
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.bind(("127.0.0.1", 0))
+    port = sock.getsockname()[1]
+    sock.close()
+    assert probe_editor(port=port, timeout=0.5) is False

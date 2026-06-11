@@ -207,15 +207,12 @@ def run_command(
 
 
 async def _run_single(config: ModelsConfig, settings: AgentSettings, task: str) -> None:
-    from ue5agent.core.permissions import PermissionGate
     from ue5agent.llm.client import LiteLLMClient
     from ue5agent.tools.mcp_client import McpManager
     from ue5agent.tools.registry import ToolRegistry
 
     llm = LiteLLMClient(config)
-    registry = ToolRegistry(
-        PermissionGate(confirmer=_cli_confirm, checkpoint=_build_checkpoint_hook(settings))
-    )
+    registry = ToolRegistry(_build_gate(settings))
     async with McpManager(settings.mcp_servers) as manager:
         await manager.register_all(registry)
         await _execute_task(llm, registry, settings, task)
@@ -231,6 +228,16 @@ def _require_models(path: Path) -> ModelsConfig:
 def _cli_confirm(tool_name: str, arguments: dict[str, Any]) -> bool:
     console.print(f"[yellow]写操作请求：{tool_name}[/yellow] 参数：{arguments}")
     return typer.confirm("允许执行？")
+
+
+def _build_gate(settings: AgentSettings) -> Any:
+    from ue5agent.core.permissions import PermissionGate
+
+    return PermissionGate(
+        confirmer=_cli_confirm,
+        allowlist=set(settings.permissions.allowlist),
+        checkpoint=_build_checkpoint_hook(settings),
+    )
 
 
 def _build_checkpoint_hook(settings: AgentSettings):
@@ -258,15 +265,12 @@ def _build_checkpoint_hook(settings: AgentSettings):
 
 async def _chat(config: ModelsConfig, settings: AgentSettings) -> None:
     # litellm 导入耗时数秒，放到真正需要时再加载
-    from ue5agent.core.permissions import PermissionGate
     from ue5agent.llm.client import LiteLLMClient
     from ue5agent.tools.mcp_client import McpManager
     from ue5agent.tools.registry import ToolRegistry
 
     llm = LiteLLMClient(config)
-    registry = ToolRegistry(
-        PermissionGate(confirmer=_cli_confirm, checkpoint=_build_checkpoint_hook(settings))
-    )
+    registry = ToolRegistry(_build_gate(settings))
     async with McpManager(settings.mcp_servers) as manager:
         await manager.register_all(registry)
         console.print(f"[dim]已加载 {len(registry)} 个工具；输入 exit 退出[/dim]")

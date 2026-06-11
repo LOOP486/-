@@ -13,6 +13,17 @@ from typing import Any
 DEFAULT_PORT = 55557
 
 
+def probe_editor(*, host: str | None = None, port: int | None = None, timeout: float = 2.0) -> bool:
+    """探测编辑器桥端口是否可连接（只握手不发命令，适合状态检查与就绪轮询）。"""
+    host = host or os.environ.get("UE_MCP_HOST", "127.0.0.1")
+    port = port or int(os.environ.get("UE_MCP_PORT", DEFAULT_PORT))
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
 def send_command(
     command: str,
     params: dict[str, Any] | None = None,
