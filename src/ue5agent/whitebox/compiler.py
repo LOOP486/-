@@ -3,7 +3,8 @@
 v1 范围：矩形房间 + 四向墙 + 门洞。墙体/地板全部用 cube 缩放实现，
 单位为格（grid uu），编译输出世界坐标放置指令，spawn 前完成程序化校验。
 坐标约定：rect=(x, y, 宽, 深) 格；墙在房间内侧；门洞 v1 为全高开口。
-相邻房间共享边时，两侧各有一面薄墙——共用门洞需两个房间各开一个对齐的门。
+相邻房间共享边时各自生成一面墙，编译末尾 _dedupe_shared_walls 会去除重合的另一面，
+共享边只保留一面（v2）；共用门洞仍需两个房间各开一个对齐的门。
 """
 
 from __future__ import annotations
@@ -89,7 +90,53 @@ def compile_layout(spec: LayoutSpec, manifest: Manifest) -> list[Placement]:
     placements: list[Placement] = []
     for room in spec.rooms:
         placements += _compile_room(room, spec, cube.path, g)
-    return placements
+    return _dedupe_shared_walls(placements)
+
+
+def _dedupe_shared_walls(placements: list[Placement]) -> list[Placement]:
+    """去除相邻房间共享墙产生的重叠薄墙（v2：共享边只保留一面）。
+
+    相邻房间各自生成自己的墙，共享边上会出现两面几乎重合的薄墙（仅差墙厚 20uu），
+    视觉上像"多放了一块板"。此处按墙的 (location, scale) 近似重合判定，
+    重复的只保留第一面、丢弃其余——门洞段因位置/长度不同不会被误删。
+    """
+    kept: list[Placement] = []
+    seen: list[tuple[float, float, float, float, float, float]] = []
+    for p in placements:
+        if p.name.endswith("_floor"):  # 地板从不参与去重
+            kept.append(p)
+            continue
+        key = (
+            round(p.location[0], 1),
+            round(p.location[1], 1),
+            round(p.location[2], 1),
+            round(p.scale[0], 2),
+            round(p.scale[1], 2),
+            round(p.scale[2], 2),
+        )
+        if any(_walls_coincide(key, s) for s in seen):
+            continue  # 与已保留的某面墙重合 → 这是共享墙的另一面，丢弃
+        seen.append(key)
+        kept.append(p)
+    return kept
+
+
+def _walls_coincide(
+    a: tuple[float, float, float, float, float, float],
+    b: tuple[float, float, float, float, float, float],
+) -> bool:
+    """两面墙是否在共享边上几乎重合：同朝向、同尺寸，且中心距 <= 一个墙厚级别。
+
+    共享墙两面只在垂直于墙的方向相差约一个墙厚（典型 20uu），其余轴完全一致。
+    """
+    if (a[3], a[4], a[5]) != (b[3], b[4], b[5]):  # 尺寸/朝向不同，不是同一道墙
+        return False
+    dx, dy, dz = abs(a[0] - b[0]), abs(a[1] - b[1]), abs(a[2] - b[2])
+    if dz > 0.1:  # 高度必须一致
+        return False
+    # 沿墙方向必须重合，垂直方向允许约一个墙厚（<=40uu）的偏移
+    near = sorted((dx, dy))
+    return near[0] <= 0.1 and near[1] <= 40.0
 
 
 def _validate(spec: LayoutSpec) -> None:

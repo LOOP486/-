@@ -19,9 +19,10 @@ logs/
 sessions/
 runs/
 
-# IDE
+# IDE / agent 本机数据（工作记忆、自动化等，不入库）
 .idea/
 .vscode/
+.codebuddy/
 *.swp
 
 # 系统

@@ -7,6 +7,7 @@ checkpoint 用 write-tree/commit-tree 实现：不动 HEAD、不动工作区，
 from __future__ import annotations
 
 import contextlib
+import os
 import subprocess
 import tempfile
 import time
@@ -23,6 +24,17 @@ _GIT_FLAGS = [
     "core.fsmonitor=false",
 ]
 
+# 非交互环境硬约束：禁止 git 弹凭据/SSH 等任何提示。MCP server 无 TTY 且 stdin
+# 被协议占用，git 若等待输入会永久阻塞直到超时（2026-06-11 误报"不是 git 仓库"
+# 的真因——is_git_repo 内的 rev-parse 挂死被当成非仓库）。
+_GIT_ENV = {
+    **os.environ,
+    "GIT_TERMINAL_PROMPT": "0",
+    "GIT_ASKPASS": "echo",
+    "GCM_INTERACTIVE": "Never",
+    "GIT_OPTIONAL_LOCKS": "0",
+}
+
 
 def _git(repo: Path, *args: str, timeout_seconds: int = 60) -> str:
     """跑一条 git 命令：输出落临时文件 + 超时杀进程树（管道死锁免疫）。"""
@@ -32,8 +44,10 @@ def _git(repo: Path, *args: str, timeout_seconds: int = 60) -> str:
         with open(fd, "w", encoding="utf-8", errors="replace") as out:
             process = subprocess.Popen(
                 ["git", *_GIT_FLAGS, "-C", str(repo), *args],
+                stdin=subprocess.DEVNULL,  # 切断 stdin：git 无法等待交互输入而挂死
                 stdout=out,
                 stderr=subprocess.STDOUT,
+                env=_GIT_ENV,
             )
             try:
                 code = process.wait(timeout=timeout_seconds)

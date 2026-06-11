@@ -63,6 +63,25 @@ class TestGeometry:
         floor = by_name(compile_layout(spec, MANIFEST), "a_floor")
         assert floor.location[:2] == (5100.0, 6100.0)
 
+    def test_shared_wall_deduped(self):
+        """相邻房间共享边只保留一面墙，不再出现重合的双层薄墙（问题2修复）。"""
+        spec = LayoutSpec(
+            name="t",
+            rooms=[
+                Room(name="a", rect=(0, 0, 4, 4), doors=[Door(wall="east", at=1, width=2)]),
+                Room(name="b", rect=(4, 0, 4, 4), doors=[Door(wall="west", at=1, width=2)]),
+            ],
+        )
+        placements = compile_layout(spec, MANIFEST)
+        # 共享边 x=400 处：a 的 east 段与 b 的 west 段几乎重合，去重后不应同时存在
+        shared = [
+            p
+            for p in placements
+            if not p.name.endswith("_floor") and abs(p.location[0] - 400.0) <= 40.0
+        ]
+        # 门洞把共享墙切成上下两段，去重后该边总段数应 <= 2（而非 a、b 各 2 = 4 段）
+        assert len(shared) <= 2, f"共享墙未去重，仍有 {len(shared)} 段：{[p.name for p in shared]}"
+
 
 class TestValidation:
     def test_overlapping_rooms_rejected(self):
