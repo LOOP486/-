@@ -16,7 +16,7 @@ uv run ue5agent check-config
 
 ## 架构速览
 
-四层：agent 核心（`src/ue5agent/core/loop.py` 的 tool-calling 循环）→ MCP 工具层（`tools/mcp_client.py` 挂载外部 server，`mcp_servers/` 是自带 server）→ UE5 工程 → 知识层。模型路由按角色（planner/coder/vision）配置在 `config/models.yaml`，经 LiteLLM 适配任意 OpenAI 兼容 API。
+四层：Agent Kernel（`src/ue5agent/agent/runner.py` 阶段状态机，`core/loop.py` 为步内微循环引擎，见 ADR-0006）→ MCP 工具层（`tools/mcp_client.py` 挂载外部 server，`mcp_servers/` 是自带 server）→ UE5 工程 → 知识层。模型路由按角色（planner/coder/vision）配置在 `config/models.yaml`，经 LiteLLM 适配任意 OpenAI 兼容 API。
 
 完整设计在 docs/architecture/design.md；动架构前先读它和 docs/architecture/decisions/ 下的 ADR。
 

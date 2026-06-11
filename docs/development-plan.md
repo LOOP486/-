@@ -29,7 +29,7 @@
 - **K1 已完成（2026-06-10）**：`agent/state.py`（TaskSession/PlanStep/Artifact/Budgets + 持久化）、`agent/events.py`（类型化 TraceEvent + RunWriter + runs/ 产物目录）；loop 经 TraceSink 协议解耦并直写新 trace；chat 落 runs/，trace 命令双目录兼容。
 - **K2 已完成（2026-06-10）**：`agent/tool_pipeline.py` 吸收调用链，新增参数规范化（数字/布尔温和转型、路径分隔符归一）、ToolOutcome 结果信封、失败签名熔断（连续同类错误升级提示，K4 recovery 的数据源）；registry 瘦身为注册表。
 - **K3 已完成（2026-06-10）**：权限升 4 级（READ/WRITE_SAFE/WRITE_PROJECT/DANGEROUS），WRITE_PROJECT 前置自动 checkpoint、DANGEROUS 白名单+确认双条件；repo_tools MCP server（checkpoint/status/list/restore，write-tree 快照不动工作区）；agent_test 工程已纳入 git。
-- **K4 核心已落地（2026-06-11）**：TaskRunner 阶段机（planner/verifier/recovery/report），trivial fast path，步内微循环复用 AgentLoop，judge 三态验收（只看工具证据），失败重试带理由回灌、超限放弃跳步。六条状态路径单测全绿。**K4 收尾**：真模型门禁（eval ≥ 基线 + e2e 走 TaskRunner）→ K5 切换清理 + ADR-0006。
+- **K4 核心已落地（2026-06-11）**：TaskRunner 阶段机（planner/verifier/recovery/report），trivial fast path，步内微循环复用 AgentLoop，judge 三态验收（只看工具证据），失败重试带理由回灌、超限放弃跳步。六条状态路径单测全绿。**K4/K5 已完成（2026-06-11）**：真模型门禁通过——eval 两档 18 任务满分持平基线；e2e 走 TaskRunner 全程成功（planner 拆 3 步、s3 被 judge 打回后重试通过=恢复路径真实触发）。K5 切换：chat/e2e 接 runner、session_log 删除、ADR-0006 落档。kernel 重构仅剩 K6（能力注册表，可选尾巴）。
 - **M6 完成 = Phase 0 完成（2026-06-11）**：agent（DeepSeek）自主端到端通过——5 轮 7 工具调用写出 BlueprintFunctionLibrary 并编译成功（7.51s 零错误），写文件前自动 checkpoint。过程中排除三个真实挂死根因（均非模型问题）：① MCP 子进程缺 env；② UBT 等锁/管道死锁→临时文件重定向+taskkill /T+墙钟预算；③ UBT git 工作集探测与 checkpoint 抢锁→全局 BuildConfiguration.xml 禁用。首批真实 trace 已归档 runs/，作为 K4 设计输入。
 
 ## 后续阶段（Phase 0.5 之后）

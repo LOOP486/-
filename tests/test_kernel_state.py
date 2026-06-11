@@ -3,11 +3,10 @@
 import pytest
 
 from tests.test_loop import FakeModel, make_registry
-from ue5agent.agent.events import EVENT_TYPES, RunWriter, latest_trace
+from ue5agent.agent.events import EVENT_TYPES, RunWriter, latest_trace, read_events
 from ue5agent.agent.state import Budgets, PlanStep, TaskSession
 from ue5agent.core.loop import AgentLoop
 from ue5agent.llm.types import AssistantTurn, ToolCall
-from ue5agent.session_log import read_events
 
 
 class TestTaskSession:
@@ -73,6 +72,12 @@ class TestRunWriter:
         kinds = [e["event"] for e in read_events(writer.trace_path)]
         assert kinds == ["run_start", "llm_turn", "tool_call", "llm_turn", "run_end"]
         assert all(kind in EVENT_TYPES for kind in kinds)
+
+
+def test_read_events_skips_corrupt_lines(tmp_path):
+    path = tmp_path / "t.jsonl"
+    path.write_text('{"event": "a"}\n{broken\n{"event": "b"}\n', encoding="utf-8")
+    assert [e["event"] for e in read_events(path)] == ["a", "b"]
 
 
 class TestLatestTrace:

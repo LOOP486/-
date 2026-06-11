@@ -3,11 +3,10 @@
 import json
 
 from tests.test_loop import FakeModel, make_registry
-from ue5agent.agent.events import RunWriter
+from ue5agent.agent.events import RunWriter, read_events
 from ue5agent.agent.runner import TaskRunner
 from ue5agent.agent.state import TaskSession
 from ue5agent.llm.types import AssistantTurn
-from ue5agent.session_log import read_events
 
 
 def plan(task_class: str, *intents_acceptance: tuple[str, str]) -> AssistantTurn:

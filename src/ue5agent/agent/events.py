@@ -83,6 +83,19 @@ class RunWriter:
         return path
 
 
+def read_events(path: Path) -> list[dict[str, Any]]:
+    """读取一份 trace 的全部事件（坏行跳过，不让单行损坏毁掉回放）。"""
+    events = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            events.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return events
+
+
 def latest_trace(root: Path) -> Path | None:
     """runs/ 下最新一次运行的 trace（目录名以时间戳开头，字典序即时间序）。"""
     if not root.exists():

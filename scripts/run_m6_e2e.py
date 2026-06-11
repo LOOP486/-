@@ -11,9 +11,9 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from ue5agent.agent.events import RunWriter
+from ue5agent.agent.runner import KERNEL_SYSTEM_PROMPT, TaskRunner
 from ue5agent.agent.state import TaskSession
 from ue5agent.config import load_agent_settings, load_models_config
-from ue5agent.core.loop import SYSTEM_PROMPT, AgentLoop
 from ue5agent.core.permissions import PermissionGate
 from ue5agent.llm.client import LiteLLMClient
 from ue5agent.mcp_servers.repo_tools import gitops
@@ -66,22 +66,16 @@ async def main() -> None:
     ue_build_only = {k: v for k, v in settings.mcp_servers.items() if k == "ue_build"}
     async with McpManager(ue_build_only) as manager:
         await manager.register_all(registry)
-        loop = AgentLoop(
+        runner = TaskRunner(
             llm,
             registry,
-            system_prompt=SYSTEM_PROMPT + PROJECT_CONTEXT,
-            max_iterations=25,
-            session_log=writer,
+            writer,
+            system_prompt=KERNEL_SYSTEM_PROMPT + PROJECT_CONTEXT,
+            step_max_iterations=15,
         )
-        result = await loop.run(TASK)
-        writer.write_report(result.final_text)
-        session.status = "done"
-        writer.save_session()
-        print(result.final_text)
-        print(
-            f"\n=== turns={result.turns} tools={result.tool_call_count} "
-            f"tokens={result.prompt_tokens}+{result.completion_tokens} ==="
-        )
+        outcome = await runner.run(TASK)
+        print(outcome.report)
+        print(f"\n=== success={outcome.success} session={outcome.session_id} ===")
         print(f"trace: {writer.trace_path}")
 
 

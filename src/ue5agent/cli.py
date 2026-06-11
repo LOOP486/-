@@ -62,12 +62,11 @@ def trace(
     path: Path | None = typer.Argument(None, help="trace 文件；缺省取 sessions/ 最新一份"),
 ) -> None:
     """回放查看一次会话：逐轮模型决策、工具调用、耗时与 token。"""
-    from ue5agent.agent.events import latest_trace
-    from ue5agent.session_log import latest_session, read_events
+    from ue5agent.agent.events import latest_trace, read_events
 
-    target = path or latest_trace(Path("runs")) or latest_session(Path("sessions"))
+    target = path or latest_trace(Path("runs"))
     if target is None or not target.exists():
-        console.print("[red]找不到 trace 文件（runs/ 与 sessions/ 均为空？）[/red]")
+        console.print("[red]找不到 trace 文件（runs/ 为空？）[/red]")
         raise typer.Exit(1)
     console.print(f"[dim]{target}[/dim]")
     for event in read_events(target):
@@ -233,8 +232,8 @@ def _build_checkpoint_hook(settings: AgentSettings):
 async def _chat(config: ModelsConfig, settings: AgentSettings) -> None:
     # litellm 导入耗时数秒，放到真正需要时再加载
     from ue5agent.agent.events import RunWriter
-    from ue5agent.agent.state import Budgets, TaskSession
-    from ue5agent.core.loop import AgentLoop
+    from ue5agent.agent.runner import TaskRunner
+    from ue5agent.agent.state import TaskSession
     from ue5agent.core.permissions import PermissionGate
     from ue5agent.llm.client import LiteLLMClient
     from ue5agent.tools.mcp_client import McpManager
@@ -244,38 +243,23 @@ async def _chat(config: ModelsConfig, settings: AgentSettings) -> None:
     registry = ToolRegistry(
         PermissionGate(confirmer=_cli_confirm, checkpoint=_build_checkpoint_hook(settings))
     )
-    session = TaskSession.new(
-        "interactive-chat",
-        budgets=Budgets(
-            max_iterations=settings.limits.max_iterations,
-            max_tool_result_chars=settings.limits.max_tool_result_chars,
-            compact_budget_chars=settings.limits.compact_budget_chars,
-        ),
-    )
-    log = RunWriter(Path("runs"), session)
     async with McpManager(settings.mcp_servers) as manager:
         await manager.register_all(registry)
-        loop = AgentLoop(
-            llm,
-            registry,
-            max_iterations=settings.limits.max_iterations,
-            max_tool_result_chars=settings.limits.max_tool_result_chars,
-            compact_budget_chars=settings.limits.compact_budget_chars,
-            session_log=log,
-        )
         console.print(f"[dim]已加载 {len(registry)} 个工具；输入 exit 退出[/dim]")
-        history: list[dict[str, Any]] = []
+        # 每条输入是一个独立 TaskSession（runs/ 一个目录）；跨任务记忆留给后续里程碑
         while True:
             user_input = console.input("[bold cyan]you ›[/bold cyan] ").strip()
             if user_input.lower() in {"exit", "quit"}:
                 break
             if not user_input:
                 continue
-            result = await loop.run(user_input, history=history)
-            console.print(result.final_text)
-            console.print(
-                f"[dim]{result.turns} 轮 · {result.tool_call_count} 次工具调用 · "
-                f"trace {log.trace_path}[/dim]"
+            writer = RunWriter(Path("runs"), TaskSession.new(user_input[:40]))
+            runner = TaskRunner(
+                llm,
+                registry,
+                writer,
+                step_max_iterations=settings.limits.max_iterations,
             )
-        session.status = "done"
-        log.save_session()
+            outcome = await runner.run(user_input)
+            console.print(outcome.report)
+            console.print(f"[dim]trace {writer.trace_path}[/dim]")
