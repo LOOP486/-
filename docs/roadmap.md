@@ -24,9 +24,9 @@
 
 ## Phase 2：白盒搭建子系统
 
-- [ ] 资产 manifest 工具链（自动扫描出草稿 + 人工补语义）
-- [ ] 布局 DSL schema 与布局编译器（见 ADR-0004）
-- [ ] actors_spawn_batch + 整批回滚
+- [x] 资产 manifest v1（LevelPrototyping 套件，config/whitebox/；自动扫描草稿待资产包到位后做）
+- [x] 布局 DSL 与编译器 v1（矩形房间/四向墙/门洞，几何与校验有单测，见 ADR-0004）
+- [x] 批量 spawn + 前缀整批回滚（已对真实编辑器落地 12 件双房间布局验证）
 - [ ] 校验器：重叠/封闭/连通 + 关卡 metrics 表 + NavMesh 可达性
 - [ ] 视觉迭代：俯视/漫游截图 → vision 审查 → 局部重生成
 - [ ] 验收：文字需求 + 模块资产库 → 可走通的白盒关卡 + 截图证据

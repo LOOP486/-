@@ -1,0 +1,25 @@
+# 白盒资产清单：UE5 第三人称模板自带 LevelPrototyping 套件
+# size 为缩放=1 时的包围盒（uu）；白盒主体用 cube 缩放实现，其余为点缀件
+grid: 100
+
+assets:
+  cube:
+    path: /Game/LevelPrototyping/Meshes/SM_Cube
+    size: [100, 100, 100]
+    category: block
+  ramp:
+    path: /Game/LevelPrototyping/Meshes/SM_Ramp
+    size: [100, 100, 100]
+    category: ramp
+  cylinder:
+    path: /Game/LevelPrototyping/Meshes/SM_Cylinder
+    size: [100, 100, 100]
+    category: prop
+  plane:
+    path: /Game/LevelPrototyping/Meshes/SM_Plane
+    size: [100, 100, 1]
+    category: floor
+  door_frame_edge:
+    path: /Game/LevelPrototyping/Interactable/Door/Meshes/SM_DoorFrame_Edge
+    size: [100, 20, 300]
+    category: door
