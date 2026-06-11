@@ -52,6 +52,36 @@ class Placement:
     scale: tuple[float, float, float]
 
 
+def layout_from_dict(data: dict) -> LayoutSpec:
+    """模型产出的 JSON → LayoutSpec（结构错误转为可读的 LayoutError）。"""
+    try:
+        rooms = []
+        for raw in data["rooms"]:
+            rect = tuple(int(v) for v in raw["rect"])
+            if len(rect) != 4:
+                raise LayoutError(f"房间 {raw.get('name')} 的 rect 必须是 [x, y, 宽, 深]")
+            rooms.append(
+                Room(
+                    name=str(raw["name"]),
+                    rect=rect,
+                    doors=[
+                        Door(wall=str(d["wall"]), at=int(d["at"]), width=int(d.get("width", 1)))
+                        for d in raw.get("doors", [])
+                    ],
+                )
+            )
+        origin = tuple(float(v) for v in data.get("origin", (0, 0, 0)))
+        return LayoutSpec(
+            name=str(data.get("name", "layout")),
+            rooms=rooms,
+            wall_height=float(data.get("wall_height", 300)),
+            wall_thickness=float(data.get("wall_thickness", 20)),
+            origin=origin,
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise LayoutError(f"布局 JSON 结构不合法：{exc}") from exc
+
+
 def compile_layout(spec: LayoutSpec, manifest: Manifest) -> list[Placement]:
     _validate(spec)
     cube = manifest.require("cube")
@@ -82,6 +112,54 @@ def _validate(spec: LayoutSpec) -> None:
         for b in spec.rooms[i + 1 :]:
             if _interiors_overlap(a.rect, b.rect):
                 raise LayoutError(f"房间 {a.name} 与 {b.name} 内部重叠")
+    _validate_connectivity(spec)
+
+
+def _validate_connectivity(spec: LayoutSpec) -> None:
+    """门图连通性：多房间布局必须通过对齐的门洞连成一体（设计 §6.3 校验环）。"""
+    if len(spec.rooms) < 2:
+        return
+    segments = {room.name: _door_world_segments(room) for room in spec.rooms}
+    adjacency: dict[str, set[str]] = {room.name: set() for room in spec.rooms}
+    names = list(adjacency)
+    for i, a in enumerate(names):
+        for b in names[i + 1 :]:
+            for axis_a, coord_a, lo_a, hi_a in segments[a]:
+                for axis_b, coord_b, lo_b, hi_b in segments[b]:
+                    if axis_a != axis_b or coord_a != coord_b:
+                        continue
+                    if min(hi_a, hi_b) - max(lo_a, lo_b) >= 1:  # 重叠至少 1 格才走得过去
+                        adjacency[a].add(b)
+                        adjacency[b].add(a)
+    visited = {names[0]}
+    queue = [names[0]]
+    while queue:
+        for neighbor in adjacency[queue.pop()]:
+            if neighbor not in visited:
+                visited.add(neighbor)
+                queue.append(neighbor)
+    orphans = [n for n in names if n not in visited]
+    if orphans:
+        raise LayoutError(
+            f"房间不连通：{('、'.join(orphans))} 无法从 {names[0]} 到达——"
+            "相邻房间需要在共享墙的同一位置各开一个对齐的门"
+        )
+
+
+def _door_world_segments(room: Room) -> list[tuple[str, int, int, int]]:
+    """门洞的世界格区间：(边轴, 边坐标, 起, 止)，用于判断两房间的门是否对穿。"""
+    x, y, w, d = room.rect
+    out = []
+    for door in room.doors:
+        if door.wall == "south":
+            out.append(("y", y, x + door.at, x + door.at + door.width))
+        elif door.wall == "north":
+            out.append(("y", y + d, x + door.at, x + door.at + door.width))
+        elif door.wall == "west":
+            out.append(("x", x, y + door.at, y + door.at + door.width))
+        else:  # east
+            out.append(("x", x + w, y + door.at, y + door.at + door.width))
+    return out
 
 
 def _interiors_overlap(a: tuple[int, int, int, int], b: tuple[int, int, int, int]) -> bool:

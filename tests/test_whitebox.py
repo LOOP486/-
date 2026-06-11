@@ -73,12 +73,55 @@ class TestValidation:
         with pytest.raises(LayoutError, match="重叠"):
             compile_layout(spec, MANIFEST)
 
-    def test_touching_rooms_allowed(self):
+    def test_touching_rooms_with_aligned_doors_allowed(self):
+        spec = LayoutSpec(
+            name="t",
+            rooms=[
+                Room(name="a", rect=(0, 0, 4, 4), doors=[Door(wall="east", at=1, width=2)]),
+                Room(name="b", rect=(4, 0, 4, 4), doors=[Door(wall="west", at=1, width=2)]),
+            ],
+        )
+        assert compile_layout(spec, MANIFEST)
+
+    def test_disconnected_rooms_rejected(self):
         spec = LayoutSpec(
             name="t",
             rooms=[Room(name="a", rect=(0, 0, 4, 4)), Room(name="b", rect=(4, 0, 4, 4))],
         )
-        assert compile_layout(spec, MANIFEST)
+        with pytest.raises(LayoutError, match="不连通"):
+            compile_layout(spec, MANIFEST)
+
+    def test_misaligned_doors_rejected(self):
+        spec = LayoutSpec(
+            name="t",
+            rooms=[
+                Room(name="a", rect=(0, 0, 4, 4), doors=[Door(wall="east", at=0, width=1)]),
+                Room(name="b", rect=(4, 0, 4, 4), doors=[Door(wall="west", at=3, width=1)]),
+            ],
+        )
+        with pytest.raises(LayoutError, match="不连通"):
+            compile_layout(spec, MANIFEST)
+
+    def test_layout_from_dict_roundtrip(self):
+        from ue5agent.whitebox.compiler import layout_from_dict
+
+        spec = layout_from_dict(
+            {
+                "name": "demo",
+                "origin": [5000, 5000, 0],
+                "rooms": [
+                    {"name": "a", "rect": [0, 0, 4, 4], "doors": [{"wall": "east", "at": 1}]},
+                    {"name": "b", "rect": [4, 0, 4, 4], "doors": [{"wall": "west", "at": 1}]},
+                ],
+            }
+        )
+        assert len(compile_layout(spec, MANIFEST)) > 0
+
+    def test_layout_from_dict_bad_structure(self):
+        from ue5agent.whitebox.compiler import layout_from_dict
+
+        with pytest.raises(LayoutError, match="不合法"):
+            layout_from_dict({"rooms": [{"name": "a"}]})
 
     def test_door_out_of_range_rejected(self):
         spec = LayoutSpec(

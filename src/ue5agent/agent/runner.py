@@ -8,13 +8,14 @@ intake/plan → 逐步 [execute（步内微循环 AgentLoop）→ verify（judge
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from typing import Any
 
 from ue5agent.agent.events import RunWriter
 from ue5agent.agent.planner import make_plan
 from ue5agent.agent.report import build_report
-from ue5agent.agent.verifier import verify_step
+from ue5agent.agent.verifier import VerifyResult, verify_step
 from ue5agent.core.loop import AgentLoop, BudgetExhausted
 from ue5agent.llm.types import ChatModel
 from ue5agent.tools.registry import ToolRegistry
@@ -65,6 +66,8 @@ class TaskRunner:
         system_prompt: str = KERNEL_SYSTEM_PROMPT,
         max_step_attempts: int = 3,
         step_max_iterations: int = 15,
+        step_wall_seconds: float = 300.0,
+        total_wall_seconds: float = 1200.0,
     ):
         self._llm = llm
         self._registry = registry
@@ -73,14 +76,19 @@ class TaskRunner:
         self._system_prompt = system_prompt
         self._max_step_attempts = max_step_attempts
         self._step_max_iterations = step_max_iterations
+        self._step_wall_seconds = step_wall_seconds
+        self._total_wall_seconds = total_wall_seconds
 
     async def run(self, goal: str) -> RunOutcome:
         session = self._session
         session.goal = goal
         self._writer.event("run_start", phase="intake", user_input=goal)
 
+        deadline = time.monotonic() + self._total_wall_seconds
         self._writer.event("phase_enter", phase="plan")
-        session.task_class, session.plan = await make_plan(self._llm, goal)
+        session.task_class, session.plan = await make_plan(
+            self._llm, goal, tool_names=self._registry.names()
+        )
         self._writer.event(
             "phase_exit",
             phase="plan",
@@ -95,6 +103,7 @@ class TaskRunner:
             self._registry,
             system_prompt=self._system_prompt,
             max_iterations=self._step_max_iterations,
+            max_wall_seconds=self._step_wall_seconds,
             session_log=tee,
         )
         history: list[dict[str, Any]] = []
@@ -108,6 +117,12 @@ class TaskRunner:
             session.current_step = index
             step.status = "running"
             while True:
+                if time.monotonic() >= deadline:
+                    step.status = "failed"
+                    aborted = True
+                    summaries.setdefault(step.id, "[会话总预算耗尽]")
+                    self._writer.event("budget_warning", step_id=step.id, reason="total_wall_clock")
+                    break
                 step.attempts += 1
                 tee.reset()
                 self._writer.event("phase_enter", phase="execute", step_id=step.id)
@@ -120,16 +135,21 @@ class TaskRunner:
                     summaries[step.id] = result.final_text
                 except BudgetExhausted as exc:
                     summaries[step.id] = f"[步内预算耗尽] {exc}"
+                except Exception as exc:  # LLM/工具底层故障：记为步骤失败，不炸整个会话
+                    summaries[step.id] = f"[步骤异常] {type(exc).__name__}: {exc}"
                 self._writer.event("phase_exit", phase="execute", step_id=step.id)
 
-                verdict = await verify_step(
-                    self._llm,
-                    goal=goal,
-                    intent=step.intent,
-                    acceptance=step.acceptance,
-                    evidence=tee.evidence(),
-                    summary=summaries.get(step.id, ""),
-                )
+                try:
+                    verdict = await verify_step(
+                        self._llm,
+                        goal=goal,
+                        intent=step.intent,
+                        acceptance=step.acceptance,
+                        evidence=tee.evidence(),
+                        summary=summaries.get(step.id, ""),
+                    )
+                except Exception as exc:  # judge 不可用时按失败处理，走重试/放弃
+                    verdict = VerifyResult("fail", f"验收过程异常：{type(exc).__name__}: {exc}")
                 self._writer.event(
                     "verify_result",
                     step_id=step.id,

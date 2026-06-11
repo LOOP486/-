@@ -20,19 +20,28 @@ PLAN_PROMPT = """\
 规则：
 - trivial：单步即可完成的查询或小改动，steps 恰好 1 个；
 - standard：拆 2-5 步，每步的 acceptance 必须可被证据验证（如"编译零错误"）；
-- 修改类任务的最后一步必须包含验证（编译/测试/检查）。
+- 修改类任务的最后一步必须包含验证（编译/测试/检查）；
+- 步骤只做任务直接需要的事——不要安排环境检查、状态确认等无关步骤；
+- 任务一个工具能完成时就规划成 1-2 步，不要为了凑步骤而拆分。
 """
 
 _FENCE = re.compile(r"^```(?:json)?\s*(?P<body>.*?)\s*```\s*$", re.DOTALL)
 
 
 async def make_plan(
-    llm: ChatModel, goal: str, *, role: str = "planner"
+    llm: ChatModel,
+    goal: str,
+    *,
+    role: str = "planner",
+    tool_names: list[str] | None = None,
 ) -> tuple[str, list[PlanStep]]:
+    system = PLAN_PROMPT
+    if tool_names:
+        system += f"\n可用工具（步骤里只能依赖这些）：{', '.join(tool_names)}\n"
     turn = await llm.acomplete(
         role,
         [
-            {"role": "system", "content": PLAN_PROMPT},
+            {"role": "system", "content": system},
             {"role": "user", "content": goal},
         ],
     )

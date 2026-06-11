@@ -112,6 +112,39 @@ async def test_garbage_plan_falls_back_to_single_step(tmp_path):
     assert writer.session.plan[0].intent == "某个任务"
 
 
+async def test_total_wall_budget_aborts(tmp_path):
+    """会话总预算为 0：不执行任何步骤直接放弃——3 小时跑不完类问题的总闸。"""
+    model = FakeModel([plan("standard", ("做 A", "A 完成"), ("做 B", "B 完成"))])
+    writer = RunWriter(tmp_path, TaskSession.new("预算测试"))
+    runner = TaskRunner(model, make_registry(), writer, total_wall_seconds=0)
+    outcome = await runner.run("预算耗尽场景")
+    assert not outcome.success
+    assert writer.session.plan[0].status == "failed"
+    assert writer.session.plan[1].status == "skipped"
+    events = [e["event"] for e in read_events(writer.trace_path)]
+    assert "budget_warning" in events
+
+
+async def test_step_exception_recorded_not_crash(tmp_path):
+    """LLM 层异常计为步骤失败，不炸整个会话（仍产出报告）。"""
+
+    class ExplodingModel:
+        def __init__(self):
+            self.calls = 0
+
+        async def acomplete(self, role, messages, tools=None):
+            self.calls += 1
+            if self.calls == 1:
+                return plan("standard", ("做 A", "A 完成"))
+            raise RuntimeError("API 永久故障")
+
+    writer = RunWriter(tmp_path, TaskSession.new("异常测试"))
+    runner = TaskRunner(ExplodingModel(), make_registry(), writer, max_step_attempts=1)
+    outcome = await runner.run("异常场景")
+    assert not outcome.success
+    assert "失败" in outcome.report
+
+
 async def test_insufficient_evidence_retries(tmp_path):
     runner, _, writer = make_runner(
         tmp_path,
