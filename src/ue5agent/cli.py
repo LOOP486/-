@@ -317,5 +317,13 @@ async def _execute_task(llm: Any, registry: Any, settings: AgentSettings, text: 
     writer = ConsoleRunWriter(Path("runs"), TaskSession.new(text[:40]))
     runner = TaskRunner(llm, registry, writer, step_max_iterations=settings.limits.max_iterations)
     outcome = await runner.run(text)
-    console.print(outcome.report)
-    console.print(f"[dim]trace {writer.trace_path}[/dim]")
+    # 主输出 = 完整答案；过程性报告归档 runs/，仅失败时展示以便排查
+    if outcome.success and outcome.final_answer:
+        console.print(outcome.final_answer)
+    else:
+        console.print(outcome.report)
+    steps = writer.session.plan
+    console.print(
+        f"[dim]{'完成' if outcome.success else '未完成'} · {len(steps)} 步 · "
+        f"报告与 trace：{writer.dir}[/dim]"
+    )

@@ -13,7 +13,7 @@ _STATUS_LABEL = {
 }
 
 
-def build_report(session: TaskSession, summaries: dict[str, str]) -> str:
+def build_report(session: TaskSession, summaries: dict[str, str], final_answer: str = "") -> str:
     lines = [
         f"# 任务报告：{session.goal}",
         "",
@@ -21,9 +21,10 @@ def build_report(session: TaskSession, summaries: dict[str, str]) -> str:
         f"- 结果：{'完成' if session.status == 'done' else session.status}"
         f"（{session.task_class}，{len(session.plan)} 步）",
         "",
-        "## 步骤",
-        "",
     ]
+    if final_answer:
+        lines += ["## 结果", "", final_answer, ""]
+    lines += ["## 步骤", ""]
     for step in session.plan:
         label = _STATUS_LABEL.get(step.status, step.status)
         lines.append(f"### {step.id} {step.intent} — {label}（尝试 {step.attempts} 次）")
@@ -31,7 +32,7 @@ def build_report(session: TaskSession, summaries: dict[str, str]) -> str:
             lines.append(f"- 验收标准：{step.acceptance}")
         summary = summaries.get(step.id)
         if summary:
-            lines.append(f"- 执行小结：{summary}")
+            lines.append(f"- 执行小结：{summary[:300]}")
         lines.append("")
     if session.artifacts:
         lines.append("## 产物")

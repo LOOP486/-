@@ -30,6 +30,8 @@ class RunOutcome:
     success: bool
     report: str
     session_id: str
+    final_answer: str = ""
+    """最后一个执行步骤的完整答复——查询类任务的交付物，不截断。"""
 
 
 class _EvidenceTee:
@@ -115,7 +117,7 @@ class TaskRunner:
                 )
                 try:
                     result = await loop.run(prompt, role="coder", history=history)
-                    summaries[step.id] = result.final_text[:500]
+                    summaries[step.id] = result.final_text
                 except BudgetExhausted as exc:
                     summaries[step.id] = f"[步内预算耗尽] {exc}"
                 self._writer.event("phase_exit", phase="execute", step_id=step.id)
@@ -159,8 +161,10 @@ class TaskRunner:
             self._writer.save_session()
 
         session.status = "aborted" if aborted else "done"
+        executed = [s for s in session.plan if s.status in ("done", "failed")]
+        final_answer = summaries.get(executed[-1].id, "") if executed else ""
         self._writer.event("phase_enter", phase="final_report")
-        report = build_report(session, summaries)
+        report = build_report(session, summaries, final_answer=final_answer)
         self._writer.write_report(report)
         self._writer.save_session()
         self._writer.event(
@@ -168,4 +172,9 @@ class TaskRunner:
             turns=sum(s.attempts for s in session.plan),
             tool_calls=len(tee.tool_lines),
         )
-        return RunOutcome(success=not aborted, report=report, session_id=session.id)
+        return RunOutcome(
+            success=not aborted,
+            report=report,
+            session_id=session.id,
+            final_answer=final_answer,
+        )
