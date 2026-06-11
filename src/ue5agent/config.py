@@ -82,6 +82,14 @@ class LimitsConfig(BaseModel):
     compact_budget_chars: int = 200_000
 
 
+class PermissionsConfig(BaseModel):
+    allowlist: list[str] = Field(
+        default_factory=list,
+        description="dangerous 工具白名单（完整工具名，如 ue_lifecycle__editor_launch）；"
+        "放行仍需人工确认（双条件）",
+    )
+
+
 class AgentSettings(BaseModel):
     """agent.yaml：工程环境与运行参数，全部可缺省。"""
 
@@ -89,6 +97,7 @@ class AgentSettings(BaseModel):
     project: ProjectConfig | None = None
     mcp_servers: dict[str, McpServerConfig] = Field(default_factory=dict)
     limits: LimitsConfig = Field(default_factory=LimitsConfig)
+    permissions: PermissionsConfig = Field(default_factory=PermissionsConfig)
 
 
 def _load_yaml(path: Path) -> Any:

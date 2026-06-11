@@ -16,6 +16,17 @@ _DEFAULT_RETRIES = 2  # 偶发超时/瞬断的重试次数（连发高频请求�
 _RETRY_BACKOFF = 0.3  # 重试前退避（秒），给编辑器喘息，避免连发轰炸把桥打爆
 
 
+def probe_editor(*, host: str | None = None, port: int | None = None, timeout: float = 2.0) -> bool:
+    """探测编辑器桥端口是否可连接（只握手不发命令，适合状态检查与就绪轮询）。"""
+    host = host or os.environ.get("UE_MCP_HOST", "127.0.0.1")
+    port = port or int(os.environ.get("UE_MCP_PORT", DEFAULT_PORT))
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
 def _send_once(
     command: str, params: dict[str, Any] | None, host: str, port: int, timeout: float
 ) -> dict[str, Any]:

@@ -37,3 +37,4 @@ chat 里试一句「编译 MyGameEditor」——agent 会调用 ue_build 的 `ub
 - `uv: 无法识别` → 重开终端（安装后 PATH 需要重载）。
 - LLM 报 401 → 检查 `.env` 的 key 与 `models.yaml` 的 `api_key_env` 名称是否对应。
 - `ubt_compile` 报「引擎路径不对」→ `UE_ENGINE_ROOT` 应指向含 `Engine/` 的根目录，如 `C:/Program Files/Epic Games/UE_5.5`。
+- 编辑器类工具（场景/蓝图/白盒）报「编辑器桥连接被拒」→ 这些工具需要 UE 编辑器开着（UnrealMCP 插件随工程加载）。用 `editor_status` 工具可先查在线状态；想让 agent 自己启动编辑器，在 `agent.yaml` 挂载 `ue_lifecycle`（dangerous 级）并把 `ue_lifecycle__editor_launch` 加进 `permissions.allowlist`（见 example）。

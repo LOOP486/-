@@ -22,6 +22,14 @@ mcp_servers:
   ue_editor:
     command: ["uv", "run", "python", "-m", "ue5agent.mcp_servers.ue_editor"]
     permission: read # 编辑器桥只读工具；前置：UE 编辑器开启（UnrealMCP 插件）
+  ue_lifecycle:
+    command: ["uv", "run", "python", "-m", "ue5agent.mcp_servers.ue_lifecycle"]
+    permission: dangerous # 启动编辑器进程；还需加入下方 allowlist 才会放行
+
+# dangerous 级工具白名单（白名单 + 人工确认双条件，缺一即拒）
+permissions:
+  allowlist:
+    - ue_lifecycle__editor_launch
 
 limits:
   max_iterations: 40

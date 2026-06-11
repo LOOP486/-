@@ -16,6 +16,7 @@ from ue5agent.agent.events import RunWriter
 from ue5agent.agent.planner import make_plan
 from ue5agent.agent.report import build_report
 from ue5agent.agent.verifier import VerifyResult, verify_step
+from ue5agent.core.errors import is_env_unready
 from ue5agent.core.loop import AgentLoop, BudgetExhausted
 from ue5agent.llm.types import ChatModel
 from ue5agent.tools.registry import ToolRegistry
@@ -41,19 +42,23 @@ class _EvidenceTee:
     def __init__(self, writer: RunWriter):
         self._writer = writer
         self.tool_lines: list[str] = []
+        self.env_unready = False
+        """本次尝试中是否出现过环境未就绪错误（如编辑器桥连接被拒）。"""
 
     def write(self, event: str, **data: Any) -> None:
         self._writer.write(event, **data)
         if event == "tool_call":
-            self.tool_lines.append(
-                f"{data.get('tool')} -> {str(data.get('result_preview', ''))[:800]}"
-            )
+            preview = str(data.get("result_preview", ""))
+            self.tool_lines.append(f"{data.get('tool')} -> {preview[:800]}")
+            if is_env_unready(preview):
+                self.env_unready = True
 
     def evidence(self, last: int = 12) -> str:
         return "\n".join(self.tool_lines[-last:])
 
     def reset(self) -> None:
         self.tool_lines.clear()
+        self.env_unready = False
 
 
 class TaskRunner:
@@ -158,6 +163,22 @@ class TaskRunner:
                 )
                 if verdict.verdict == "pass":
                     step.status = "done"
+                    break
+                if tee.env_unready:
+                    # 环境未就绪（如编辑器桥连接被拒）：重试只会空耗预算，直接终止
+                    step.status = "failed"
+                    aborted = True
+                    hint = (
+                        "[环境未就绪] 编辑器桥连接被拒：请先启动 UE 编辑器并加载工程"
+                        "（UnrealMCP 插件随工程加载）后重跑。环境就绪前不再重试。"
+                    )
+                    summaries[step.id] = f"{summaries.get(step.id, '')}\n\n{hint}".strip()
+                    self._writer.event(
+                        "recover_action",
+                        step_id=step.id,
+                        action="abort",
+                        reason="env_unready：编辑器桥不可达，跳过重试",
+                    )
                     break
                 if step.attempts >= self._max_step_attempts:
                     step.status = "failed"

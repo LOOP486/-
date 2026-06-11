@@ -12,6 +12,7 @@ from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
+from ue5agent.core.errors import mark_env_unready
 from ue5agent.whitebox.compiler import LayoutError, compile_layout, layout_from_dict
 from ue5agent.whitebox.manifest import load_manifest
 from ue5agent.whitebox.spawner import clear_layout, spawn_layout
@@ -61,6 +62,10 @@ def wb_build(layout_json: str, prefix: str = "WB") -> str:
         return f"[error] 落地前清理失败（编辑器开着吗？）：{exc}"
     try:
         names = spawn_layout(placements, prefix=prefix)
+    except ConnectionRefusedError:
+        return mark_env_unready(
+            "落地失败：编辑器桥连接被拒。请先启动 UE 编辑器并加载工程（UnrealMCP 插件随工程加载）"
+        )
     except (RuntimeError, OSError, ConnectionError) as exc:
         return f"[error] 落地失败（编辑器开着吗？）：{exc}"
     cleared_note = f"（已先清理 {cleared} 个旧构件）" if cleared else ""
@@ -75,6 +80,10 @@ def wb_clear(prefix: str = "WB") -> str:
     """整批删除指定前缀的白盒构件（回滚）。"""
     try:
         removed = clear_layout(prefix=prefix)
+    except ConnectionRefusedError:
+        return mark_env_unready(
+            "编辑器桥连接被拒。请先启动 UE 编辑器并加载工程（UnrealMCP 插件随工程加载）"
+        )
     except (OSError, ConnectionError) as exc:
         return f"[error] 编辑器桥通信失败：{exc}"
     return f"已删除 {removed} 个 {prefix}_ 构件"

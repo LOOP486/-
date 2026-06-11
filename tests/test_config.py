@@ -2,7 +2,7 @@
 
 import pytest
 
-from ue5agent.config import load_agent_settings, load_models_config
+from ue5agent.config import AgentSettings, load_agent_settings, load_models_config
 
 VALID_MODELS = """\
 providers:
@@ -60,6 +60,18 @@ def test_agent_settings_all_optional(tmp_path):
     assert settings.engine is None
     assert settings.limits.max_iterations == 10
     assert settings.mcp_servers == {}
+
+
+def test_permissions_allowlist_parsed(tmp_path):
+    path = tmp_path / "agent.yaml"
+    path.write_text(
+        "permissions: {allowlist: [ue_lifecycle__editor_launch]}\n",
+        encoding="utf-8",
+    )
+    settings = load_agent_settings(path)
+    assert settings.permissions.allowlist == ["ue_lifecycle__editor_launch"]
+    # 缺省空白名单：dangerous 工具全部拒绝
+    assert AgentSettings().permissions.allowlist == []
 
 
 def test_mcp_server_permission_validated(tmp_path):
