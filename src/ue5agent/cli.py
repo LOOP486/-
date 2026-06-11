@@ -194,6 +194,33 @@ def chat(models: Path = DEFAULT_MODELS, agent: Path = DEFAULT_AGENT) -> None:
     asyncio.run(_chat(config, settings))
 
 
+@app.command("run")
+def run_command(
+    task: str,
+    models: Path = DEFAULT_MODELS,
+    agent: Path = DEFAULT_AGENT,
+) -> None:
+    """一次性执行单个任务并输出报告（脚本与排查友好）。"""
+    config = _require_models(models)
+    settings = load_agent_settings(agent) if agent.exists() else AgentSettings()
+    asyncio.run(_run_single(config, settings, task))
+
+
+async def _run_single(config: ModelsConfig, settings: AgentSettings, task: str) -> None:
+    from ue5agent.core.permissions import PermissionGate
+    from ue5agent.llm.client import LiteLLMClient
+    from ue5agent.tools.mcp_client import McpManager
+    from ue5agent.tools.registry import ToolRegistry
+
+    llm = LiteLLMClient(config)
+    registry = ToolRegistry(
+        PermissionGate(confirmer=_cli_confirm, checkpoint=_build_checkpoint_hook(settings))
+    )
+    async with McpManager(settings.mcp_servers) as manager:
+        await manager.register_all(registry)
+        await _execute_task(llm, registry, settings, task)
+
+
 def _require_models(path: Path) -> ModelsConfig:
     if not path.exists():
         console.print(f"[red]未找到 {path}[/red]，请从 config/models.example.yaml 复制并填写")
@@ -231,9 +258,6 @@ def _build_checkpoint_hook(settings: AgentSettings):
 
 async def _chat(config: ModelsConfig, settings: AgentSettings) -> None:
     # litellm 导入耗时数秒，放到真正需要时再加载
-    from ue5agent.agent.events import RunWriter
-    from ue5agent.agent.runner import TaskRunner
-    from ue5agent.agent.state import TaskSession
     from ue5agent.core.permissions import PermissionGate
     from ue5agent.llm.client import LiteLLMClient
     from ue5agent.tools.mcp_client import McpManager
@@ -253,13 +277,45 @@ async def _chat(config: ModelsConfig, settings: AgentSettings) -> None:
                 break
             if not user_input:
                 continue
-            writer = RunWriter(Path("runs"), TaskSession.new(user_input[:40]))
-            runner = TaskRunner(
-                llm,
-                registry,
-                writer,
-                step_max_iterations=settings.limits.max_iterations,
-            )
-            outcome = await runner.run(user_input)
-            console.print(outcome.report)
-            console.print(f"[dim]trace {writer.trace_path}[/dim]")
+            await _execute_task(llm, registry, settings, user_input)
+
+
+async def _execute_task(llm: Any, registry: Any, settings: AgentSettings, text: str) -> None:
+    """执行单个任务：实时回显进度，结束打印报告。"""
+    from ue5agent.agent.events import RunWriter
+    from ue5agent.agent.runner import TaskRunner
+    from ue5agent.agent.state import TaskSession
+
+    class ConsoleRunWriter(RunWriter):
+        """关键 trace 事件回显终端——长任务不再"看起来没反应"。"""
+
+        def event(self, event_type: str, **kwargs: Any) -> None:
+            super().event(event_type, **kwargs)
+            if event_type == "phase_exit" and kwargs.get("phase") == "plan":
+                steps = kwargs.get("steps") or []
+                console.print(
+                    f"[dim]计划（{kwargs.get('task_class')}，{len(steps)} 步）："
+                    f"{'；'.join(str(s)[:40] for s in steps)}[/dim]"
+                )
+            elif event_type == "tool_call":
+                console.print(
+                    f"[dim]  ↳ {kwargs.get('tool')}（{kwargs.get('duration_ms', 0)}ms）[/dim]"
+                )
+            elif event_type == "verify_result":
+                color = "green" if kwargs.get("verdict") == "pass" else "yellow"
+                console.print(
+                    f"[{color}]  验收 {kwargs.get('step_id')}：{kwargs.get('verdict')}"
+                    f" {str(kwargs.get('reason', ''))[:60]}[/{color}]"
+                )
+            elif event_type == "recover_action":
+                console.print(
+                    f"[yellow]  {kwargs.get('action')} {kwargs.get('step_id')}："
+                    f"{str(kwargs.get('reason', ''))[:60]}[/yellow]"
+                )
+
+    console.print("[dim]任务执行中（规划→执行→验收）…[/dim]")
+    writer = ConsoleRunWriter(Path("runs"), TaskSession.new(text[:40]))
+    runner = TaskRunner(llm, registry, writer, step_max_iterations=settings.limits.max_iterations)
+    outcome = await runner.run(text)
+    console.print(outcome.report)
+    console.print(f"[dim]trace {writer.trace_path}[/dim]")

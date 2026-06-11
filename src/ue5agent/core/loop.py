@@ -139,7 +139,7 @@ class AgentLoop:
                         arguments=call.arguments[:500],
                         duration_ms=tool_duration_ms,
                         result_chars=len(tool_result),
-                        result_preview=tool_result[:200],
+                        result_preview=tool_result[:800],
                     )
                 messages.append(
                     {

@@ -43,7 +43,7 @@ class _EvidenceTee:
         self._writer.write(event, **data)
         if event == "tool_call":
             self.tool_lines.append(
-                f"{data.get('tool')} -> {str(data.get('result_preview', ''))[:200]}"
+                f"{data.get('tool')} -> {str(data.get('result_preview', ''))[:800]}"
             )
 
     def evidence(self, last: int = 12) -> str:
