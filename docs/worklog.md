@@ -2,7 +2,11 @@
 
 > 最后更新：2026-06-12。新对话接手前先读本页 + [development-plan.md](development-plan.md)。
 > 架构权威版：[architecture/design.md](architecture/design.md) + ADR 0001–0006。
-> ✅ 最新结论：白盒落地的"编辑器崩溃"已根治**并经完整 agent 端到端验收通过**（run 20260611-222536，全程无 Fatal/无 10061、崩溃目录零新增、verify=pass）。Phase 2 白盒端到端核验**已完成**。机制见踩坑史第 7 条。
+> ✅ 最新结论：**Stage A1–A3 完成（2026-06-12）**——插件新增 viewport_screenshot/
+> navmesh_rebuild/path_test 三命令（UE5.7 编译实测通过，navmesh 可自动补 NavMeshBoundsVolume）；
+> wb_validate 确定性校验器（期望/实测对照，真机正负样本通过）；证据信封 v1（[facts] 标记 →
+> ToolOutcome.facts → 验收两段式：确定性规则先行不调 LLM，judge 兜底）。
+> eval 两档满分持平基线，165 单测全绿，mypy 零错误。Stage A 仅剩 A4 视觉迭代（等 vision key）。
 
 ## 项目一句话
 
@@ -15,9 +19,11 @@ ue5agent：UE5 游戏开发 agent——C++ 实现功能、蓝图只读理解、�
 |---|---|
 | Phase 0（C++ 编译闭环） | ✅ 完成。agent 自主「写 BlueprintFunctionLibrary→编译 7.51s 零错误」验收通过 |
 | Kernel 重构 K0–K5 | ✅ 完成（ADR-0006）。K6 能力注册表可选未做 |
-| Phase 1 编辑器桥 P1.1 | ✅ 完成。UnrealMCP 插件（flopperam fork）编译于 UE5.7+VS2026；自研瘦桥 ue_editor（4 只读工具） |
-| P1.3 蓝图伪代码视图 | ⬜ 未做（bp_read/bp_analyze 是底料） |
-| P1.4 NavMesh/截图 | ⬜ 未做（需扩插件 C++ 命令 + 重启编辑器） |
+| Phase 1 编辑器桥 P1.1 | ✅ 完成。UnrealMCP 插件（flopperam fork）编译于 UE5.7+VS2026；自研瘦桥 ue_editor（4 只读工具 + A1 三验证工具） |
+| P1.3 蓝图伪代码视图 | ⬜ 未做（bp_read/bp_analyze 是底料，= Stage C2） |
+| P1.4 NavMesh/截图 | ✅ 完成（2026-06-12 以 Stage A1 完成：插件三命令 + 真机三房间验证） |
+| Stage A2 白盒校验器 | ✅ 完成。wb_validate（缺件/多件/漂移/穿插 + metrics），真机正负样本通过 |
+| Stage A3 证据信封 | ✅ 完成。[facts] → ToolOutcome.facts → trace；验收两段式（deterministic 优先） |
 | Phase 2 白盒 | ✅ 完成：manifest + 布局 DSL 编译器（含门图连通性校验）+ wb_build/wb_clear MCP 工具。崩溃根因已根治（spawn 改运行唯一名，踩坑史第 7 条），**三房间完整 agent 端到端核验已通过**（run 20260611-222536：3 次 build 含"清旧建新"场景全程不崩、verify=pass、崩溃目录零新增） |
 
 ## 环境清单
@@ -42,6 +48,8 @@ ue5agent：UE5 游戏开发 agent——C++ 实现功能、蓝图只读理解、�
    - **致命陷阱**：任何依赖 `find` 的"删后复查 / spawn 前重名预检"对这种"僵尸名"天然失效（Python 侧视图 ≠ 引擎命名空间）。前一版按此思路修，崩溃照样复现——别再走回头路。
    - 根治（已实施，spawner.py v3）：spawn 名 = `WB_<批次时间戳base36>_<构件名>`（`_batch_token()`），新名在引擎命名空间必然空闲。clear 仍按 `WB_` 前缀整批回滚（唯一名仍带前缀可清，但 clear 只为防场景堆积，不再承担防崩职责）。
 8. **"卡很久没反应"的来源**：编辑器崩溃后桥端口关闭，agent 不会立即退出，而是对死掉的编辑器反复重试（每次 `WinError 10061 拒绝连接`，掺杂跑偏去编译 C++），把时间耗在无效重试上。根因（第 7 条）解决后不再触发崩溃，自然不再死循环；若仍见大量 10061，先确认编辑器进程是否还活着（`Get-Process *UnrealEditor*` + 探 55557 端口）。
+9. **任何异常都不准从"assistant 发出 tool_calls"到"tool 回包入列"之间逃逸**（2026-06-12 e2e 确诊）：一旦逃逸，history 里的 tool_calls 永远缺回包，该会话**之后每次** LLM 请求都被 API 拒（`insufficient tool messages following tool_calls`），步骤重试三次全空耗且报错样子像 API 故障。首个实例：非交互运行（bash 后台）下 WRITE_PROJECT 触发 `typer.confirm`，无 TTY 抛 Abort 从 gate 逃逸。已修三层：CLI 无 TTY 不挂确认器、pipeline 兜住 gate 一切异常转 [denied]、loop 调度异常转 [error] 仍回包（tests/test_loop.py::test_dispatch_exception_still_answers_tool_call）。若再见 BadRequestError 连发，先查 trace 里最后一个 llm_turn 是否带 tool_names 而其后无 tool_call 事件。
+   - **9b：TTY 启发式在 Git Bash/pty 包装下会误判**（同日二次实测）：单看 `sys.stdin.isatty()` 在 bash 后台仍为 True，确认器被挂上、Abort 被兜住返回 False → write_project 全部被拒（报"未获用户确认"）。已改 stdin+stdout 双检，且 `ue5agent run` 加 `--yes/-y`——**脚本化/agent 调用 run 一律带 --yes**，别赌启发式。
 
 ## 下一步（按序）
 

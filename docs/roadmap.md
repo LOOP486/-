@@ -27,8 +27,10 @@
 - [x] 资产 manifest v1（LevelPrototyping 套件，config/whitebox/；自动扫描草稿待资产包到位后做）
 - [x] 布局 DSL 与编译器 v1（矩形房间/四向墙/门洞，几何与校验有单测，见 ADR-0004）
 - [x] 批量 spawn + 前缀整批回滚（已对真实编辑器落地 12 件双房间布局验证；崩溃根因根治后三房间 agent 端到端核验通过）
-- [ ] 校验器：重叠/封闭/连通 + 关卡 metrics 表 + NavMesh 可达性（development-plan A1/A2）
-- [ ] 视觉迭代：俯视/漫游截图 → vision 审查 → 局部重生成（development-plan A4，需 vision key）
+- [x] 校验器：重叠/封闭/连通 + 关卡 metrics 表 + NavMesh 可达性（A1+A2 完成 2026-06-12：
+  wb_validate 期望/实测对照 + navmesh_rebuild/path_test 真机验证）
+- [ ] 视觉迭代：俯视/漫游截图 → vision 审查 → 局部重生成（development-plan A4，需 vision key；
+  截图链路已就绪，缺 vision 审查与局部重生成）
 - [ ] 验收：文字需求 + 模块资产库 → 可走通的白盒关卡 + 截图证据
 
 ## Phase 3：行为闭环与编排
@@ -51,7 +53,7 @@ agent 开发自身的复杂度清单。共同特征：不动架构，往既有�
 
 ## 横切：生产级强化（2026-06-12 外部评审吸收，细案见 development-plan.md Stage B/D）
 
-- [ ] 证据信封 v1：ToolOutcome.facts + verifier 两段式（确定性规则先行，LLM 解释兜底）（A3）
+- [x] 证据信封 v1：ToolOutcome.facts + verifier 两段式（确定性规则先行，LLM judge 兜底）（A3，2026-06-12）
 - [ ] PlanStep 契约 v2：allowed_tools / preconditions / success_checks / rollback_policy / 步级预算（B1）
 - [ ] 工具效果声明：幂等性 / requires_checkpoint / rollback_tool / 非幂等工具重试治理（B2）
 - [ ] 错误分类与恢复策略表：bridge_down / partial_side_effect / evidence_missing 等差异化恢复（B3）

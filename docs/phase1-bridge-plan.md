@@ -37,8 +37,9 @@ agent 能回答「这个蓝图做了什么、谁在用它」，并具备资产�
 
 ### P1.4 验证与评测
 
-- [ ] navmesh_rebuild + path_test + viewport_screenshot（白盒搭建前置，Phase 2 入口）
-- [ ] eval 新增 UE 依赖档（read_blueprint_and_explain 等，需编辑器在线，单独 suite）
+- [x] navmesh_rebuild + path_test + viewport_screenshot（✅ 2026-06-12 以 Stage A1 完成：
+  插件 C++ 三命令 + ue_editor 注册 + 真机三房间验证，见 development-plan.md A1）
+- [ ] eval 新增 UE 依赖档（read_blueprint_and_explain 等，需编辑器在线，单独 suite）→ 移交 Stage C3
 - 验收：UE 档 eval 在编辑器开启时可跑分
 
 ## 风险
