@@ -14,7 +14,7 @@ ue5agent：UE5 游戏开发 agent——C++ 实现功能、蓝图只读理解、�
 模型 DeepSeek（planner/coder）+ Kimi/Moonshot kimi-k2.6（vision，.env 均有 key），
 宿主自研 kernel（非 Claude Code 运行时），工具层 MCP。
 
-## 当前状态（本地 main 领先 origin/main 8 个提交，**待推送**；A4/B3/B4/C1-C2/D 已按里程碑拆分提交）
+## 当前状态（已推送 origin/main；A4/B3/B4/C1-C2/D 按里程碑拆分提交，每个提交点单测/ruff 单独验证过）
 
 | 阶段 | 状态 |
 |---|---|
@@ -58,16 +58,13 @@ ue5agent：UE5 游戏开发 agent——C++ 实现功能、蓝图只读理解、�
 
 Stage A–D 已收口（仅剩真机项），**以 [stage-e-plan.md](stage-e-plan.md) 为准**：
 
-1. **推送**：本地 main 领先 origin 8 个提交（A4/B3/B4/C1-C2/D/docs 按里程碑拆分），确认后 push。
-2. **下次 UE 在线会话一次性推进（同属一次插件 C++ 改动 + 重编译，合并省循环）**：
+1. **下次 UE 在线会话一次性推进（同属一次插件 C++ 改动 + 重编译，合并省循环）**：
    - C2 收尾：插件新增 find_blueprint_references（AssetRegistry 引用查找）→ bp_find_usages 生效；
    - D1.1 服务端：插件启动生成 token 写 `Saved/ue5agent_bridge_token.txt` + 握手校验 token/protocol
      （客户端侧已就绪：bridge.py PROTOCOL_VERSION / UE_MCP_TOKEN[_FILE]）；
    - E1：pie_smoke / run_functional_test / output_log_tail 三命令 + 证据/恢复接入。
-3. **E2 子代理体系**：可离线先行（独立 history + ScopedRegistry + 角色级模型，只回摘要）。
-4. **E3 = C3 + 完整基准**：eval 框架支持 MCP+编辑器在线执行路径，`ue5agent eval --suite ue` 出基线。
-5. 杂项备忘：scripts/ 下的 probe_*.py / kimi_*.py 是 A4 调 vision API 时的一次性探针脚本
-   （未入库），确认无用后可删。
+2. **E2 子代理体系**：可离线先行（独立 history + ScopedRegistry + 角色级模型，只回摘要）。
+3. **E3 = C3 + 完整基准**：eval 框架支持 MCP+编辑器在线执行路径，`ue5agent eval --suite ue` 出基线。
 
 历史备忘：白盒三房间端到端核验已通过（run `20260611-222536`，3 次 wb_build 含"清旧建新"必崩场景全程无 Fatal/无 10061、verify=pass）。回归保护：tests/test_whitebox_spawn.py + 该 run 基线。若日后又崩，立刻读 `agent_test/Saved/Crashes/` 最新日志末尾的 Fatal 栈（别只看 trace 的 10061 拒连，那是次生现象）。体验项备忘：输出风格规范（列表类先汇总后明细）、evals 输出完整性断言档。
 
