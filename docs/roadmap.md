@@ -17,10 +17,10 @@
 
 ## Phase 1：编辑器桥（让 agent 看见蓝图）
 
-- [ ] fork flopperam/unreal-engine-mcp 进 unreal/，跑通最小链路（见 ADR-0005）
-- [ ] 砍蓝图编辑工具，保留场景/资产/截图/日志
-- [ ] 自研蓝图只读导出：bp_overview / bp_pseudocode / bp_graph / bp_find_usages
-- [ ] 验收：agent 能回答「这个蓝图做了什么、谁在用它」
+- [x] fork flopperam/unreal-engine-mcp 进 unreal/，跑通最小链路（见 ADR-0005）（P1.1，2026-06-11）
+- [x] 砍蓝图编辑工具，保留场景/资产/截图/日志（P1.2 = Stage C1，2026-06-12：瘦桥只转发审定的只读命令 + 分级表 + 回归守卫）
+- [x] 自研蓝图只读导出：bp_overview / bp_pseudocode / bp_graph / bp_find_usages（C2，2026-06-12：bp_overview 忠实概览、bp_pseudocode 控制流伪代码（exec connections 重建，无连接退回摘要）、bp_graph=bp_analyze（graph_name 选图）；agent e2e 解释蓝图通过）；bp_find_usages Python 侧就绪，待插件 AssetRegistry 命令
+- [ ] 验收：agent 能回答「这个蓝图做了什么」✅、「谁在用它」⬜（待 bp_find_usages 插件命令）
 
 ## Phase 2：白盒搭建子系统
 
@@ -29,16 +29,20 @@
 - [x] 批量 spawn + 前缀整批回滚（已对真实编辑器落地 12 件双房间布局验证；崩溃根因根治后三房间 agent 端到端核验通过）
 - [x] 校验器：重叠/封闭/连通 + 关卡 metrics 表 + NavMesh 可达性（A1+A2 完成 2026-06-12：
   wb_validate 期望/实测对照 + navmesh_rebuild/path_test 真机验证）
-- [ ] 视觉迭代：俯视/漫游截图 → vision 审查 → 局部重生成（development-plan A4，需 vision key；
-  截图链路已就绪，缺 vision 审查与局部重生成）
-- [ ] 验收：文字需求 + 模块资产库 → 可走通的白盒关卡 + 截图证据
+- [x] 视觉迭代：俯视/漫游截图 → vision 审查 → 局部重生成（development-plan A4 完成 2026-06-12：
+  vision 接 Kimi，审查模块 + runner 集成回灌已单测覆盖；截图降采样压缩 + 视觉审查硬超时降级；
+  「三房间死斗」全链路真机 e2e 通过——搭建→截图→视觉审查→wb_validate(PASS)→navmesh→
+  path_test 三对房间均可达，全程无人值守）
+- [x] 验收：文字需求 + 模块资产库 → 可走通的白盒关卡 + 截图证据（2026-06-12 三房间死斗 e2e 达成）
 
 ## Phase 3：行为闭环与编排
 
-- [ ] 自动化测试闭环（Functional Test 生成与运行）
-- [ ] 子代理体系（上下文隔离 + 按角色配模型）
-- [ ] 完整评测基准工程与跑分（一次通过率/迭代次数/人工干预次数）
-- [ ] CI（GitHub Actions：ruff + pytest）
+> 细案见 [stage-e-plan.md](stage-e-plan.md)（E1 PIE/Automation、E2 子代理、E3 基准+UE eval）。下列项多需 UE 在线 + 插件 C++。
+
+- [ ] 自动化测试闭环（Functional Test 生成与运行）（E1，细案就绪，待真机）
+- [ ] 子代理体系（上下文隔离 + 按角色配模型）（E2，细案就绪，可离线先行）
+- [ ] 完整评测基准工程与跑分（一次通过率/迭代次数/人工干预次数）（E3=含 C3，细案就绪，待真机）
+- [x] CI（GitHub Actions：ruff + pytest）（D2.3，2026-06-12：.github/workflows/ci.yml = uv sync + ruff check/format + mypy + pytest 离线）
 
 ## 横切：agent 工程化（贯穿各阶段，按优先级排序）
 
@@ -56,7 +60,12 @@ agent 开发自身的复杂度清单。共同特征：不动架构，往既有�
 - [x] 证据信封 v1：ToolOutcome.facts + verifier 两段式（确定性规则先行，LLM judge 兜底）（A3，2026-06-12）
 - [x] PlanStep 契约 v2：allowed_tools / preconditions / success_checks / rollback_policy / 步级预算（B1，2026-06-12）
 - [x] 工具效果声明：幂等性 / requires_checkpoint / rollback_tool / 非幂等工具重试治理（B2，2026-06-12）
-- [ ] 错误分类与恢复策略表：bridge_down / partial_side_effect / evidence_missing 等差异化恢复（B3）
-- [ ] 上下文工程 v1：工程状态摘要注入、progress 文件、按工具类型的结果摘要器（B4）
-- [ ] 桥与凭据安全：TCP token 鉴权 + 协议版本握手 + trace secret redaction + 外部内容围栏（D1）
-- [ ] 运行锁与清理：同工程单 runner 文件锁、runs prune、CI 离线门禁（D2）
+- [x] 错误分类与恢复策略表：bridge_down / partial_side_effect / evidence_missing 等差异化恢复（B3，
+  2026-06-12：core/errors.py ErrorCategory taxonomy + classify()；runner 恢复策略表按类别路由——
+  env_unready 快速终止、bridge_down 探活后定夺、partial_side_effect 回滚后重试，其余默认重试）
+- [x] 上下文工程 v1：工程状态摘要注入、progress 文件、按工具类型的结果摘要器（B4，2026-06-12：
+  开场探测 editor_status/repo_status/engine_info 拼 ≤500 字摘要注入 system；每步刷新
+  progress.md + 提示注入进度行；summarize_tool_result 按 actor 列表/编译日志类型摘要，
+  truncate 保留为兜底）
+- [x] 桥与凭据安全：trace secret 掩码 + 外部内容围栏 ✅（D1.2/D1.3，2026-06-12）；TCP token 鉴权客户端侧 ✅（bridge protocol+token 握手）、服务端校验待插件（D1.1）
+- [x] 运行锁与清理：同工程单 runner 文件锁、`runs prune`、CI 离线门禁 ✅（D2，2026-06-12）

@@ -1,39 +1,37 @@
 # 工作日志（对话交接用）
 
-> 最后更新：2026-06-12。新对话接手前先读本页 + [development-plan.md](development-plan.md)。
+> 最后更新：2026-06-12（晚，按里程碑拆分提交收口）。新对话接手前先读本页 + [development-plan.md](development-plan.md)。
 > 架构权威版：[architecture/design.md](architecture/design.md) + ADR 0001–0006。
-> ✅ 最新结论：**Stage A1–A3 + B1–B2 完成（2026-06-12）**——A 段：插件三验证命令、
-> wb_validate 确定性校验器、证据信封 v1（验收两段式）；B 段：PlanStep 契约 v2、
-> 工具效果声明（tools/effects.py 声明表，checkpoint 由 requires_checkpoint 驱动，
-> 非幂等工具执行失败熔断阈值 2 + 禁止原样重试指引）。
-> eval 两档满分持平基线，194 单测全绿，mypy 零错误。Stage A 仅剩 A4 视觉迭代（等 vision key）。
+> ✅ 最新结论：**Stage A（含 A4 视觉迭代）、Stage B（B1–B4）、C1、C2（差一个插件命令）、
+> Stage D 离线项全部完成（2026-06-12）**——Phase 2 终验「三房间死斗」全链路真机 e2e 通过
+> （搭建→截图→Kimi 视觉审查→wb_validate→navmesh→path_test 三对房间可达，全程无人值守）。
+> 265 单测全绿，mypy 零错误，eval 两档满分持平基线。Stage E（Phase 3）细案已就绪
+> （[stage-e-plan.md](stage-e-plan.md)），剩余工作集中在"UE 在线 + 插件 C++"一个批次。
 
 ## 项目一句话
 
 ue5agent：UE5 游戏开发 agent——C++ 实现功能、蓝图只读理解、白盒场景搭建、自主验证。
-模型 DeepSeek（.env 有 key），宿主自研 kernel（非 Claude Code 运行时），工具层 MCP。
+模型 DeepSeek（planner/coder）+ Kimi/Moonshot kimi-k2.6（vision，.env 均有 key），
+宿主自研 kernel（非 Claude Code 运行时），工具层 MCP。
 
-## 当前状态（全部已推送 github.com/LOOP486/-，HEAD=760ac8f 后另有 P2/修复提交）
+## 当前状态（本地 main 领先 origin/main 8 个提交，**待推送**；A4/B3/B4/C1-C2/D 已按里程碑拆分提交）
 
 | 阶段 | 状态 |
 |---|---|
 | Phase 0（C++ 编译闭环） | ✅ 完成。agent 自主「写 BlueprintFunctionLibrary→编译 7.51s 零错误」验收通过 |
 | Kernel 重构 K0–K5 | ✅ 完成（ADR-0006）。K6 能力注册表可选未做 |
-| Phase 1 编辑器桥 P1.1 | ✅ 完成。UnrealMCP 插件（flopperam fork）编译于 UE5.7+VS2026；自研瘦桥 ue_editor（4 只读工具 + A1 三验证工具） |
-| P1.3 蓝图伪代码视图 | ⬜ 未做（bp_read/bp_analyze 是底料，= Stage C2） |
-| P1.4 NavMesh/截图 | ✅ 完成（2026-06-12 以 Stage A1 完成：插件三命令 + 真机三房间验证） |
-| Stage A2 白盒校验器 | ✅ 完成。wb_validate（缺件/多件/漂移/穿插 + metrics），真机正负样本通过 |
-| Stage A3 证据信封 | ✅ 完成。[facts] → ToolOutcome.facts → trace；验收两段式（deterministic 优先） |
-| Stage B1 PlanStep 契约 | ✅ 完成。allowed_tools/ceiling/preconditions/success_checks/rollback/step_budget；验收优先级 contract→deterministic→judge |
-| Stage B2 工具效果声明 | ✅ 完成。tools/effects.py（idempotent/requires_checkpoint/rollback_tool/resources，kernel 侧声明表不采信远端）；checkpoint 由声明驱动；非幂等执行失败阈值 2 + 禁止原样重试。navmesh_rebuild 故意不进表（checkpoint 跟随配置权限级） |
-| Phase 2 白盒 | ✅ 完成：manifest + 布局 DSL 编译器（含门图连通性校验）+ wb_build/wb_clear MCP 工具。崩溃根因已根治（spawn 改运行唯一名，踩坑史第 7 条），**三房间完整 agent 端到端核验已通过**（run 20260611-222536：3 次 build 含"清旧建新"场景全程不崩、verify=pass、崩溃目录零新增） |
+| Phase 1 编辑器桥 | ✅ P1.1 链路 + C1 裁剪分级 + C2 只读导出（bp_overview/bp_pseudocode 控制流伪代码/bp_graph；bp_find_usages Python 侧就绪，差插件 find_blueprint_references 命令） |
+| Phase 2 白盒（Stage A 全部） | ✅ **完成并真机终验**：manifest + DSL 编译器 + wb_build/wb_clear + wb_validate 校验器 + 证据信封 + A4 视觉迭代闭环（截图→Kimi 审查→问题区域回灌重生成）。「三房间死斗」全链路 e2e 通过 |
+| Stage B（kernel 体系化） | ✅ B1 契约 v2 / B2 工具效果声明 / B3 错误分类与恢复策略表 / B4 上下文工程（工程摘要注入 + progress.md + 工具结果摘要器）全部完成 |
+| Stage D（安全与工程化） | ✅ 离线项全部完成：secret 掩码、注入围栏、桥鉴权客户端侧（protocol+token）、运行锁、runs prune、CI（ruff+format+mypy+pytest）。仅 D1.1 服务端待插件 C++ |
+| Stage E（Phase 3） | ⬜ 细案就绪（stage-e-plan.md）：E1 PIE/Functional Test（真机）、E2 子代理（可离线先行）、E3 完整基准+UE 在线 eval |
 
 ## 环境清单
 
 - 引擎 `C:/Program Files/Epic Games/UE_5.7`；VS2026 Community；测试工程 `C:/Users/chengpeixin/Documents/Unreal Projects/agent_test`（git 管理，含 UnrealMCP 插件）
-- 仓库内：config/models.yaml + agent.yaml + .env（均不入库，已配好）；MCP servers：ue_build / repo_tools / ue_editor / ue_whitebox
-- 用户入口：双击 ue5agent-chat.bat 或 `uv run ue5agent run "任务"`；trace 回放 `uv run ue5agent trace`
-- 194 个单测全绿；评测 `uv run ue5agent eval`（basic+hard 双档基线满分，evals/baselines/）
+- 仓库内：config/models.yaml + agent.yaml + .env（均不入库，已配好；vision=moonshot/kimi-k2.6，provider params 注入 temperature=1）；5 个 MCP server：ue_build / repo_tools / ue_editor / ue_whitebox / ue_lifecycle
+- 用户入口：双击 ue5agent-chat.bat 或 `uv run ue5agent run "任务" --yes`；trace 回放 `uv run ue5agent trace`；清理旧运行 `uv run ue5agent runs prune`
+- 265 个单测全绿；评测 `uv run ue5agent eval`（basic+hard 双档基线满分，evals/baselines/）
 
 ## 踩坑史（同类问题先查这里）
 
@@ -53,17 +51,23 @@ ue5agent：UE5 游戏开发 agent——C++ 实现功能、蓝图只读理解、�
 9. **任何异常都不准从"assistant 发出 tool_calls"到"tool 回包入列"之间逃逸**（2026-06-12 e2e 确诊）：一旦逃逸，history 里的 tool_calls 永远缺回包，该会话**之后每次** LLM 请求都被 API 拒（`insufficient tool messages following tool_calls`），步骤重试三次全空耗且报错样子像 API 故障。首个实例：非交互运行（bash 后台）下 WRITE_PROJECT 触发 `typer.confirm`，无 TTY 抛 Abort 从 gate 逃逸。已修三层：CLI 无 TTY 不挂确认器、pipeline 兜住 gate 一切异常转 [denied]、loop 调度异常转 [error] 仍回包（tests/test_loop.py::test_dispatch_exception_still_answers_tool_call）。若再见 BadRequestError 连发，先查 trace 里最后一个 llm_turn 是否带 tool_names 而其后无 tool_call 事件。
    - **9b：TTY 启发式在 Git Bash/pty 包装下会误判**（同日二次实测）：单看 `sys.stdin.isatty()` 在 bash 后台仍为 True，确认器被挂上、Abort 被兜住返回 False → write_project 全部被拒（报"未获用户确认"）。已改 stdin+stdout 双检，且 `ue5agent run` 加 `--yes/-y`——**脚本化/agent 调用 run 一律带 --yes**，别赌启发式。
 10. **白盒前缀纪律：异前缀残留是隐形杀手**（2026-06-12 契约 e2e 确诊）：模型自创 spawn 前缀（S1_）后任务 aborted，残留构件没人清（重建语义只清同前缀；当时回滚也按默认 WB 清）。下一个任务在同一 origin 落 WB_ 布局，**S1_ 旧墙正好横在新门洞上** → navmesh 在门处断开、path_test 全 partial；模型把现象误诊为 agent radius（看起来很合理！）。而 wb_validate 当时只查本前缀构件，对异前缀残留全盲——校验 PASS 但场景实际坏了。已修三处：① 契约自洽（success_checks 要求的验证工具自动并入 allowed_tools，planner._reconcile_contract）；② 回滚按实际前缀清（wb_build facts 带 prefix，runner 回滚读取）；③ wb_validate 宽查询 + 异前缀残留检测（与布局区域重叠的旧批次构件 → violation 并给 wb_clear 指引）。**经验：可达性异常先查场景里有没有别的批次的墙，再怀疑导航参数。**
+11. **本机终端跑 pytest 会 OSError 22 静默失败（exit 1 零输出）**：pytest 的 terminal writer 在某些包装终端（agent 工具调用、重定向）下写 stdout 报 Invalid argument，且错误本身也打不出来——看起来像"测试坏了但没有任何信息"。规避：`uv run python scripts/run_tests.py`（进程内重定向 stdout/stderr 到 runs/pytest_out.txt 再跑 pytest，读文件看结果）。ruff/mypy/uv 不受影响。直接在真终端（Windows Terminal/PowerShell 窗口）跑则正常。
+12. **多模态调用会冻死事件循环**（A4 真机确诊，litellm + moonshot 端点）：litellm 的调用阻塞 asyncio 事件循环且不遵守自身 timeout，整个 run 无限冻结（wall budget 在步边界检查，拦不住步内挂起）。修法成对出现：LLM 调用放工作线程（asyncio.to_thread + 线程内独立事件循环），外层用 asyncio.wait（**不是 wait_for**——await 不可取消的执行器 future 仍会卡死）做硬超时，超时降级。同病防复发：截图送审前降采样到长边 ≤1280 + JPEG 重压，单次最多 3 张。
 
 ## 下一步（按序）
 
-**2026-06-12 起以 [development-plan.md](development-plan.md) 的 Stage A–E 为准**（吸收外部架构评审后全面修订，含逐里程碑任务分解与验收标准）。A1–A3、B1–B2 已完成，接下来：
+Stage A–D 已收口（仅剩真机项），**以 [stage-e-plan.md](stage-e-plan.md) 为准**：
 
-1. **B3**：错误分类与恢复策略表（core/errors.py taxonomy + runner 按表差异化恢复；
-   partial_side_effect 策略用 B2 的 rollback_tool）。
-2. **A4**：视觉迭代闭环 = Phase 2 终验（**等 vision key**；key 到位前可先做截图存档子项）。
-3. **B4**：上下文工程 v1（建议 A4 之后——视觉迭代是最好的长任务测试床）。
-4. **C1→C2→C3**：蓝图理解（可与 B 并行，改动面不重叠）。
-5. **D1、D2**：安全加固与运行锁（任意空档插入，单项 ≤1 天）。
+1. **推送**：本地 main 领先 origin 8 个提交（A4/B3/B4/C1-C2/D/docs 按里程碑拆分），确认后 push。
+2. **下次 UE 在线会话一次性推进（同属一次插件 C++ 改动 + 重编译，合并省循环）**：
+   - C2 收尾：插件新增 find_blueprint_references（AssetRegistry 引用查找）→ bp_find_usages 生效；
+   - D1.1 服务端：插件启动生成 token 写 `Saved/ue5agent_bridge_token.txt` + 握手校验 token/protocol
+     （客户端侧已就绪：bridge.py PROTOCOL_VERSION / UE_MCP_TOKEN[_FILE]）；
+   - E1：pie_smoke / run_functional_test / output_log_tail 三命令 + 证据/恢复接入。
+3. **E2 子代理体系**：可离线先行（独立 history + ScopedRegistry + 角色级模型，只回摘要）。
+4. **E3 = C3 + 完整基准**：eval 框架支持 MCP+编辑器在线执行路径，`ue5agent eval --suite ue` 出基线。
+5. 杂项备忘：scripts/ 下的 probe_*.py / kimi_*.py 是 A4 调 vision API 时的一次性探针脚本
+   （未入库），确认无用后可删。
 
 历史备忘：白盒三房间端到端核验已通过（run `20260611-222536`，3 次 wb_build 含"清旧建新"必崩场景全程无 Fatal/无 10061、verify=pass）。回归保护：tests/test_whitebox_spawn.py + 该 run 基线。若日后又崩，立刻读 `agent_test/Saved/Crashes/` 最新日志末尾的 Fatal 栈（别只看 trace 的 10061 拒连，那是次生现象）。体验项备忘：输出风格规范（列表类先汇总后明细）、evals 输出完整性断言档。
 

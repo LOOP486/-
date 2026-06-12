@@ -41,6 +41,72 @@
   rollback_tool=wb_clear）；② 非幂等工具执行失败（exception/tool_error）的熔断阈值 3→2，
   回传文本禁止原样重试并给出查状态 / rollback 工具指引；执行前失败（schema/bad_json）
   不降阈值——没碰到副作用，修正参数重试是安全的。
+- 视觉迭代闭环（A4）：vision 角色接入多模态模型（实测 Kimi/Moonshot `kimi-k2.6`，
+  provider 级 `params` 注入固定 `temperature=1`）；`agent/vision_review.py` 把截图按
+  审查清单交 vision 角色，产出结构化问题列表（按房间/构件名定位、severity 分级），
+  解析失败保守不放行。runner 集成局部重生成：执行步后若本步产出截图
+  （`viewport_screenshot` 落 `screenshot` 事实），自动对截图做视觉审查，结果以
+  `vision_review` 事实并入证据通道——存在 high 问题或解析失败 → 确定性验收判 fail，
+  问题区域回灌 history 引导模型重新落地（wb_build 整批重建为兜底）。未配 vision 角色时
+  不注入审查钩子，行为与此前完全一致（截图仅存档供人看）。
+- 视觉审查工程化（三房间死斗 e2e 真机暴露的三个生产级问题修复，2026-06-12）：
+  ① 截图降采样：视口截图常达 3000+px/数 MB，多模态请求体过大致审查极慢甚至挂起——
+  `vision_review.image_to_data_url` 在审查前把长边 > 1280 的图降采样并 JPEG 重压（依赖 Pillow），
+  `review_screenshots` 单次最多送 3 张（一步连截多张时取最近几张）。
+  ② 视觉审查硬超时降级：litellm 对部分多模态端点（moonshot 实测）的调用会阻塞事件循环、
+  不遵守自身 timeout，会无限冻结整个 run——cli 的 vision_reviewer 把 LLM 调用放进工作线程
+  （asyncio.to_thread 释放主循环），runner 用 asyncio.wait（非 wait_for，避免 await 不可取消的
+  执行器 future）做 120s 硬超时，超时记 vision_review_error 并降级（步骤照常走确定性/judge 验收）。
+  ③ planner 引导白盒搭建任务把"搭建 + 俯视截图自查"放在同一步（同时含 wb_build/wb_clear/
+  viewport_screenshot），使视觉审查发现问题时能就地重建——截图与重建分到两步会让该步无法修正。
+  viewport_screenshot 成功时落 screenshot 事实（path），runner 据此发现本步截图触发审查。
+- 错误分类与恢复策略表（B3 Error Taxonomy）：`core/errors.py` 定义 9 类 ErrorCategory
+  （env_unready/bridge_down/ubt_compile_error/permission_denied/budget_exhausted/evidence_missing/
+  partial_side_effect/tool_arg_error/transient）+ `[err:<类别>]` 文本标记 + classify()（显式标记优先、
+  启发式兜底，分不出归 transient）；env_unready 沿用历史 [env:unready] 标记向后兼容。runner 恢复
+  从"统一重试"升级为按主导错误类别查表路由：env_unready→快速终止（不空耗重试）；bridge_down→
+  探活一次，离线则快速终止（踩坑史第 8 条"别对死桥空转重试"的体系化）、在线则正常重试；
+  partial_side_effect→回滚清理后重试；其余类别走默认重试（对编译错/缺证据/参数错/权限拒绝本就正确）。
+  ue_editor 桥错误区分 bridge_down（连上后掉线/超时）与 env_unready（连接被拒/从未开）。
+- 上下文工程 v1（B4，Stage B 收口）：① 工程状态摘要——runner 开场一次性探测
+  editor_status/repo_status/engine_info（read 级，不耗模型轮次），拼 ≤500 字摘要预置到
+  system 消息首位（compact_history 永远保留 head，摘要不被压掉），省去模型自己逐个探测；
+  ② 长任务进度——每步收口刷新 runs/<session>/progress.md（各步状态），每步提示注入 [进度]
+  行（已完成/当前/待办），随新提示重述故步内压缩后不丢进度目标；③ 工具结果摘要器
+  summarize_tool_result 按类型摘要替代一刀切截断（actor 列表→计数+前 N 名；编译日志→保留
+  错误/Result/警告行折叠正常输出；其余 truncate 兜底），max_tool_result_chars 仍为兜底上限。
+- 蓝图桥裁剪与分级（C1 = P1.2）：明确 ue_editor 瘦桥只转发审定过的只读命令——蓝图相关
+  一律只读（ADR-0003），不暴露任何编辑/编译/连线/批量构建命令（由"只 forward 选定命令"的
+  构造方式强制保证）；唯一写级工具是 navmesh_rebuild（write_project）。工具清单与权限分级表
+  入 docs/phase1-bridge-plan.md；新增回归守卫测试（工具集恰为审定集、源码不含编辑类桥命令、
+  蓝图工具只发只读查询）。
+- 安全加固与工程化（Stage D 离线项）：
+  - secret 掩码（D1.2）：trace/report/progress/artifact 落盘前掩掉 .env 中的 API key 值
+    （core/redaction.py，RunWriter 单点施加；secret 取自 provider.api_key_env 对应环境变量值，
+    长值优先替换避免子串残留）。防 key 因日志/报告被无意分享而泄露。
+  - 工具输出注入防护（D1.3）：工具结果含指令样文本（中英文"ignore previous instructions/
+    忽略以上指令"等）时用 [external-content]…[/external-content] 围栏包裹，KERNEL/SYSTEM 提示
+    声明围栏内只是数据、不可作为指令执行。
+  - 运行锁（D2.1）：同一 runs/ 同时只允许一个 runner（runs/.runner.lock，PID+时间戳，
+    陈旧锁自动回收），冲突给可读错误而非莫名拒连。
+  - `ue5agent runs prune`（D2.2）：按数量（--keep）/天数（--days）清理旧运行目录，
+    --keep-screenshots 保留 artifacts/*.png；跳过非 run 目录不误删。
+  - CI（D2.3）：.github/workflows/ci.yml 跑 uv sync + ruff check/format + mypy + 离线 pytest。
+- 蓝图只读导出（C2）：`ue_editor` 新增 `bp_overview`（父类/组件/接口/变量/函数/事件图分类的
+  紧凑概览，token ≈ 原始 JSON 1/7）、`bp_pseudocode`（基于节点 exec connections 重建控制流
+  伪代码，无连接信息时退回结构化摘要）与 `bp_find_usages`（AssetRegistry 引用查找，Python 侧
+  就绪）三个只读工具；转换逻辑在纯函数模块 `src/ue5agent/blueprint.py`（可单测，夹具取自真机）。
+  bp_graph 即既有 bp_analyze，参数修正为 graph_name（插件按它选事件图/函数图；早期误传
+  function_name 被忽略、恒返回 EventGraph——读插件源码确认 connections 本就带 from/to 端点，
+  此前"pin 无连接端点"的结论系参数传错所致）。真机 + agent e2e 验证：agent 用
+  bp_overview/bp_pseudocode 准确解释 BP_ThirdPersonCharacter（继承/组件/输入事件/函数/行为）。
+  剩余待插件 C++：引用查找命令（find_blueprint_references），落地前 bp_find_usages 返回错误文本。
+- 桥鉴权客户端侧（D1.1 客户端）：bridge.py 每条命令握手附协议版本 `protocol`（PROTOCOL_VERSION=1），
+  并在配了 `UE_MCP_TOKEN` 或 `UE_MCP_TOKEN_FILE`（指向插件写的 token 文件）时附 `token` 字段；
+  未配则不带，与无 token 插件完全兼容。服务端校验（生成/写 token、握手校验）待插件 C++。
+- Stage E（Phase 3）细案 docs/stage-e-plan.md：E1 运行期验证闭环（PIE smoke / Functional Test /
+  Output Log，插件 C++ + 证据/恢复）、E2 子代理体系（上下文隔离 + 按角色配模型，可离线先行）、
+  E3 完整基准与 UE 在线 eval（含 C3）。并给出"C2 收尾 + D1.1 服务端 + E1 命令合并一次插件编译"的建议。
 
 ### 修复
 
