@@ -1,6 +1,6 @@
 # 工作日志（对话交接用）
 
-> 最后更新：2026-06-11 22:27。新对话接手前先读本页 + [development-plan.md](development-plan.md)。
+> 最后更新：2026-06-12。新对话接手前先读本页 + [development-plan.md](development-plan.md)。
 > 架构权威版：[architecture/design.md](architecture/design.md) + ADR 0001–0006。
 > ✅ 最新结论：白盒落地的"编辑器崩溃"已根治**并经完整 agent 端到端验收通过**（run 20260611-222536，全程无 Fatal/无 10061、崩溃目录零新增、verify=pass）。Phase 2 白盒端到端核验**已完成**。机制见踩坑史第 7 条。
 
@@ -45,11 +45,15 @@ ue5agent：UE5 游戏开发 agent——C++ 实现功能、蓝图只读理解、�
 
 ## 下一步（按序）
 
-1. ✅ **（已完成）白盒三房间端到端核验**：2026-06-11 22:27 run `20260611-222536` 完整 agent 跑通——3 次 wb_build（首次门坐标越界被编译期 LayoutError 正常拦下并自修，后两次成功，含"先清旧再建新"=上次必崩场景）全程无 Fatal/无 10061，编辑器 PID 不变、崩溃目录零新增、verify=pass。崩溃根因（僵尸名，踩坑史第 7 条）确认根治。**回归保护**：tests/test_whitebox_spawn.py + 上述 run 可作基线。若日后又崩，立刻读 `agent_test/Saved/Crashes/` 最新日志末尾的 Fatal 栈（别只看 trace 的 10061 拒连，那是崩溃后次生现象）。
-2. P1.4：给 UnrealMCP 插件加 C++ 命令（viewport_screenshot / navmesh_rebuild / path_test），编译后需重启编辑器；接进白盒校验环。
-3. P1.3：蓝图伪代码视图（bp_analyze 的节点 JSON → 可读文本）。
-4. 用户提供正式白盒资产包后：manifest 自动扫描工具。
-5. 体验项：输出风格规范（列表类先汇总后明细）；evals 加输出完整性断言档。
+**2026-06-12 起以 [development-plan.md](development-plan.md) 的 Stage A–E 为准**（吸收外部架构评审后全面修订，含逐里程碑任务分解与验收标准）。接下来的施工顺序：
+
+1. **A1**：UnrealMCP 插件加 C++ 命令（viewport_screenshot / navmesh_rebuild / path_test），编译后需重启编辑器（原 P1.4）。
+2. **A2**：白盒确定性校验器 `whitebox/validator.py` + `wb_validate` 工具（重叠/封闭/连通/metrics）。
+3. **A3**：证据信封 v1（ToolOutcome.facts + verifier 确定性规则先行）。可与 A2 并行。
+4. **A4**：视觉迭代闭环 = Phase 2 终验（vision key 到位前先做截图存档子项）。
+5. 之后按 Stage B（kernel 体系化）/ C（蓝图四件套）/ D（安全与工程化）推进。
+
+历史备忘：白盒三房间端到端核验已通过（run `20260611-222536`，3 次 wb_build 含"清旧建新"必崩场景全程无 Fatal/无 10061、verify=pass）。回归保护：tests/test_whitebox_spawn.py + 该 run 基线。若日后又崩，立刻读 `agent_test/Saved/Crashes/` 最新日志末尾的 Fatal 栈（别只看 trace 的 10061 拒连，那是次生现象）。体验项备忘：输出风格规范（列表类先汇总后明细）、evals 输出完整性断言档。
 
 ## 文档地图
 
