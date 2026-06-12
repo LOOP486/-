@@ -15,7 +15,7 @@ from typing import Any
 from ue5agent.agent.events import RunWriter
 from ue5agent.agent.planner import make_plan
 from ue5agent.agent.report import build_report
-from ue5agent.agent.verifier import VerifyResult, verify_step
+from ue5agent.agent.verifier import VerifyResult, deterministic_verdict, verify_step
 from ue5agent.core.errors import is_env_unready
 from ue5agent.core.loop import AgentLoop, BudgetExhausted
 from ue5agent.llm.types import ChatModel
@@ -42,6 +42,8 @@ class _EvidenceTee:
     def __init__(self, writer: RunWriter):
         self._writer = writer
         self.tool_lines: list[str] = []
+        self.facts: list[dict] = []
+        """本次尝试中工具附带的结构化事实（A3 证据信封），喂给确定性验收规则。"""
         self.env_unready = False
         """本次尝试中是否出现过环境未就绪错误（如编辑器桥连接被拒）。"""
 
@@ -50,6 +52,9 @@ class _EvidenceTee:
         if event == "tool_call":
             preview = str(data.get("result_preview", ""))
             self.tool_lines.append(f"{data.get('tool')} -> {preview[:800]}")
+            facts = data.get("facts")
+            if isinstance(facts, dict):
+                self.facts.append(facts)
             if is_env_unready(preview):
                 self.env_unready = True
 
@@ -58,6 +63,7 @@ class _EvidenceTee:
 
     def reset(self) -> None:
         self.tool_lines.clear()
+        self.facts.clear()
         self.env_unready = False
 
 
@@ -144,22 +150,28 @@ class TaskRunner:
                     summaries[step.id] = f"[步骤异常] {type(exc).__name__}: {exc}"
                 self._writer.event("phase_exit", phase="execute", step_id=step.id)
 
-                try:
-                    verdict = await verify_step(
-                        self._llm,
-                        goal=goal,
-                        intent=step.intent,
-                        acceptance=step.acceptance,
-                        evidence=tee.evidence(),
-                        summary=summaries.get(step.id, ""),
-                    )
-                except Exception as exc:  # judge 不可用时按失败处理，走重试/放弃
-                    verdict = VerifyResult("fail", f"验收过程异常：{type(exc).__name__}: {exc}")
+                # A3 两段式：确定性规则可判则不再调 LLM judge（更可靠且省 token）
+                det = deterministic_verdict(tee.facts)
+                if det is not None:
+                    verdict = det
+                else:
+                    try:
+                        verdict = await verify_step(
+                            self._llm,
+                            goal=goal,
+                            intent=step.intent,
+                            acceptance=step.acceptance,
+                            evidence=tee.evidence(),
+                            summary=summaries.get(step.id, ""),
+                        )
+                    except Exception as exc:  # judge 不可用时按失败处理，走重试/放弃
+                        verdict = VerifyResult("fail", f"验收过程异常：{type(exc).__name__}: {exc}")
                 self._writer.event(
                     "verify_result",
                     step_id=step.id,
                     verdict=verdict.verdict,
                     reason=verdict.reason,
+                    mode="deterministic" if det is not None else "judge",
                 )
                 if verdict.verdict == "pass":
                     step.status = "done"

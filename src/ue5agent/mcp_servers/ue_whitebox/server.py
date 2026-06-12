@@ -13,9 +13,11 @@ from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 
 from ue5agent.core.errors import mark_env_unready
+from ue5agent.mcp_servers.ue_editor.bridge import send_command
 from ue5agent.whitebox.compiler import LayoutError, compile_layout, layout_from_dict
 from ue5agent.whitebox.manifest import load_manifest
 from ue5agent.whitebox.spawner import clear_layout, spawn_layout
+from ue5agent.whitebox.validator import ActorView, validate_layout
 
 mcp = FastMCP("ue-whitebox")
 
@@ -69,10 +71,69 @@ def wb_build(layout_json: str, prefix: str = "WB") -> str:
     except (RuntimeError, OSError, ConnectionError) as exc:
         return f"[error] 落地失败（编辑器开着吗？）：{exc}"
     cleared_note = f"（已先清理 {cleared} 个旧构件）" if cleared else ""
+    facts = {"kind": "wb_build", "ok": True, "rooms": len(spec.rooms), "components": len(names)}
     return (
         f"搭建完成：{len(spec.rooms)} 个房间，{len(names)} 个构件，"
         f"位于 origin={spec.origin}，前缀 {prefix}_{cleared_note}（wb_clear 可整批撤销）"
+        f"\n[facts] {json.dumps(facts, ensure_ascii=False)}"
     )
+
+
+@mcp.tool()
+def wb_validate(layout_json: str, prefix: str = "WB") -> str:
+    """对照布局 JSON 校验编辑器中已落地的白盒构件（确定性几何检查，只读）。
+
+    回读场景中 `<prefix>_` 构件的实测坐标，与布局编译出的期望放置对照，检查：
+    缺件（spawn 部分失败）、多件（残留/外部添加）、位置漂移、构件穿插。
+    返回 PASS/FAIL + violations 列表 + 关卡 metrics（房间数/门数/地板面积等）。
+    物理可达性请另用 ue_editor 的 navmesh_rebuild + path_test。
+    """
+    try:
+        data = json.loads(layout_json)
+    except json.JSONDecodeError as exc:
+        return f"[error] layout_json 不是合法 JSON：{exc}"
+    try:
+        spec = layout_from_dict(data)
+        manifest = load_manifest(_MANIFEST)
+    except LayoutError as exc:
+        return f"[error] 布局校验未通过：{exc}"
+    try:
+        response = send_command("find_actors_by_name", {"pattern": f"{prefix}_"})
+    except ConnectionRefusedError:
+        return mark_env_unready(
+            "编辑器桥连接被拒。请先启动 UE 编辑器并加载工程（UnrealMCP 插件随工程加载）"
+        )
+    except (OSError, ConnectionError) as exc:
+        return f"[error] 编辑器桥通信失败：{exc}"
+    if response.get("status") == "error":
+        return f"[error] {response.get('error', response)}"
+
+    actors = []
+    result = response.get("result", response)
+    for raw in result.get("actors", []) if isinstance(result, dict) else []:
+        if isinstance(raw, dict) and "location" in raw and "scale" in raw:
+            loc, scl = raw["location"], raw["scale"]
+            actors.append(
+                ActorView(
+                    name=str(raw.get("name", "")),
+                    location=(float(loc[0]), float(loc[1]), float(loc[2])),
+                    scale=(float(scl[0]), float(scl[1]), float(scl[2])),
+                )
+            )
+    report = validate_layout(spec, manifest, actors, prefix=prefix)
+    verdict = "PASS" if report.ok else "FAIL"
+    lines = [f"校验{verdict}：实测 {report.metrics.get('actual_count', 0)} 个构件"]
+    lines += [f"- {v}" for v in report.violations]
+    lines.append(f"metrics: {json.dumps(report.metrics, ensure_ascii=False)}")
+    facts = {
+        "kind": "wb_validate",
+        "ok": report.ok,
+        "violations": len(report.violations),
+        "room_count": report.metrics.get("room_count"),
+        "actual_count": report.metrics.get("actual_count"),
+    }
+    lines.append(f"[facts] {json.dumps(facts, ensure_ascii=False)}")
+    return "\n".join(lines)
 
 
 @mcp.tool()

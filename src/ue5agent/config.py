@@ -67,6 +67,9 @@ class ProjectConfig(BaseModel):
     uproject: Path = Field(description=".uproject 文件路径")
 
 
+_PERMISSION_VALUES = ("read", "write", "write_safe", "write_project", "dangerous")
+
+
 class McpServerConfig(BaseModel):
     command: list[str] = Field(description="stdio 启动命令")
     permission: str = Field(
@@ -74,6 +77,20 @@ class McpServerConfig(BaseModel):
         pattern="^(read|write|write_safe|write_project|dangerous)$",
         description="该 server 全部工具的授权级别；旧值 write 按 write_project 解释",
     )
+    tool_permissions: dict[str, str] = Field(
+        default_factory=dict,
+        description="按工具名覆写授权级别（键为工具原名，不含 server 前缀），"
+        "用于同一 server 内读写工具混存的场景（如 ue_editor 的 navmesh_rebuild）",
+    )
+
+    @model_validator(mode="after")
+    def _check_tool_permissions(self) -> McpServerConfig:
+        for tool, level in self.tool_permissions.items():
+            if level not in _PERMISSION_VALUES:
+                raise ValueError(
+                    f"工具 {tool} 的授权级别非法：{level}（可选：{_PERMISSION_VALUES}）"
+                )
+        return self
 
 
 class LimitsConfig(BaseModel):

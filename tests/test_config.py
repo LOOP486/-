@@ -87,3 +87,38 @@ mcp_servers:
     )
     with pytest.raises(ValueError):
         load_agent_settings(path)
+
+
+def test_tool_permissions_override_parsed(tmp_path):
+    path = tmp_path / "agent.yaml"
+    path.write_text(
+        """\
+mcp_servers:
+  ue_editor:
+    command: ["python", "-m", "x"]
+    permission: read
+    tool_permissions:
+      navmesh_rebuild: write_project
+""",
+        encoding="utf-8",
+    )
+    settings = load_agent_settings(path)
+    server = settings.mcp_servers["ue_editor"]
+    assert server.tool_permissions == {"navmesh_rebuild": "write_project"}
+    # 缺省为空：全部工具沿用 server 级授权
+    assert server.permission == "read"
+
+
+def test_tool_permissions_bad_level_rejected(tmp_path):
+    path = tmp_path / "agent.yaml"
+    path.write_text(
+        """\
+mcp_servers:
+  ue_editor:
+    command: ["python", "-m", "x"]
+    tool_permissions: {navmesh_rebuild: sudo}
+""",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="navmesh_rebuild"):
+        load_agent_settings(path)

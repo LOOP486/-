@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -31,7 +32,11 @@ def repo_checkpoint(label: str = "checkpoint", repo_path: str | None = None) -> 
     if repo is None or not gitops.is_git_repo(repo):
         return f"[error] {repo} 不是 git 仓库（先 git init 并提交一次）"
     result = gitops.checkpoint(repo, label)
-    return f"checkpoint 完成：{result['ref']}（{result['sha'][:10]}）"
+    facts = {"kind": "repo_checkpoint", "ok": True, "ref": result["ref"]}
+    return (
+        f"checkpoint 完成：{result['ref']}（{result['sha'][:10]}）"
+        f"\n[facts] {json.dumps(facts, ensure_ascii=False)}"
+    )
 
 
 @mcp.tool()

@@ -18,11 +18,12 @@ class RecordingRegistry(ToolRegistry):
         self.calls: list[tuple[str, str]] = []
         self.results: list[str] = []
 
-    async def dispatch(self, name: str, arguments_json: str) -> str:
-        result = await super().dispatch(name, arguments_json)
+    async def run(self, name: str, arguments_json: str):
+        """记录点放在结构化入口：loop 与 dispatch 都经由 run，单点记录不重不漏。"""
+        outcome = await super().run(name, arguments_json)
         self.calls.append((name, arguments_json))
-        self.results.append(result)
-        return result
+        self.results.append(outcome.text)
+        return outcome
 
 
 def build_sandbox_registry() -> RecordingRegistry:

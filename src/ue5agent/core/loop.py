@@ -129,10 +129,20 @@ class AgentLoop:
                 )
             for call in assistant.tool_calls:
                 started = time.monotonic()
-                tool_result = await self._registry.dispatch(call.name, call.arguments)
+                facts: dict[str, Any] | None = None
+                try:
+                    outcome = await self._registry.run(call.name, call.arguments)
+                    tool_result: str = outcome.text
+                    facts = outcome.facts
+                except Exception as exc:
+                    # 历史卫生底线：每个 tool_call 必须有对应回包。调度层异常若直接上抛，
+                    # assistant 的 tool_calls 将永远缺回包，这份 history 之后的每次请求
+                    # 都会被 API 拒绝（e2e 实测教训）。转为错误文本回传模型。
+                    tool_result = f"[error] 工具调度异常：{type(exc).__name__}: {exc}"
                 tool_duration_ms = round((time.monotonic() - started) * 1000)
                 tool_call_count += 1
                 if self._log:
+                    extra = {"facts": facts} if facts else {}
                     self._log.write(
                         "tool_call",
                         tool=call.name,
@@ -140,6 +150,7 @@ class AgentLoop:
                         duration_ms=tool_duration_ms,
                         result_chars=len(tool_result),
                         result_preview=tool_result[:800],
+                        **extra,
                     )
                 messages.append(
                     {

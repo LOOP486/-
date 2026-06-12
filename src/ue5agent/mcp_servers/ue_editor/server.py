@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import json
 import os
+import time
+from pathlib import Path
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
@@ -76,6 +78,81 @@ def bp_analyze(blueprint_path: str, function_name: str = "") -> str:
     if function_name:
         params["function_name"] = function_name
     return _call("analyze_blueprint_graph", params)
+
+
+@mcp.tool()
+def viewport_screenshot(
+    file_path: str = "",
+    location: list[float] | None = None,
+    rotation: list[float] | None = None,
+) -> str:
+    """对编辑器视口截图存为 PNG，返回保存路径与尺寸。
+
+    俯视白盒布局：location=[中心x, 中心y, 高度]、rotation=[-90, 0, 0]（pitch/yaw/roll，
+    高度建议为布局对角线长度量级）。不传相机参数则按当前视口视角截图。
+
+    Args:
+        file_path: 保存路径（.png）；留空自动存到 runs/screenshots/ 下的时间戳文件
+        location: 可选，截图前把视口相机移到此位置 [x, y, z]
+        rotation: 可选，视口相机旋转 [pitch, yaw, roll]
+    """
+    if not file_path:
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        file_path = str(Path("runs") / "screenshots" / f"viewport_{stamp}.png")
+    params: dict[str, Any] = {"file_path": str(Path(file_path).resolve())}
+    if location is not None:
+        params["location"] = location
+    if rotation is not None:
+        params["rotation"] = rotation
+    return _call("viewport_screenshot", params)
+
+
+@mcp.tool()
+def navmesh_rebuild(
+    bounds_center: list[float] | None = None,
+    bounds_extent: list[float] | None = None,
+) -> str:
+    """重建导航网格（NavMesh），供 path_test 做可达性验证。会修改关卡。
+
+    白盒场景默认没有 NavMeshBoundsVolume：传 bounds_center+bounds_extent 自动生成
+    （或调整）一个覆盖体积再构建。extent 是半尺寸，如 [3000, 3000, 500] 覆盖
+    60m×60m×10m 区域。已有覆盖体积时可不传参直接重建。
+    """
+    params: dict[str, Any] = {}
+    if bounds_center is not None and bounds_extent is not None:
+        params["ensure_bounds"] = {"center": bounds_center, "extent": bounds_extent}
+    elif bounds_center is not None or bounds_extent is not None:
+        return "[error] bounds_center 与 bounds_extent 必须同时提供"
+    return _call("navmesh_rebuild", params)
+
+
+@mcp.tool()
+def path_test(start: list[float], end: list[float]) -> str:
+    """测试两点间导航可达性（需先 navmesh_rebuild）。
+
+    返回 reachable（完整路径存在）、partial（只能走到一半）、path_length（路径长度）。
+    传地板坐标即可，起终点会自动投影到导航网格上。
+
+    Args:
+        start: 起点 [x, y, z]
+        end: 终点 [x, y, z]
+    """
+    out = _call("path_test", {"start": start, "end": end})
+    if out.startswith("[error]"):
+        return out
+    try:
+        result = json.loads(out)
+    except json.JSONDecodeError:
+        return out
+    facts: dict[str, Any] = {
+        "kind": "path_test",
+        "ok": bool(result.get("reachable")),
+        "reachable": bool(result.get("reachable")),
+        "partial": bool(result.get("partial")),
+    }
+    if "path_length" in result:
+        facts["path_length"] = round(float(result["path_length"]), 1)
+    return f"{out}\n[facts] {json.dumps(facts, ensure_ascii=False)}"
 
 
 def main() -> None:

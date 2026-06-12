@@ -40,7 +40,16 @@ def ubt_compile(
     if not build_bat.exists():
         return _error(f"引擎路径不对：找不到 {build_bat}")
     result = run_build(Path(engine), Path(project), target, configuration)
-    return json.dumps(result.to_dict(), ensure_ascii=False, indent=2)
+    facts = {
+        "kind": "compile",
+        "ok": result.success,
+        "exit_code": result.exit_code,
+        "errors": result.error_count,
+    }
+    return (
+        json.dumps(result.to_dict(), ensure_ascii=False, indent=2)
+        + f"\n[facts] {json.dumps(facts, ensure_ascii=False)}"
+    )
 
 
 @mcp.tool()

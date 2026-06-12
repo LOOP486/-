@@ -33,7 +33,7 @@ def load_manifest(path: Path) -> Manifest:
         key: AssetDef(
             key=key,
             path=item["path"],
-            size=tuple(float(v) for v in item["size"]),
+            size=(float(item["size"][0]), float(item["size"][1]), float(item["size"][2])),
             category=item.get("category", "block"),
         )
         for key, item in data["assets"].items()

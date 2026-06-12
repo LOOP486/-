@@ -12,6 +12,8 @@
 from __future__ import annotations
 
 import contextlib
+import json
+import re
 from dataclasses import dataclass
 from difflib import get_close_matches
 from typing import Any, Protocol
@@ -20,6 +22,27 @@ from ue5agent.core.permissions import PermissionGate, PermissionLevel, ToolDenie
 from ue5agent.tools.validation import parse_arguments, validate_arguments
 
 _PATH_HINTS = ("path", "file", "dir", "root", "uproject", "folder")
+
+_FACTS_RE = re.compile(r"\n?\[facts\]\s*(\{.*?\})\s*$", re.DOTALL)
+
+
+def extract_facts(text: str) -> tuple[str, dict[str, Any] | None]:
+    """剥离工具结果末尾的 `[facts] {json}` 标记行（A3 证据信封约定）。
+
+    工具用该标记附带结构化事实（如 {"kind": "compile", "ok": true, "exit_code": 0}），
+    供 verifier 的确定性规则消费；回传模型的文本不含此行（信息通常已在正文）。
+    标记不合法时原文返回、facts 为 None——绝不因证据通道破坏工具结果本身。
+    """
+    match = _FACTS_RE.search(text)
+    if not match:
+        return text, None
+    try:
+        facts = json.loads(match.group(1))
+    except json.JSONDecodeError:
+        return text, None
+    if not isinstance(facts, dict):
+        return text, None
+    return text[: match.start()].rstrip(), facts
 
 
 class ToolProvider(Protocol):
@@ -38,6 +61,8 @@ class ToolOutcome:
     """unknown_tool | bad_json | schema | denied | exception | tool_error"""
     consecutive: int = 0
     """该工具同类错误的连续次数"""
+    facts: dict[str, Any] | None = None
+    """工具附带的结构化事实（[facts] 标记行），供确定性验收规则消费"""
 
 
 class FailureTracker:
@@ -91,15 +116,23 @@ class ToolPipeline:
             self._gate.check(name, tool.level, arguments)
         except ToolDenied as exc:
             return self._failed(name, "denied", f"[denied] {exc}")
+        except Exception as exc:  # 确认器/checkpoint 钩子自身故障：按拒绝处理，绝不向上抛
+            # （异常逃逸会让 tool_calls 缺回包、污染会话 history——e2e 实测教训）
+            return self._failed(
+                name, "denied", f"[denied] 权限检查异常（{type(exc).__name__}: {exc}），按拒绝处理"
+            )
         try:
             text = await tool.handler(**arguments)
         except Exception as exc:  # 工具异常回传模型，不中断循环
             return self._failed(name, "exception", f"[error] {type(exc).__name__}: {exc}")
+        text, facts = extract_facts(text)
         if text.startswith(("[error]", "[denied]")):
             # 工具自身报错（如 MCP 远端工具的业务失败）
-            return self._failed(name, "tool_error", text)
+            outcome = self._failed(name, "tool_error", text)
+            outcome.facts = facts
+            return outcome
         self._tracker.reset(name)
-        return ToolOutcome(ok=True, text=text)
+        return ToolOutcome(ok=True, text=text, facts=facts)
 
     def _failed(self, name: str, kind: str, text: str) -> ToolOutcome:
         consecutive = self._tracker.record(name, kind)
@@ -143,5 +176,6 @@ __all__ = [
     "PermissionLevel",
     "ToolOutcome",
     "ToolPipeline",
+    "extract_facts",
     "normalize_arguments",
 ]

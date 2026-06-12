@@ -78,6 +78,26 @@ async def test_budget_exhausted():
         await loop.run("测试")
 
 
+async def test_dispatch_exception_still_answers_tool_call():
+    """历史卫生回归：调度层异常不得让 tool_call 缺回包（否则 history 永久污染，
+    后续每次请求被 API 以 insufficient tool messages 拒绝——e2e 实测教训）。"""
+
+    class ExplodingRegistry(ToolRegistry):
+        async def run(self, name: str, arguments_json: str):
+            raise RuntimeError("调度层炸了")
+
+    model = FakeModel([tool_turn("echo", '{"text": "x"}'), AssistantTurn(content="收到")])
+    history: list[dict[str, Any]] = []
+    loop = AgentLoop(model, ExplodingRegistry(PermissionGate()))
+    result = await loop.run("测试", history=history)
+    assert result.final_text == "收到"
+    # 异常转为错误文本回包，assistant 的 tool_call 有对应 tool 消息
+    tool_msgs = [m for m in history if m.get("role") == "tool"]
+    assert len(tool_msgs) == 1
+    assert "[error] 工具调度异常" in tool_msgs[0]["content"]
+    assert tool_msgs[0]["tool_call_id"] == "call_1"
+
+
 async def test_wall_clock_budget_stops_loop():
     """墙钟预算为 0：第一轮前即判定耗尽，防止单个挂死工具拖垮整局。"""
     model = FakeModel([AssistantTurn(content="不该到这")])

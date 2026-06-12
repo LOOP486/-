@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -199,20 +200,28 @@ def run_command(
     task: str,
     models: Path = DEFAULT_MODELS,
     agent: Path = DEFAULT_AGENT,
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="无人值守模式：工程写操作不再交互确认（仍自动 checkpoint，可回滚）",
+    ),
 ) -> None:
     """一次性执行单个任务并输出报告（脚本与排查友好）。"""
     config = _require_models(models)
     settings = load_agent_settings(agent) if agent.exists() else AgentSettings()
-    asyncio.run(_run_single(config, settings, task))
+    asyncio.run(_run_single(config, settings, task, assume_yes=yes))
 
 
-async def _run_single(config: ModelsConfig, settings: AgentSettings, task: str) -> None:
+async def _run_single(
+    config: ModelsConfig, settings: AgentSettings, task: str, *, assume_yes: bool = False
+) -> None:
     from ue5agent.llm.client import LiteLLMClient
     from ue5agent.tools.mcp_client import McpManager
     from ue5agent.tools.registry import ToolRegistry
 
     llm = LiteLLMClient(config)
-    registry = ToolRegistry(_build_gate(settings))
+    registry = ToolRegistry(_build_gate(settings, assume_yes=assume_yes))
     async with McpManager(settings.mcp_servers) as manager:
         await manager.register_all(registry)
         await _execute_task(llm, registry, settings, task)
@@ -227,14 +236,24 @@ def _require_models(path: Path) -> ModelsConfig:
 
 def _cli_confirm(tool_name: str, arguments: dict[str, Any]) -> bool:
     console.print(f"[yellow]写操作请求：{tool_name}[/yellow] 参数：{arguments}")
-    return typer.confirm("允许执行？")
+    try:
+        return typer.confirm("允许执行？")
+    except (typer.Abort, EOFError):  # Ctrl+C / 输入流关闭：按拒绝处理，不抛异常
+        return False
 
 
-def _build_gate(settings: AgentSettings) -> Any:
+def _build_gate(settings: AgentSettings, *, assume_yes: bool = False) -> Any:
     from ue5agent.core.permissions import PermissionGate
 
+    # 非交互运行（输出重定向/后台/CI）不挂确认器：typer.confirm 在无 TTY 下抛 Abort，
+    # 异常若从工具调用链逃逸会让 assistant 的 tool_calls 缺回包、history 永久污染
+    # （后续每次 LLM 请求都被 API 拒绝）。confirmer=None 的网关语义正好合适：
+    # WRITE_PROJECT 靠自动 checkpoint 前置放行（可回滚），DANGEROUS 缺人工确认仍拒绝。
+    # 判定需 stdin/stdout 同为 TTY——Git Bash 等 pty 包装下单看 stdin 会误判；
+    # --yes 显式声明无人值守，绕开启发式。
+    interactive = not assume_yes and sys.stdin.isatty() and sys.stdout.isatty()
     return PermissionGate(
-        confirmer=_cli_confirm,
+        confirmer=_cli_confirm if interactive else None,
         allowlist=set(settings.permissions.allowlist),
         checkpoint=_build_checkpoint_hook(settings),
     )

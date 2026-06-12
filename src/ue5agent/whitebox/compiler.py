@@ -71,7 +71,8 @@ def layout_from_dict(data: dict) -> LayoutSpec:
                     ],
                 )
             )
-        origin = tuple(float(v) for v in data.get("origin", (0, 0, 0)))
+        raw_origin = data.get("origin", (0, 0, 0))
+        origin = (float(raw_origin[0]), float(raw_origin[1]), float(raw_origin[2]))
         return LayoutSpec(
             name=str(data.get("name", "layout")),
             rooms=rooms,

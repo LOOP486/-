@@ -1,4 +1,9 @@
-"""验收 gate（K4）：judge 角色只看目标/验收标准/工具证据，不信自我陈述。"""
+"""验收 gate（K4 + A3 两段式）：确定性规则先行，LLM judge 兜底。
+
+A3 起工具可经 [facts] 标记行附带结构化事实（ToolOutcome.facts）。本模块的
+deterministic_verdict 基于事实做规则判定：可判则直接给结论（不调 LLM，省 token
+且消除误判）；无事实或事实不可判时回落到 LLM judge（verify_step），行为同 K4。
+"""
 
 from __future__ import annotations
 
@@ -28,6 +33,42 @@ _FENCE = re.compile(r"^```(?:json)?\s*(?P<body>.*?)\s*```\s*$", re.DOTALL)
 class VerifyResult:
     verdict: str  # pass | fail | insufficient
     reason: str
+
+
+_DECISIVE_KINDS = ("compile", "wb_validate", "path_test")
+"""可单独支撑 pass 结论的事实类别：均为独立验证动作的客观输出。
+wb_build 这类"操作成功"事实只参与 fail 判定（建好不等于建对）。"""
+
+
+def deterministic_verdict(facts: list[dict]) -> VerifyResult | None:
+    """确定性验收规则：按类别取最新事实，规则可判则返回结论，否则 None。
+
+    - 任一类别最新事实 ok=False → fail（客观失败没有商量余地）；
+    - 存在决定性类别（compile/wb_validate/path_test）且全部 ok → pass；
+    - 无事实、或只有非决定性事实 → None（交给 LLM judge）。
+    """
+    latest: dict[str, dict] = {}
+    for fact in facts:
+        kind = fact.get("kind")
+        if isinstance(kind, str):
+            latest[kind] = fact
+    if not latest:
+        return None
+    failed = {kind: f for kind, f in latest.items() if f.get("ok") is False}
+    if failed:
+        details = "；".join(f"{kind}（{_fact_brief(f)}）" for kind, f in failed.items())
+        return VerifyResult("fail", f"确定性证据失败：{details}")
+    if any(kind in latest for kind in _DECISIVE_KINDS):
+        kinds = "、".join(kind for kind in latest if kind in _DECISIVE_KINDS)
+        return VerifyResult("pass", f"确定性证据通过：{kinds}")
+    return None
+
+
+def _fact_brief(fact: dict) -> str:
+    keep = {
+        k: v for k, v in fact.items() if k not in ("kind", "ok") and not isinstance(v, dict | list)
+    }
+    return json.dumps(keep, ensure_ascii=False) if keep else "无详情"
 
 
 async def verify_step(

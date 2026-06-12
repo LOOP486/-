@@ -29,7 +29,7 @@ class ToolRegistry:
     def __init__(self, gate: PermissionGate):
         self._gate = gate
         self._tools: dict[str, ToolSpec] = {}
-        self._pipeline = None
+        self._pipeline: Any = None
 
     def __len__(self) -> int:
         return len(self._tools)
@@ -58,10 +58,17 @@ class ToolRegistry:
             for tool in self._tools.values()
         ]
 
-    async def dispatch(self, name: str, arguments_json: str) -> str:
-        """兼容入口：委托给 ToolPipeline（函数级导入避免循环依赖）。"""
+    def _ensure_pipeline(self) -> Any:
         if self._pipeline is None:
-            from ue5agent.agent.tool_pipeline import ToolPipeline
+            from ue5agent.agent.tool_pipeline import ToolPipeline  # 函数级导入避免循环依赖
 
             self._pipeline = ToolPipeline(self, self._gate)
-        return await self._pipeline.dispatch(name, arguments_json)
+        return self._pipeline
+
+    async def dispatch(self, name: str, arguments_json: str) -> str:
+        """兼容入口：委托给 ToolPipeline，只回文本。"""
+        return (await self.run(name, arguments_json)).text
+
+    async def run(self, name: str, arguments_json: str) -> Any:
+        """结构化入口：返回 ToolOutcome（含 facts 证据信封），loop 用它写 trace。"""
+        return await self._ensure_pipeline().run(name, arguments_json)

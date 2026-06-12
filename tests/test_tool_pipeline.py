@@ -1,8 +1,9 @@
-"""K2：参数规范化、结果信封、失败签名熔断。"""
+"""K2：参数规范化、结果信封、失败签名熔断（A3 起含 facts 证据信封）。"""
 
 from ue5agent.agent.tool_pipeline import (
     FailureTracker,
     ToolPipeline,
+    extract_facts,
     normalize_arguments,
 )
 from ue5agent.core.permissions import PermissionGate, PermissionLevel
@@ -130,3 +131,71 @@ class TestEnvelope:
             )
         )
         assert await registry.dispatch("add_one", '{"count": "41"}') == "42"
+
+
+class TestGateFailureContained:
+    async def test_confirmer_exception_becomes_denied(self):
+        """确认器自身异常（如无 TTY 下 typer.Abort）按拒绝处理，绝不向上抛。"""
+
+        def exploding_confirmer(tool_name, arguments):
+            raise RuntimeError("无 TTY，确认器炸了")
+
+        gate = PermissionGate(confirmer=exploding_confirmer, allowlist={"danger"})
+        registry = ToolRegistry(gate)
+
+        async def danger() -> str:
+            return "不应执行到这里"
+
+        registry.register(
+            ToolSpec(
+                name="danger",
+                description="",
+                parameters={"type": "object", "properties": {}},
+                level=PermissionLevel.DANGEROUS,
+                handler=danger,
+            )
+        )
+        outcome = await ToolPipeline(registry, gate).run("danger", "{}")
+        assert not outcome.ok
+        assert outcome.error_kind == "denied"
+        assert "权限检查异常" in outcome.text
+
+
+class TestFactsEnvelope:
+    def test_extract_facts_strips_marker(self):
+        text, facts = extract_facts('编译成功\n[facts] {"kind": "compile", "ok": true}')
+        assert text == "编译成功"
+        assert facts == {"kind": "compile", "ok": True}
+
+    def test_extract_facts_absent(self):
+        assert extract_facts("普通结果") == ("普通结果", None)
+
+    def test_extract_facts_bad_json_kept_verbatim(self):
+        raw = "结果\n[facts] {broken"
+        assert extract_facts(raw) == (raw, None)
+
+    async def test_pipeline_outcome_carries_facts(self):
+        pipeline, _ = make_pipeline(['搭建完成\n[facts] {"kind": "wb_build", "ok": true}'])
+        outcome = await pipeline.run("flaky", "{}")
+        assert outcome.ok
+        assert outcome.facts == {"kind": "wb_build", "ok": True}
+        assert "[facts]" not in outcome.text, "facts 行不回传模型"
+
+    async def test_registry_run_exposes_facts_dispatch_text_only(self):
+        _, registry = make_pipeline([])
+
+        async def probe(text: str = "") -> str:
+            return '完成\n[facts] {"kind": "path_test", "ok": false, "reachable": false}'
+
+        registry.register(
+            ToolSpec(
+                name="probe",
+                description="",
+                parameters={"type": "object", "properties": {}},
+                level=PermissionLevel.READ,
+                handler=probe,
+            )
+        )
+        outcome = await registry.run("probe", "{}")
+        assert outcome.facts == {"kind": "path_test", "ok": False, "reachable": False}
+        assert await registry.dispatch("probe", "{}") == "完成"

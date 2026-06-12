@@ -44,11 +44,12 @@ class McpManager:
         await self._stack.aclose()
 
     async def register_all(self, registry: ToolRegistry) -> None:
-        """工具名加 server 前缀避免跨 server 重名；授权级别取 server 配置。"""
+        """工具名加 server 前缀避免跨 server 重名；授权级别取 server 配置，可按工具覆写。"""
         for server_name, session in self._sessions.items():
-            level = PermissionLevel(self._configs[server_name].permission)
+            config = self._configs[server_name]
             listing = await session.list_tools()
             for tool in listing.tools:
+                level = PermissionLevel(config.tool_permissions.get(tool.name, config.permission))
                 registry.register(
                     ToolSpec(
                         name=f"{server_name}__{tool.name}",

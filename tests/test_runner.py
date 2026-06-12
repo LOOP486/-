@@ -7,6 +7,7 @@ from ue5agent.agent.events import RunWriter, read_events
 from ue5agent.agent.report import build_report
 from ue5agent.agent.runner import TaskRunner
 from ue5agent.agent.state import PlanStep, TaskSession
+from ue5agent.agent.verifier import deterministic_verdict
 from ue5agent.core.errors import mark_env_unready
 from ue5agent.core.permissions import PermissionGate, PermissionLevel
 from ue5agent.llm.types import AssistantTurn
@@ -210,3 +211,101 @@ async def test_insufficient_evidence_retries(tmp_path):
     outcome = await runner.run("改配置")
     assert outcome.success
     assert writer.session.plan[0].attempts == 2
+
+
+# ---------- A3 证据信封：确定性验收规则 ----------
+
+
+def test_deterministic_verdict_rules():
+    assert deterministic_verdict([]) is None
+    # 非决定性事实（操作成功 != 做对了）不单独支撑 pass
+    assert deterministic_verdict([{"kind": "wb_build", "ok": True}]) is None
+    fail = deterministic_verdict([{"kind": "compile", "ok": False, "errors": 3}])
+    assert fail is not None and fail.verdict == "fail" and "compile" in fail.reason
+    # 同类取最新：修复后的 compile 覆盖先前失败
+    latest_wins = deterministic_verdict(
+        [
+            {"kind": "compile", "ok": False, "errors": 3},
+            {"kind": "compile", "ok": True, "exit_code": 0},
+        ]
+    )
+    assert latest_wins is not None and latest_wins.verdict == "pass"
+    combo = deterministic_verdict(
+        [
+            {"kind": "wb_build", "ok": True},
+            {"kind": "wb_validate", "ok": True, "violations": 0},
+        ]
+    )
+    assert combo is not None and combo.verdict == "pass"
+    # 任一类失败一票否决
+    veto = deterministic_verdict(
+        [
+            {"kind": "wb_validate", "ok": True},
+            {"kind": "path_test", "ok": False, "reachable": False},
+        ]
+    )
+    assert veto is not None and veto.verdict == "fail"
+
+
+def _facts_tool_registry(name: str, result_text: str) -> ToolRegistry:
+    registry = ToolRegistry(PermissionGate())
+
+    async def handler(layout_json: str = "") -> str:
+        return result_text
+
+    registry.register(
+        ToolSpec(
+            name=name,
+            description="",
+            parameters={"type": "object", "properties": {"layout_json": {"type": "string"}}},
+            level=PermissionLevel.READ,
+            handler=handler,
+        )
+    )
+    return registry
+
+
+async def test_deterministic_pass_skips_judge(tmp_path):
+    """决定性事实全 ok → 直接 pass。脚本中没有 judge 回合：若 LLM judge 被调用，
+    FakeModel 脚本耗尽将导致步骤异常——测试通过即证明规则先行。"""
+    registry = _facts_tool_registry(
+        "wb_validate",
+        '校验PASS：实测 15 个构件\n[facts] {"kind": "wb_validate", "ok": true, "violations": 0}',
+    )
+    model = FakeModel(
+        [
+            plan("standard", ("搭建并校验", "校验通过")),
+            tool_turn("wb_validate", '{"layout_json": "{}"}'),
+            AssistantTurn(content="校验通过"),
+        ]
+    )
+    writer = RunWriter(tmp_path, TaskSession.new("确定性验收"))
+    runner = TaskRunner(model, registry, writer)
+    outcome = await runner.run("搭白盒并校验")
+    assert outcome.success
+    verifies = [e for e in read_events(writer.trace_path) if e["event"] == "verify_result"]
+    assert verifies[0]["mode"] == "deterministic"
+    assert verifies[0]["verdict"] == "pass"
+
+
+async def test_deterministic_fail_without_judge(tmp_path):
+    """决定性事实失败 → 直接 fail（不调 judge），按正常重试/放弃路径走。"""
+    registry = _facts_tool_registry(
+        "path_test",
+        '{"reachable": false}\n[facts] {"kind": "path_test", "ok": false, "reachable": false}',
+    )
+    model = FakeModel(
+        [
+            plan("standard", ("验证可达", "两房间可达")),
+            tool_turn("path_test", '{"layout_json": "{}"}'),
+            AssistantTurn(content="测了"),
+        ]
+    )
+    writer = RunWriter(tmp_path, TaskSession.new("确定性失败"))
+    runner = TaskRunner(model, registry, writer, max_step_attempts=1)
+    outcome = await runner.run("验证可达性")
+    assert not outcome.success
+    verifies = [e for e in read_events(writer.trace_path) if e["event"] == "verify_result"]
+    assert verifies[0]["mode"] == "deterministic"
+    assert verifies[0]["verdict"] == "fail"
+    assert "path_test" in verifies[0]["reason"]
