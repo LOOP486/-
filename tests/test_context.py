@@ -1,7 +1,14 @@
 """上下文管理：截断、历史压缩与配对边界。"""
 
+import json
+
 from tests.test_loop import FakeModel, make_registry
-from ue5agent.core.context import compact_history, truncate
+from ue5agent.core.context import (
+    build_project_brief,
+    compact_history,
+    summarize_tool_result,
+    truncate,
+)
 from ue5agent.core.loop import AgentLoop
 from ue5agent.llm.types import AssistantTurn
 
@@ -16,6 +23,60 @@ class TestTruncate:
         assert result.startswith("A")
         assert result.endswith("B")
         assert "已截断" in result
+
+
+class TestSummarizeToolResult:
+    def test_short_result_untouched(self):
+        assert summarize_tool_result("ok", 100) == "ok"
+
+    def test_actor_list_folded_to_count_and_names(self):
+        actors = {"actors": [{"name": f"WB_{i}", "class": "SM"} for i in range(50)]}
+        text = json.dumps(actors)
+        out = summarize_tool_result(text, 200, tool_name="ue_editor__editor_actors")
+        assert "共 50 个 actor" in out
+        assert "WB_0" in out
+        assert len(out) <= 220  # 摘要 + 兜底截断
+
+    def test_toplevel_list_of_actors_folded(self):
+        text = json.dumps([{"name": f"A{i}"} for i in range(40)])
+        out = summarize_tool_result(text, 150)
+        assert "共 40 个 actor" in out
+
+    def test_compile_log_keeps_error_lines(self):
+        lines = ["Building...", *[f"normal output {i}" for i in range(200)]]
+        lines.append("MyFile.cpp(12): error: undeclared identifier 'Foo'")
+        lines.append("Result: Failed")
+        text = "\n".join(lines)
+        out = summarize_tool_result(text, 600, tool_name="ue_build__ubt_compile")
+        assert "编译日志摘要" in out
+        assert "error: undeclared identifier" in out
+        assert "Result: Failed" in out
+        assert len(out) <= 650
+
+    def test_non_special_falls_back_to_truncate(self):
+        text = "X" * 500
+        out = summarize_tool_result(text, 100)
+        assert "已截断" in out
+
+
+class TestProjectBrief:
+    def test_empty_when_no_probes(self):
+        assert build_project_brief() == ""
+
+    def test_assembles_and_clips(self):
+        brief = build_project_brief(
+            editor="online：编辑器桥可达",
+            repo="分支 master（干净）",
+            engine="UE 5.7",
+        )
+        assert "工程状态" in brief
+        assert "UE 5.7" in brief
+        assert "online" in brief
+        assert "master" in brief
+
+    def test_respects_max_chars(self):
+        brief = build_project_brief(repo="x" * 1000, max_chars=120)
+        assert len(brief) <= 120
 
 
 def assistant_with_tool(name: str) -> dict:

@@ -26,6 +26,7 @@ from ue5agent.agent.verifier import (
     verify_step,
 )
 from ue5agent.agent.vision_review import VisionReviewResult
+from ue5agent.core.context import build_project_brief
 from ue5agent.core.errors import ErrorCategory, classify
 from ue5agent.core.loop import AgentLoop, BudgetExhausted
 from ue5agent.llm.types import ChatModel
@@ -245,6 +246,58 @@ class TaskRunner:
             result="未自动执行（dangerous 级）；如需还原请用 repo_list_checkpoints + repo_restore",
         )
 
+    async def _probe_project_brief(self) -> str:
+        """B4：开场只读探测 editor_status/repo_status/engine_info，拼成工程状态摘要。
+
+        探测工具不存在或失败的项静默跳过；全无结果时返回空串（调用方不注入）。
+        探测走 registry（read 级），不消耗模型轮次。
+        """
+
+        async def probe(suffix: str) -> str | None:
+            name = next((n for n in self._registry.names() if n.endswith(suffix)), None)
+            if name is None:
+                return None
+            try:
+                outcome = await self._registry.run(name, "{}")
+            except Exception:
+                return None
+            return outcome.text if getattr(outcome, "ok", False) else None
+
+        editor = await probe("editor_status")
+        repo = await probe("repo_status")
+        engine = await probe("engine_info")
+        return build_project_brief(editor=editor, repo=repo, engine=engine)
+
+    @staticmethod
+    def _progress_line(plan: list[PlanStep], current_index: int) -> str:
+        """注入每步提示的一行进度（即使步内 compact 也随新提示重述，不会丢任务进度）。"""
+        done = [s.id for s in plan if s.status == "done"]
+        failed = [s.id for s in plan if s.status == "failed"]
+        remaining = [s.id for i, s in enumerate(plan) if i > current_index]
+        cur = plan[current_index].id
+        segs = [f"已完成 {done or '无'}"]
+        if failed:
+            segs.append(f"失败 {failed}")
+        segs.append(f"当前 {cur}")
+        segs.append(f"待办 {remaining or '无'}")
+        return f"[进度] 共 {len(plan)} 步：" + "；".join(segs)
+
+    @staticmethod
+    def _render_progress(session: Any) -> str:
+        """渲染 progress.md（B4）：每步收口刷新，供人/恢复查看。"""
+        marks = {
+            "done": "[x]",
+            "failed": "[!]",
+            "running": "[>]",
+            "skipped": "[-]",
+            "pending": "[ ]",
+        }
+        lines = [f"# 进度：{session.goal}", "", f"状态：{session.status}", ""]
+        for step in session.plan:
+            mark = marks.get(step.status, "[?]")
+            lines.append(f"- {mark} {step.id} {step.intent}（{step.status}，尝试 {step.attempts}）")
+        return "\n".join(lines) + "\n"
+
     async def _run_vision_review(
         self, step: PlanStep, goal: str, tee: _EvidenceTee
     ) -> VisionReviewResult | None:
@@ -314,8 +367,14 @@ class TaskRunner:
         )
         self._writer.save_session()
 
+        # B4 上下文工程：开场一次性探测工程状态，作为 system 上下文注入（省去模型逐个探测的
+        # 轮次）。预置到共享 history 的 system 消息里——位于首位，compact_history 永远保留它。
+        brief = await self._probe_project_brief()
+        system_content = f"{self._system_prompt}\n\n{brief}" if brief else self._system_prompt
+        if brief:
+            self._writer.event("context_brief", brief=brief)
         tee = _EvidenceTee(self._writer)
-        history: list[dict[str, Any]] = []
+        history: list[dict[str, Any]] = [{"role": "system", "content": system_content}]
         summaries: dict[str, str] = {}
         aborted = False
 
@@ -336,6 +395,7 @@ class TaskRunner:
                 tee.reset()
                 self._writer.event("phase_enter", phase="execute", step_id=step.id)
                 prompt = (
+                    f"{self._progress_line(session.plan, index)}\n"
                     f"总目标：{goal}\n当前步骤（{step.id}）：{step.intent}\n"
                     f"验收标准：{step.acceptance or '无'}"
                 )
@@ -453,6 +513,7 @@ class TaskRunner:
                         )
                 history.append({"role": "user", "content": retry_note})
             self._writer.save_session()
+            self._writer.write_progress(self._render_progress(session))
 
         session.status = "aborted" if aborted else "done"
         executed = [s for s in session.plan if s.status in ("done", "failed")]

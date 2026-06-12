@@ -6,7 +6,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from ue5agent.core.context import compact_history, truncate
+from ue5agent.core.context import compact_history, summarize_tool_result
 from ue5agent.llm.types import AssistantTurn, ChatModel
 from ue5agent.tools.registry import ToolRegistry
 
@@ -156,7 +156,9 @@ class AgentLoop:
                     {
                         "role": "tool",
                         "tool_call_id": call.id,
-                        "content": truncate(tool_result, self._max_tool_result_chars),
+                        "content": summarize_tool_result(
+                            tool_result, self._max_tool_result_chars, tool_name=call.name
+                        ),
                     }
                 )
         raise BudgetExhausted(f"迭代 {self._max_iterations} 轮仍未产出最终答复")

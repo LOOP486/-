@@ -936,3 +936,103 @@ async def test_contract_reconciles_check_tools_into_allowlist():
     )
     _, steps2 = await make_plan(model2, "目标")
     assert steps2[0].allowed_tools == []
+
+
+# ---------- B4 上下文工程 ----------
+
+
+async def test_project_brief_injected_into_system_context(tmp_path):
+    """开场探测 editor_status/engine_info → 工程状态摘要注入 system 消息（首位），
+    并发 context_brief 事件。模型首轮即可看到环境，无需自己逐个探测。"""
+    registry = make_registry()
+
+    async def editor_status() -> str:
+        return "online：编辑器桥可达（127.0.0.1:55557）"
+
+    async def engine_info() -> str:
+        return "UE 5.7 @ C:/Program Files/Epic Games/UE_5.7"
+
+    registry.register(
+        ToolSpec(
+            name="ue_editor__editor_status",
+            description="",
+            parameters={"type": "object", "properties": {}},
+            level=PermissionLevel.READ,
+            handler=editor_status,
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="ue_build__engine_info",
+            description="",
+            parameters={"type": "object", "properties": {}},
+            level=PermissionLevel.READ,
+            handler=engine_info,
+        )
+    )
+    model = FakeModel([plan("trivial", ("回答", "")), AssistantTurn(content="好的")])
+    writer = RunWriter(tmp_path, TaskSession.new("工程摘要"))
+    runner = TaskRunner(model, registry, writer)
+    await runner.run("做点事")
+    # 执行步看到的首条消息是 system，且含工程状态摘要
+    exec_view = model.seen_messages[1]
+    assert exec_view[0]["role"] == "system"
+    assert "工程状态" in exec_view[0]["content"]
+    assert "UE 5.7" in exec_view[0]["content"]
+    assert "online" in exec_view[0]["content"]
+    events = [e for e in read_events(writer.trace_path) if e["event"] == "context_brief"]
+    assert events and "工程状态" in events[0]["brief"]
+
+
+async def test_no_brief_when_no_probe_tools(tmp_path):
+    """无探测工具时不注入摘要、不发 context_brief（行为与此前一致）。"""
+    model = FakeModel([plan("trivial", ("回答", "")), AssistantTurn(content="好的")])
+    writer = RunWriter(tmp_path, TaskSession.new("无探测"))
+    runner = TaskRunner(model, make_registry(), writer)
+    await runner.run("做点事")
+    exec_view = model.seen_messages[1]
+    assert exec_view[0]["role"] == "system"
+    assert "工程状态" not in exec_view[0]["content"]
+    assert not [e for e in read_events(writer.trace_path) if e["event"] == "context_brief"]
+
+
+async def test_progress_file_written_after_steps(tmp_path):
+    """每步收口刷新 progress.md，含各步状态。"""
+    model = FakeModel(
+        [
+            plan("standard", ("做 A", "A 完成"), ("做 B", "B 完成")),
+            AssistantTurn(content="A 好"),
+            judge("pass"),
+            AssistantTurn(content="B 好"),
+            judge("pass"),
+        ]
+    )
+    writer = RunWriter(tmp_path, TaskSession.new("进度文件"))
+    runner = TaskRunner(model, make_registry(), writer)
+    await runner.run("做 A 和 B")
+    progress = (writer.dir / "progress.md").read_text(encoding="utf-8")
+    assert "# 进度" in progress
+    assert "s1" in progress and "s2" in progress
+    assert "[x]" in progress  # 至少一步完成
+
+
+async def test_progress_line_in_step_prompt(tmp_path):
+    """每步提示注入 [进度] 行，列出当前步与待办（compact 后仍随新提示重述）。"""
+    model = FakeModel(
+        [
+            plan("standard", ("做 A", "A 完成"), ("做 B", "B 完成")),
+            AssistantTurn(content="A 好"),
+            judge("pass"),
+            AssistantTurn(content="B 好"),
+            judge("pass"),
+        ]
+    )
+    writer = RunWriter(tmp_path, TaskSession.new("进度行"))
+    runner = TaskRunner(model, make_registry(), writer)
+    await runner.run("做 A 和 B")
+    # 第一步执行视图的 user 提示含进度行（当前 s1、待办含 s2）
+    exec_view = model.seen_messages[1]
+    user_msg = exec_view[-1]["content"]
+    assert "[进度]" in user_msg
+    assert "当前 s1" in user_msg
+    assert "s2" in user_msg

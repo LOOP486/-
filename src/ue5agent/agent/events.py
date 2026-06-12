@@ -32,6 +32,8 @@ EVENT_TYPES = frozenset(
         # A4 视觉审查
         "vision_review",
         "vision_review_error",
+        # B4 上下文工程
+        "context_brief",
     }
 )
 
@@ -86,6 +88,12 @@ class RunWriter:
 
     def write_report(self, text: str) -> Path:
         path = self.dir / "report.md"
+        path.write_text(text, encoding="utf-8")
+        return path
+
+    def write_progress(self, text: str) -> Path:
+        """长任务进度落盘 runs/<session>/progress.md（B4），每步收口刷新供人/恢复查看。"""
+        path = self.dir / "progress.md"
         path.write_text(text, encoding="utf-8")
         return path
 

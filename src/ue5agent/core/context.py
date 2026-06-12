@@ -1,7 +1,9 @@
-"""上下文管理：工具结果截断与历史压缩。"""
+"""上下文管理：工具结果摘要/截断、工程状态摘要与历史压缩（B4）。"""
 
 from __future__ import annotations
 
+import json
+import re
 from typing import Any
 
 
@@ -13,6 +15,90 @@ def truncate(text: str, max_chars: int) -> str:
     tail = max_chars - head
     omitted = len(text) - max_chars
     return f"{text[:head]}\n...[已截断 {omitted} 字符]...\n{text[-tail:]}"
+
+
+def summarize_tool_result(text: str, max_chars: int, *, tool_name: str = "") -> str:
+    """超长工具结果按类型摘要（B4），替代一刀切截断；max_chars 仍是兜底上限。
+
+    - actor 列表（editor_actors/actor_find 等）：折叠成"总数 + 前 N 个名字"；
+    - 编译日志（ubt_compile）：保留错误/结果行，折叠正常输出；
+    - 其它：保头留尾截断（truncate）。
+    摘要后再兜底 truncate，保证不超 max_chars。短结果原样返回。
+    """
+    if len(text) <= max_chars:
+        return text
+    actor_summary = _summarize_actor_list(text)
+    if actor_summary is not None:
+        return truncate(actor_summary, max_chars)
+    if tool_name.lower().endswith("ubt_compile") or _looks_like_compile_log(text):
+        return truncate(_summarize_compile_log(text), max_chars)
+    return truncate(text, max_chars)
+
+
+def _summarize_actor_list(text: str, keep: int = 20) -> str | None:
+    """actor 列表（{"actors":[...]} 或顶层 list）折叠为计数 + 前 N 个名字；非此结构返回 None。"""
+    stripped = text.strip()
+    if not stripped.startswith(("{", "[")):
+        return None
+    try:
+        data = json.loads(stripped)
+    except json.JSONDecodeError:
+        return None
+    actors = data.get("actors") if isinstance(data, dict) else data
+    if not isinstance(actors, list) or len(actors) <= keep:
+        return None
+    names = [str(a.get("name", "?")) if isinstance(a, dict) else str(a) for a in actors]
+    shown = "、".join(names[:keep])
+    return f"[已折叠 actor 列表] 共 {len(actors)} 个 actor，前 {keep} 个：{shown} …（其余省略）"
+
+
+def _looks_like_compile_log(text: str) -> bool:
+    low = text.lower()
+    return "error:" in low or "result: failed" in low or low.count("warning:") > 3
+
+
+_COMPILE_KEY_RE = re.compile(r"error|result:|fatal|warning", re.IGNORECASE)
+
+
+def _summarize_compile_log(text: str, keep_lines: int = 30) -> str:
+    """编译日志：保留前几行 + 错误/结果/警告关键行，折叠大段正常输出。"""
+    lines = text.splitlines()
+    important = [ln for ln in lines if _COMPILE_KEY_RE.search(ln)]
+    parts = ["[编译日志摘要]", *lines[:5]]
+    if important:
+        shown = important[:keep_lines]
+        parts.append(f"--- 关键行（共 {len(important)} 条，取前 {len(shown)}）---")
+        parts += shown
+    return "\n".join(parts)
+
+
+def _clip(text: str, max_chars: int) -> str:
+    collapsed = " ".join(str(text).split())
+    return collapsed if len(collapsed) <= max_chars else collapsed[:max_chars] + "…"
+
+
+def build_project_brief(
+    *,
+    editor: str | None = None,
+    repo: str | None = None,
+    engine: str | None = None,
+    max_chars: int = 500,
+) -> str:
+    """把任务开场的只读探测结果拼成简短工程状态摘要（B4），≤max_chars。
+
+    省去模型自己逐个调 editor_status/repo_status/engine_info 的轮次。无任何探测
+    结果时返回空串（调用方不注入）。
+    """
+    parts: list[str] = []
+    if engine:
+        parts.append(f"引擎 {_clip(engine, 100)}")
+    if editor:
+        parts.append(f"编辑器 {_clip(editor, 120)}")
+    if repo:
+        parts.append(f"工程仓库 {_clip(repo, 180)}")
+    if not parts:
+        return ""
+    return ("【工程状态（开场探测，无需重复查询）】 " + "；".join(parts))[:max_chars]
 
 
 def compact_history(
