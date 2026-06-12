@@ -2,11 +2,11 @@
 
 > 最后更新：2026-06-12。新对话接手前先读本页 + [development-plan.md](development-plan.md)。
 > 架构权威版：[architecture/design.md](architecture/design.md) + ADR 0001–0006。
-> ✅ 最新结论：**Stage A1–A3 完成（2026-06-12）**——插件新增 viewport_screenshot/
-> navmesh_rebuild/path_test 三命令（UE5.7 编译实测通过，navmesh 可自动补 NavMeshBoundsVolume）；
-> wb_validate 确定性校验器（期望/实测对照，真机正负样本通过）；证据信封 v1（[facts] 标记 →
-> ToolOutcome.facts → 验收两段式：确定性规则先行不调 LLM，judge 兜底）。
-> eval 两档满分持平基线，165 单测全绿，mypy 零错误。Stage A 仅剩 A4 视觉迭代（等 vision key）。
+> ✅ 最新结论：**Stage A1–A3 + B1–B2 完成（2026-06-12）**——A 段：插件三验证命令、
+> wb_validate 确定性校验器、证据信封 v1（验收两段式）；B 段：PlanStep 契约 v2、
+> 工具效果声明（tools/effects.py 声明表，checkpoint 由 requires_checkpoint 驱动，
+> 非幂等工具执行失败熔断阈值 2 + 禁止原样重试指引）。
+> eval 两档满分持平基线，194 单测全绿，mypy 零错误。Stage A 仅剩 A4 视觉迭代（等 vision key）。
 
 ## 项目一句话
 
@@ -25,6 +25,7 @@ ue5agent：UE5 游戏开发 agent——C++ 实现功能、蓝图只读理解、�
 | Stage A2 白盒校验器 | ✅ 完成。wb_validate（缺件/多件/漂移/穿插 + metrics），真机正负样本通过 |
 | Stage A3 证据信封 | ✅ 完成。[facts] → ToolOutcome.facts → trace；验收两段式（deterministic 优先） |
 | Stage B1 PlanStep 契约 | ✅ 完成。allowed_tools/ceiling/preconditions/success_checks/rollback/step_budget；验收优先级 contract→deterministic→judge |
+| Stage B2 工具效果声明 | ✅ 完成。tools/effects.py（idempotent/requires_checkpoint/rollback_tool/resources，kernel 侧声明表不采信远端）；checkpoint 由声明驱动；非幂等执行失败阈值 2 + 禁止原样重试。navmesh_rebuild 故意不进表（checkpoint 跟随配置权限级） |
 | Phase 2 白盒 | ✅ 完成：manifest + 布局 DSL 编译器（含门图连通性校验）+ wb_build/wb_clear MCP 工具。崩溃根因已根治（spawn 改运行唯一名，踩坑史第 7 条），**三房间完整 agent 端到端核验已通过**（run 20260611-222536：3 次 build 含"清旧建新"场景全程不崩、verify=pass、崩溃目录零新增） |
 
 ## 环境清单
@@ -32,7 +33,7 @@ ue5agent：UE5 游戏开发 agent——C++ 实现功能、蓝图只读理解、�
 - 引擎 `C:/Program Files/Epic Games/UE_5.7`；VS2026 Community；测试工程 `C:/Users/chengpeixin/Documents/Unreal Projects/agent_test`（git 管理，含 UnrealMCP 插件）
 - 仓库内：config/models.yaml + agent.yaml + .env（均不入库，已配好）；MCP servers：ue_build / repo_tools / ue_editor / ue_whitebox
 - 用户入口：双击 ue5agent-chat.bat 或 `uv run ue5agent run "任务"`；trace 回放 `uv run ue5agent trace`
-- 128 个单测全绿；评测 `uv run ue5agent eval`（basic+hard 双档基线满分，evals/baselines/）
+- 194 个单测全绿；评测 `uv run ue5agent eval`（basic+hard 双档基线满分，evals/baselines/）
 
 ## 踩坑史（同类问题先查这里）
 
@@ -55,13 +56,14 @@ ue5agent：UE5 游戏开发 agent——C++ 实现功能、蓝图只读理解、�
 
 ## 下一步（按序）
 
-**2026-06-12 起以 [development-plan.md](development-plan.md) 的 Stage A–E 为准**（吸收外部架构评审后全面修订，含逐里程碑任务分解与验收标准）。接下来的施工顺序：
+**2026-06-12 起以 [development-plan.md](development-plan.md) 的 Stage A–E 为准**（吸收外部架构评审后全面修订，含逐里程碑任务分解与验收标准）。A1–A3、B1–B2 已完成，接下来：
 
-1. **A1**：UnrealMCP 插件加 C++ 命令（viewport_screenshot / navmesh_rebuild / path_test），编译后需重启编辑器（原 P1.4）。
-2. **A2**：白盒确定性校验器 `whitebox/validator.py` + `wb_validate` 工具（重叠/封闭/连通/metrics）。
-3. **A3**：证据信封 v1（ToolOutcome.facts + verifier 确定性规则先行）。可与 A2 并行。
-4. **A4**：视觉迭代闭环 = Phase 2 终验（vision key 到位前先做截图存档子项）。
-5. 之后按 Stage B（kernel 体系化）/ C（蓝图四件套）/ D（安全与工程化）推进。
+1. **B3**：错误分类与恢复策略表（core/errors.py taxonomy + runner 按表差异化恢复；
+   partial_side_effect 策略用 B2 的 rollback_tool）。
+2. **A4**：视觉迭代闭环 = Phase 2 终验（**等 vision key**；key 到位前可先做截图存档子项）。
+3. **B4**：上下文工程 v1（建议 A4 之后——视觉迭代是最好的长任务测试床）。
+4. **C1→C2→C3**：蓝图理解（可与 B 并行，改动面不重叠）。
+5. **D1、D2**：安全加固与运行锁（任意空档插入，单项 ≤1 天）。
 
 历史备忘：白盒三房间端到端核验已通过（run `20260611-222536`，3 次 wb_build 含"清旧建新"必崩场景全程无 Fatal/无 10061、verify=pass）。回归保护：tests/test_whitebox_spawn.py + 该 run 基线。若日后又崩，立刻读 `agent_test/Saved/Crashes/` 最新日志末尾的 Fatal 栈（别只看 trace 的 10061 拒连，那是次生现象）。体验项备忘：输出风格规范（列表类先汇总后明细）、evals 输出完整性断言档。
 

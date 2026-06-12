@@ -16,6 +16,7 @@ from mcp.client.stdio import stdio_client
 
 from ue5agent.config import McpServerConfig
 from ue5agent.core.permissions import PermissionLevel
+from ue5agent.tools.effects import effects_for
 from ue5agent.tools.registry import ToolRegistry, ToolSpec
 
 
@@ -44,7 +45,11 @@ class McpManager:
         await self._stack.aclose()
 
     async def register_all(self, registry: ToolRegistry) -> None:
-        """工具名加 server 前缀避免跨 server 重名；授权级别取 server 配置，可按工具覆写。"""
+        """工具名加 server 前缀避免跨 server 重名；授权级别取 server 配置，可按工具覆写。
+
+        effects 按裸名查 kernel 侧声明表（tools/effects.py），不采信远端自报——
+        checkpoint 等安全行为的权威必须在本进程。
+        """
         for server_name, session in self._sessions.items():
             config = self._configs[server_name]
             listing = await session.list_tools()
@@ -57,6 +62,7 @@ class McpManager:
                         parameters=tool.inputSchema,
                         level=level,
                         handler=_make_handler(session, tool.name),
+                        effects=effects_for(tool.name, level),
                     )
                 )
 

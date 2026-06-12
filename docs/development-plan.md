@@ -96,6 +96,8 @@
 
 > 进度：B1 ✅（2026-06-12，含 ScopedRegistry 工具面收紧与契约验收优先级
 > contract → deterministic → judge；弱模型无契约时行为与 v1 一致）。
+> B2 ✅（2026-06-12，tools/effects.py 声明表 + checkpoint 由 requires_checkpoint 驱动 +
+> 非幂等工具执行失败熔断阈值 2；navmesh_rebuild 故意不进表，checkpoint 语义跟随配置权限级）。
 
 ### B1 PlanStep 契约 v2
 

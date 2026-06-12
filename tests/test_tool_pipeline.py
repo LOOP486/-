@@ -1,4 +1,4 @@
-"""K2：参数规范化、结果信封、失败签名熔断（A3 起含 facts 证据信封）。"""
+"""K2：参数规范化、结果信封、失败签名熔断（A3 起含 facts 证据信封，B2 起含副作用治理）。"""
 
 from ue5agent.agent.tool_pipeline import (
     FailureTracker,
@@ -7,6 +7,7 @@ from ue5agent.agent.tool_pipeline import (
     normalize_arguments,
 )
 from ue5agent.core.permissions import PermissionGate, PermissionLevel
+from ue5agent.tools.effects import ToolEffects, default_effects, effects_for
 from ue5agent.tools.registry import ToolRegistry, ToolSpec
 
 SCHEMA = {
@@ -83,6 +84,153 @@ class TestFailureEscalation:
             outcome = await pipeline.run("ghost", "{}")
         assert outcome.error_kind == "unknown_tool"
         assert "连续 3 次" in outcome.text
+
+
+class TestToolEffects:
+    """B2：副作用声明的解析与默认推导。"""
+
+    def test_default_effects_follow_permission_level(self):
+        assert default_effects(PermissionLevel.WRITE_PROJECT).requires_checkpoint
+        assert not default_effects(PermissionLevel.READ).requires_checkpoint
+        assert default_effects(PermissionLevel.WRITE_SAFE).idempotent
+
+    def test_known_table_lookup_and_fallback(self):
+        wb = effects_for("wb_build", PermissionLevel.WRITE_SAFE)
+        assert not wb.idempotent and wb.rollback_tool == "wb_clear"
+        unknown = effects_for("never_heard", PermissionLevel.WRITE_PROJECT)
+        assert unknown.requires_checkpoint and unknown.idempotent
+
+    def test_toolspec_resolves_effects_at_construction(self):
+        async def noop() -> str:
+            return "ok"
+
+        spec = ToolSpec("t", "", {"type": "object"}, PermissionLevel.WRITE_PROJECT, noop)
+        assert spec.effects is not None and spec.effects.requires_checkpoint
+
+
+def make_effect_pipeline(
+    handler_results: list[str],
+    *,
+    effects: ToolEffects | None = None,
+    level: PermissionLevel = PermissionLevel.WRITE_SAFE,
+    gate: PermissionGate | None = None,
+) -> ToolPipeline:
+    gate = gate or PermissionGate()
+    registry = ToolRegistry(gate)
+    results = list(handler_results)
+
+    async def scripted() -> str:
+        result = results.pop(0)
+        if result == "<raise>":
+            raise RuntimeError("执行炸了")
+        return result
+
+    registry.register(
+        ToolSpec(
+            name="scripted",
+            description="",
+            parameters={"type": "object", "properties": {}},
+            level=level,
+            handler=scripted,
+            effects=effects,
+        )
+    )
+    return ToolPipeline(registry, gate)
+
+
+class TestNonIdempotentGovernance:
+    """B2：非幂等工具执行失败阈值降为 2，回传文本禁止原样重试。"""
+
+    NON_IDEMPOTENT = ToolEffects(idempotent=False, rollback_tool="wb_clear")
+
+    async def test_second_execution_failure_forbids_retry(self):
+        pipeline = make_effect_pipeline(
+            ["[error] 落地失败", "[error] 落地失败"], effects=self.NON_IDEMPOTENT
+        )
+        first = await pipeline.run("scripted", "{}")
+        assert "[提示]" not in first.text
+        second = await pipeline.run("scripted", "{}")
+        assert "禁止原样重试" in second.text
+        assert "wb_clear" in second.text, "熔断文本应给出 rollback 工具指引"
+
+    async def test_exception_also_counts_as_execution_failure(self):
+        pipeline = make_effect_pipeline(["<raise>", "<raise>"], effects=self.NON_IDEMPOTENT)
+        await pipeline.run("scripted", "{}")
+        second = await pipeline.run("scripted", "{}")
+        assert "禁止原样重试" in second.text
+
+    async def test_pre_execution_failures_keep_default_threshold(self):
+        """schema 错误没碰到副作用，修正参数重试是安全的——阈值不降。"""
+        registry = ToolRegistry(PermissionGate())
+
+        async def strict(count: int) -> str:
+            return str(count)
+
+        registry.register(
+            ToolSpec(
+                name="strict",
+                description="",
+                parameters={
+                    "type": "object",
+                    "properties": {"count": {"type": "integer"}},
+                    "required": ["count"],
+                },
+                level=PermissionLevel.WRITE_SAFE,
+                handler=strict,
+                effects=self.NON_IDEMPOTENT,
+            )
+        )
+        pipeline = ToolPipeline(registry, PermissionGate())
+        await pipeline.run("strict", "{}")
+        second = await pipeline.run("strict", "{}")
+        assert second.error_kind == "schema"
+        assert "[提示]" not in second.text
+
+    async def test_idempotent_tool_keeps_threshold_three(self):
+        pipeline = make_effect_pipeline(
+            ["[error] x", "[error] x", "[error] x"],
+            effects=ToolEffects(idempotent=True),
+        )
+        await pipeline.run("scripted", "{}")
+        second = await pipeline.run("scripted", "{}")
+        assert "[提示]" not in second.text
+        third = await pipeline.run("scripted", "{}")
+        assert "连续 3 次" in third.text
+
+
+class TestCheckpointDrivenByEffects:
+    """B2：自动 checkpoint 改由 effects.requires_checkpoint 驱动，默认行为与旧版等价。"""
+
+    async def test_write_project_default_triggers_checkpoint(self):
+        calls = []
+        gate = PermissionGate(checkpoint=lambda: calls.append(1) or True)
+        pipeline = make_effect_pipeline(["ok"], level=PermissionLevel.WRITE_PROJECT, gate=gate)
+        outcome = await pipeline.run("scripted", "{}")
+        assert outcome.ok and calls == [1]
+
+    async def test_declared_false_skips_checkpoint(self):
+        """声明权威：requires_checkpoint=False 的工程写工具不打快照
+        （如白盒类，git 保护不了 actor）。"""
+        gate = PermissionGate()  # 无 checkpoint hook，旧行为下 WRITE_PROJECT 必拒
+        pipeline = make_effect_pipeline(
+            ["ok"],
+            level=PermissionLevel.WRITE_PROJECT,
+            gate=gate,
+            effects=ToolEffects(idempotent=False, requires_checkpoint=False),
+        )
+        outcome = await pipeline.run("scripted", "{}")
+        assert outcome.ok
+
+    async def test_declared_true_enforces_checkpoint_on_write_safe(self):
+        gate = PermissionGate()  # 无 hook → 应拒绝
+        pipeline = make_effect_pipeline(
+            ["ok"],
+            level=PermissionLevel.WRITE_SAFE,
+            gate=gate,
+            effects=ToolEffects(requires_checkpoint=True),
+        )
+        outcome = await pipeline.run("scripted", "{}")
+        assert not outcome.ok and outcome.error_kind == "denied"
 
 
 class TestEnvelope:

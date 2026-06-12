@@ -54,3 +54,34 @@ class TestDangerous:
 
 def test_legacy_write_maps_to_write_project():
     assert PermissionLevel("write") is PermissionLevel.WRITE_PROJECT
+
+
+class TestEffectsDrivenCheckpoint:
+    """B2：checkpoint 由副作用声明驱动；未声明（None）时与旧规则等价。"""
+
+    def test_write_project_default_still_checkpoints(self):
+        calls = []
+        gate = PermissionGate(checkpoint=lambda: calls.append(1) or True)
+        gate.check("modify_source", PermissionLevel.WRITE_PROJECT, {}, requires_checkpoint=None)
+        assert calls == [1]
+
+    def test_declared_false_skips_checkpoint_on_write_project(self):
+        # 声明权威：requires_checkpoint=False 的工程写工具不打快照（无 hook 也放行）
+        gate = PermissionGate()
+        gate.check("level_op", PermissionLevel.WRITE_PROJECT, {}, requires_checkpoint=False)
+
+    def test_declared_true_enforces_checkpoint_on_write_safe(self):
+        gate = PermissionGate()
+        with pytest.raises(ToolDenied, match="checkpoint"):
+            gate.check("special_write", PermissionLevel.WRITE_SAFE, {}, requires_checkpoint=True)
+        calls = []
+        gate_ok = PermissionGate(checkpoint=lambda: calls.append(1) or True)
+        gate_ok.check("special_write", PermissionLevel.WRITE_SAFE, {}, requires_checkpoint=True)
+        assert calls == [1]
+
+    def test_dangerous_allowlist_checked_before_checkpoint(self):
+        calls = []
+        gate = PermissionGate(checkpoint=lambda: calls.append(1) or True)
+        with pytest.raises(ToolDenied, match="白名单"):
+            gate.check("asset_delete", PermissionLevel.DANGEROUS, {}, requires_checkpoint=True)
+        assert calls == [], "不在白名单的危险工具不应触发快照"

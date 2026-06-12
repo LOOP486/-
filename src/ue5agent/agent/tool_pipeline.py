@@ -19,9 +19,17 @@ from difflib import get_close_matches
 from typing import Any, Protocol
 
 from ue5agent.core.permissions import PermissionGate, PermissionLevel, ToolDenied
+from ue5agent.tools.effects import ToolEffects, default_effects
 from ue5agent.tools.validation import parse_arguments, validate_arguments
 
 _PATH_HINTS = ("path", "file", "dir", "root", "uproject", "folder")
+
+_EXECUTION_KINDS = ("exception", "tool_error")
+"""工具 handler 实际跑过的失败类别——只有这两类可能留下半截副作用。
+bad_json/schema/denied 在执行前就被拦下，修正参数后重试是安全的。"""
+
+_NON_IDEMPOTENT_THRESHOLD = 2
+"""非幂等工具执行失败的熔断阈值（幂等工具沿用 FailureTracker 默认 3）。"""
 
 _FACTS_RE = re.compile(r"\n?\[facts\]\s*(\{.*?\})\s*$", re.DOTALL)
 
@@ -112,8 +120,11 @@ class ToolPipeline:
             return self._failed(
                 name, "schema", "[error] 参数不符合 schema：" + "；".join(violations)
             )
+        effects: ToolEffects = getattr(tool, "effects", None) or default_effects(tool.level)
         try:
-            self._gate.check(name, tool.level, arguments)
+            self._gate.check(
+                name, tool.level, arguments, requires_checkpoint=effects.requires_checkpoint
+            )
         except ToolDenied as exc:
             return self._failed(name, "denied", f"[denied] {exc}")
         except Exception as exc:  # 确认器/checkpoint 钩子自身故障：按拒绝处理，绝不向上抛
@@ -124,23 +135,39 @@ class ToolPipeline:
         try:
             text = await tool.handler(**arguments)
         except Exception as exc:  # 工具异常回传模型，不中断循环
-            return self._failed(name, "exception", f"[error] {type(exc).__name__}: {exc}")
+            return self._failed(name, "exception", f"[error] {type(exc).__name__}: {exc}", effects)
         text, facts = extract_facts(text)
         if text.startswith(("[error]", "[denied]")):
             # 工具自身报错（如 MCP 远端工具的业务失败）
-            outcome = self._failed(name, "tool_error", text)
+            outcome = self._failed(name, "tool_error", text, effects)
             outcome.facts = facts
             return outcome
         self._tracker.reset(name)
         return ToolOutcome(ok=True, text=text, facts=facts)
 
-    def _failed(self, name: str, kind: str, text: str) -> ToolOutcome:
+    def _failed(
+        self, name: str, kind: str, text: str, effects: ToolEffects | None = None
+    ) -> ToolOutcome:
         consecutive = self._tracker.record(name, kind)
-        if consecutive >= self._tracker.threshold:
-            text += (
-                f"\n[提示] {name} 已连续 {consecutive} 次出现同类错误（{kind}），"
-                "不要原样重试——换一种参数或方法。"
-            )
+        risky = effects is not None and not effects.idempotent and kind in _EXECUTION_KINDS
+        threshold = _NON_IDEMPOTENT_THRESHOLD if risky else self._tracker.threshold
+        if consecutive >= threshold:
+            if risky:
+                cleanup = (
+                    f"或先用 {effects.rollback_tool} 清理已落地的部分，"
+                    if effects is not None and effects.rollback_tool
+                    else ""
+                )
+                text += (
+                    f"\n[提示] {name} 是非幂等工具且已连续 {consecutive} 次执行失败，"
+                    f"禁止原样重试——副作用可能已部分发生。先用查询工具核实实际状态"
+                    f"（如 actor_find / repo_status），{cleanup}再换参数或路径。"
+                )
+            else:
+                text += (
+                    f"\n[提示] {name} 已连续 {consecutive} 次出现同类错误（{kind}），"
+                    "不要原样重试——换一种参数或方法。"
+                )
         return ToolOutcome(ok=False, text=text, error_kind=kind, consecutive=consecutive)
 
 

@@ -60,22 +60,41 @@ class PermissionGate:
         self._allowlist = allowlist or set()
         self._checkpoint = checkpoint
 
-    def check(self, tool_name: str, level: PermissionLevel, arguments: dict[str, Any]) -> None:
-        """放行则静默返回，拒绝则抛 ToolDenied。"""
-        if level in (PermissionLevel.READ, PermissionLevel.WRITE_SAFE):
-            return
+    def check(
+        self,
+        tool_name: str,
+        level: PermissionLevel,
+        arguments: dict[str, Any],
+        requires_checkpoint: bool | None = None,
+    ) -> None:
+        """放行则静默返回，拒绝则抛 ToolDenied。
+
+        requires_checkpoint 来自工具的副作用声明（B2）：None 表示未声明，
+        按旧规则推导（WRITE_PROJECT 一律前置快照）——直接调用方与旧测试不受影响。
+        """
+        if requires_checkpoint is None:
+            requires_checkpoint = level is PermissionLevel.WRITE_PROJECT
         if level is PermissionLevel.DANGEROUS:
+            # 白名单先于 checkpoint：不在白名单的工具连快照都不该触发
             if tool_name not in self._allowlist:
                 raise ToolDenied(f"{tool_name} 属于危险操作且不在白名单，拒绝")
+            if requires_checkpoint:
+                self._ensure_checkpoint(tool_name)
             if self._confirmer is None or not self._confirmer(tool_name, arguments):
                 raise ToolDenied(f"{tool_name} 属于危险操作，未获人工确认")
             return
+        if requires_checkpoint:
+            self._ensure_checkpoint(tool_name)
+        if level in (PermissionLevel.READ, PermissionLevel.WRITE_SAFE):
+            return
         # WRITE_PROJECT
+        if self._confirmer is not None and not self._confirmer(tool_name, arguments):
+            raise ToolDenied(f"{tool_name} 是工程写操作，未获用户确认")
+
+    def _ensure_checkpoint(self, tool_name: str) -> None:
         if self._checkpoint is None:
             raise ToolDenied(
                 f"{tool_name} 会修改工程，但未配置 checkpoint（工程不在 git 管理下？）"
             )
         if not self._checkpoint():
             raise ToolDenied(f"{tool_name} 的前置 checkpoint 失败，拒绝执行")
-        if self._confirmer is not None and not self._confirmer(tool_name, arguments):
-            raise ToolDenied(f"{tool_name} 是工程写操作，未获用户确认")

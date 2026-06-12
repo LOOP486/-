@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ue5agent.core.permissions import PermissionGate, PermissionLevel
+from ue5agent.tools.effects import ToolEffects, default_effects
 
 ToolHandler = Callable[..., Awaitable[str]]
 
@@ -23,6 +24,12 @@ class ToolSpec:
     """OpenAI function calling 的 JSON Schema。"""
     level: PermissionLevel
     handler: ToolHandler
+    effects: ToolEffects | None = None
+    """副作用声明（B2）。不传则按权限级推导保守默认，构造后保证非 None。"""
+
+    def __post_init__(self) -> None:
+        if self.effects is None:
+            self.effects = default_effects(self.level)
 
 
 class ToolRegistry:

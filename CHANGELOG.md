@@ -32,6 +32,15 @@
   allowed_tools，否则工具面过滤后证据永远补不上）；回滚按实际落地前缀清（wb_build
   facts 带 prefix）；wb_validate 新增异前缀白盒残留检测（旧批次构件叠在布局区域会
   堵门断 navmesh，且对本前缀对照不可见——实测曾被误诊为 agent radius 问题）。
+- 工具效果声明（B2 Tool Effect System）：工具元数据从"权限级"扩展为副作用语义
+  （tools/effects.py：idempotent / requires_checkpoint / rollback_tool / supports_dry_run /
+  resources）。MCP 工具按裸名查 kernel 侧声明表（不采信远端自报——checkpoint 等安全行为
+  的权威必须在本进程），本地工具在定义处声明，未声明按权限级推导保守默认（与旧行为等价）。
+  两个行为变化：① WRITE_PROJECT 自动 checkpoint 改由 effects.requires_checkpoint 驱动
+  （默认仍打；白盒类工具声明 False 是有意的——git 快照保护不了关卡 actor，回滚靠
+  rollback_tool=wb_clear）；② 非幂等工具执行失败（exception/tool_error）的熔断阈值 3→2，
+  回传文本禁止原样重试并给出查状态 / rollback 工具指引；执行前失败（schema/bad_json）
+  不降阈值——没碰到副作用，修正参数重试是安全的。
 
 ### 修复
 

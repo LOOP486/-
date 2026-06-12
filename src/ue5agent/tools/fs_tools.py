@@ -9,7 +9,17 @@ import re
 from pathlib import Path
 
 from ue5agent.core.permissions import PermissionLevel
+from ue5agent.tools.effects import ToolEffects
 from ue5agent.tools.registry import ToolSpec
+
+# 文件写工具的副作用声明（B2）：非幂等（覆写/替换重复执行结果不同），
+# 必须前置 checkpoint——回滚靠 repo_restore 还原快照
+_FILE_WRITE_EFFECTS = ToolEffects(
+    idempotent=False,
+    requires_checkpoint=True,
+    rollback_tool="repo_restore",
+    resources=("source_files",),
+)
 
 _SEARCH_SUFFIXES = {".h", ".cpp", ".cs", ".ini", ".uproject", ".uplugin", ".py", ".md"}
 _SKIP_DIRS = {"Binaries", "Intermediate", "Saved", "DerivedDataCache", ".git", ".vs"}
@@ -100,6 +110,7 @@ def build_fs_tools(project_root: Path) -> list[ToolSpec]:
             ),
             PermissionLevel.WRITE_PROJECT,
             write_file,
+            effects=_FILE_WRITE_EFFECTS,
         ),
         ToolSpec(
             "replace_in_file",
@@ -111,6 +122,7 @@ def build_fs_tools(project_root: Path) -> list[ToolSpec]:
             ),
             PermissionLevel.WRITE_PROJECT,
             replace_in_file,
+            effects=_FILE_WRITE_EFFECTS,
         ),
         ToolSpec(
             "list_dir",
