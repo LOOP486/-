@@ -15,6 +15,7 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
+from ue5agent.blueprint import format_overview, format_pseudocode, format_usages
 from ue5agent.core.errors import ErrorCategory, is_env_unready, mark_env_unready, mark_error
 from ue5agent.mcp_servers.ue_editor.bridge import DEFAULT_PORT, probe_editor, send_command
 
@@ -74,12 +75,65 @@ def bp_read(blueprint_path: str) -> str:
 
 
 @mcp.tool()
-def bp_analyze(blueprint_path: str, function_name: str = "") -> str:
-    """分析蓝图图表（节点与连接关系）。只读，token 较大，先用 bp_read。"""
+def bp_analyze(blueprint_path: str, graph_name: str = "") -> str:
+    """分析蓝图某张图的节点与连接（只读，token 较大，先用 bp_read / bp_overview）。
+
+    graph_name 缺省=EventGraph；传函数名（如 Move）可取该函数图。返回含 connections
+    （{from_node,from_pin,to_node,to_pin}）。
+    """
     params: dict[str, Any] = {"blueprint_path": blueprint_path}
-    if function_name:
-        params["function_name"] = function_name
+    if graph_name:
+        params["graph_name"] = graph_name
     return _call("analyze_blueprint_graph", params)
+
+
+@mcp.tool()
+def bp_overview(blueprint_path: str) -> str:
+    """蓝图概览（C2，默认视图）：父类/组件/接口/变量/函数/事件图分类，token 远小于原始 JSON。
+
+    适合"这个蓝图是什么、响应哪些输入/事件"的首问；要精确节点图再用 bp_analyze 下钻。
+    """
+    out = _call("read_blueprint_content", {"blueprint_path": blueprint_path})
+    if out.startswith("[error]") or is_env_unready(out):
+        return out
+    try:
+        return format_overview(json.loads(out))
+    except (json.JSONDecodeError, AttributeError, TypeError):
+        return out  # 解析失败则回退原始文本，不丢信息
+
+
+@mcp.tool()
+def bp_pseudocode(blueprint_path: str, graph_name: str = "") -> str:
+    """蓝图某张图的控制流伪代码（C2，token 高效默认视图）。
+
+    graph_name 缺省=EventGraph；传函数名取该函数图。基于节点 exec 连接重建执行流，
+    从事件/输入入口缩进列出执行顺序；无连接信息时退回结构化摘要。
+    """
+    params: dict[str, Any] = {"blueprint_path": blueprint_path}
+    if graph_name:
+        params["graph_name"] = graph_name
+    out = _call("analyze_blueprint_graph", params)
+    if out.startswith("[error]") or is_env_unready(out):
+        return out
+    try:
+        return format_pseudocode(json.loads(out))
+    except (json.JSONDecodeError, AttributeError, TypeError):
+        return out
+
+
+@mcp.tool()
+def bp_find_usages(blueprint_path: str) -> str:
+    """查找谁引用了这个蓝图（C2，AssetRegistry 依赖图，只读）。
+
+    回答"谁在用它"——返回引用该蓝图的资产 package 列表（已过滤引擎/自身）。
+    """
+    out = _call("find_blueprint_references", {"blueprint_path": blueprint_path})
+    if out.startswith("[error]") or is_env_unready(out):
+        return out
+    try:
+        return format_usages(json.loads(out))
+    except (json.JSONDecodeError, AttributeError, TypeError):
+        return out
 
 
 @mcp.tool()

@@ -1,5 +1,6 @@
 """ue_editor 关卡验证三工具（A1）：fake bridge，不碰真编辑器。"""
 
+import inspect
 import json
 from pathlib import Path
 
@@ -107,3 +108,65 @@ def test_bridge_error_mapped_to_error_text(monkeypatch):
     out = ed_server.path_test(start=[0, 0, 0], end=[1, 1, 1])
     assert out.startswith("[error]")
     assert "navmesh_rebuild" in out
+
+
+# ---------- C1 (P1.2) 裁剪与分级：瘦桥只暴露挑选过的只读命令 ----------
+
+# 注册进瘦桥的工具（蓝图只读 + 场景读取 + 截图 + 导航验证）。增删工具时同步本清单与
+# docs/phase1-bridge-plan.md 的分级表——这是 ADR-0003"蓝图只读"的执行边界。
+_EXPECTED_TOOLS = {
+    "editor_status",
+    "editor_actors",
+    "actor_find",
+    "bp_read",
+    "bp_analyze",
+    "bp_overview",
+    "bp_pseudocode",
+    "bp_find_usages",
+    "viewport_screenshot",
+    "navmesh_rebuild",
+    "path_test",
+}
+
+# 编辑/批量构建类桥命令一律不得在瘦桥源码中出现（防止未来误暴露写能力）。
+_FORBIDDEN_BRIDGE_COMMANDS = (
+    "spawn_actor",
+    "delete_actor",
+    "set_actor_transform",
+    "set_actor_property",
+    "add_component",
+    "compile_blueprint",
+    "create_blueprint",
+    "connect_blueprint_nodes",
+    "create_town",
+    "spawn_blueprint_actor",
+)
+
+
+def test_thin_bridge_registers_exactly_vetted_tools():
+    """瘦桥暴露的工具集恰好是审定过的只读集（+ navmesh 写）。"""
+    tool_names = {
+        name
+        for name, obj in vars(ed_server).items()
+        if inspect.isfunction(obj)
+        and not name.startswith("_")
+        and name not in {"main"}
+        and obj.__module__ == ed_server.__name__
+    }
+    assert tool_names == _EXPECTED_TOOLS
+
+
+def test_no_edit_or_batch_bridge_commands_forwarded():
+    """瘦桥源码不出现任何编辑/批量构建类桥命令（ADR-0003 蓝图只读的硬边界）。"""
+    src = inspect.getsource(ed_server)
+    for command in _FORBIDDEN_BRIDGE_COMMANDS:
+        assert command not in src, f"瘦桥不应转发编辑类命令：{command}"
+
+
+def test_blueprint_tools_are_readonly_calls(monkeypatch):
+    """bp_read/bp_analyze 只发只读查询命令，不触发任何写操作。"""
+    calls = _record_bridge(monkeypatch, response={"status": "success", "result": {}})
+    ed_server.bp_read("/Game/BP_X")
+    ed_server.bp_analyze("/Game/BP_X", graph_name="Move")
+    commands = [c for c, _ in calls]
+    assert commands == ["read_blueprint_content", "analyze_blueprint_graph"]
