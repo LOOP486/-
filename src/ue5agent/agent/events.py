@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from ue5agent.agent.state import Artifact, TaskSession
+from ue5agent.core.redaction import redact
 
 EVENT_TYPES = frozenset(
     {
@@ -39,12 +40,17 @@ EVENT_TYPES = frozenset(
 
 
 class RunWriter:
-    def __init__(self, root: Path, session: TaskSession):
+    def __init__(self, root: Path, session: TaskSession, *, secrets: set[str] | None = None):
         self.session = session
         self.dir = root / session.id
         self.artifacts_dir = self.dir / "artifacts"
         self.artifacts_dir.mkdir(parents=True, exist_ok=True)
         self.trace_path = self.dir / "trace.jsonl"
+        self._secrets = secrets or set()
+        """落盘前掩码的 secret 值集合（D1.2）；空集时不改动任何文本。"""
+
+    def _redact(self, text: str) -> str:
+        return redact(text, self._secrets) if self._secrets else text
 
     def event(
         self,
@@ -66,8 +72,9 @@ class RunWriter:
         if step_id:
             record["step_id"] = step_id
         record.update(payload)
+        line = self._redact(json.dumps(record, ensure_ascii=False))
         with self.trace_path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+            handle.write(line + "\n")
 
     def write(self, event: str, **data: Any) -> None:
         """与旧 SessionLog.write 兼容的入口，loop 无需感知差异。"""
@@ -78,7 +85,7 @@ class RunWriter:
         if isinstance(content, bytes):
             path.write_bytes(content)
         else:
-            path.write_text(content, encoding="utf-8")
+            path.write_text(self._redact(content), encoding="utf-8")
         artifact = Artifact(kind=kind, path=f"artifacts/{name}", meta=meta)
         self.session.artifacts.append(artifact)
         return artifact
@@ -88,13 +95,13 @@ class RunWriter:
 
     def write_report(self, text: str) -> Path:
         path = self.dir / "report.md"
-        path.write_text(text, encoding="utf-8")
+        path.write_text(self._redact(text), encoding="utf-8")
         return path
 
     def write_progress(self, text: str) -> Path:
         """长任务进度落盘 runs/<session>/progress.md（B4），每步收口刷新供人/恢复查看。"""
         path = self.dir / "progress.md"
-        path.write_text(text, encoding="utf-8")
+        path.write_text(self._redact(text), encoding="utf-8")
         return path
 
 
@@ -117,3 +124,62 @@ def latest_trace(root: Path) -> Path | None:
         return None
     traces = sorted(root.glob("*/trace.jsonl"), key=lambda p: p.parent.name)
     return traces[-1] if traces else None
+
+
+def prune_runs(
+    root: Path,
+    *,
+    keep: int = 20,
+    days: float | None = None,
+    keep_screenshots: bool = False,
+    now: float | None = None,
+) -> list[str]:
+    """清理旧的 runs/<session> 目录（D2.2），返回被删目录名（按时间升序）。
+
+    规则：按目录名（时间戳前缀）排序，保留最近 keep 个；若给 days，更早于 days 天的
+    也删（即便在 keep 内）。keep_screenshots=True 时保留各目录的 artifacts/*.png（删其余）。
+    非目录、不含 trace.jsonl 的项跳过（不误删用户文件）。
+    """
+    import shutil
+    import time as _time
+
+    if not root.exists():
+        return []
+    runs = sorted(
+        (p for p in root.iterdir() if p.is_dir() and (p / "trace.jsonl").exists()),
+        key=lambda p: p.name,
+    )
+    cutoff = (now if now is not None else _time.time()) - days * 86400 if days else None
+    deleted: list[str] = []
+    for index, run_dir in enumerate(runs):
+        too_old = cutoff is not None and run_dir.stat().st_mtime < cutoff
+        beyond_keep = index < len(runs) - keep
+        if not (too_old or beyond_keep):
+            continue
+        if keep_screenshots and _has_screenshots(run_dir):
+            _delete_except_screenshots(run_dir)
+        else:
+            shutil.rmtree(run_dir, ignore_errors=True)
+        deleted.append(run_dir.name)
+    return deleted
+
+
+def _has_screenshots(run_dir: Path) -> bool:
+    return any((run_dir / "artifacts").glob("*.png")) if (run_dir / "artifacts").exists() else False
+
+
+def _delete_except_screenshots(run_dir: Path) -> None:
+    """删除 run 目录下除 artifacts/*.png 外的内容（保留截图证据）。"""
+    import shutil
+
+    for child in run_dir.iterdir():
+        if child.name == "artifacts":
+            for art in child.iterdir():
+                if art.suffix.lower() != ".png":
+                    art.unlink(missing_ok=True) if art.is_file() else shutil.rmtree(
+                        art, ignore_errors=True
+                    )
+        elif child.is_file():
+            child.unlink(missing_ok=True)
+        else:
+            shutil.rmtree(child, ignore_errors=True)

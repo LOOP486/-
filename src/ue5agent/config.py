@@ -62,6 +62,10 @@ class ModelsConfig(BaseModel):
         """是否配置了多模态角色；缺失时截图视觉验证不可用。"""
         return VISION_ROLE in self.roles
 
+    def secret_env_names(self) -> list[str]:
+        """全部 provider 的 api_key_env 变量名（D1.2 掩码取值用）。"""
+        return [p.api_key_env for p in self.providers.values() if p.api_key_env]
+
 
 class EngineConfig(BaseModel):
     root: Path = Field(description="UE 引擎根目录（其下应有 Engine/）")

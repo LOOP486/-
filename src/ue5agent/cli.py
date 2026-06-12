@@ -38,6 +38,32 @@ def version() -> None:
     console.print(f"ue5agent {__version__}")
 
 
+runs_app = typer.Typer(help="runs/ 运行产物维护", no_args_is_help=True)
+app.add_typer(runs_app, name="runs")
+
+
+@runs_app.command("prune")
+def runs_prune(
+    keep: int = typer.Option(20, help="保留最近 N 次运行"),
+    days: float | None = typer.Option(None, help="同时删除早于 D 天的运行（即便在 keep 内）"),
+    keep_screenshots: bool = typer.Option(
+        False, "--keep-screenshots", help="被清理的运行保留 artifacts/*.png 截图"
+    ),
+    root: Path = Path("runs"),
+) -> None:
+    """清理旧的 runs/<session> 目录，控制磁盘占用。"""
+    from ue5agent.agent.events import prune_runs
+
+    deleted = prune_runs(root, keep=keep, days=days, keep_screenshots=keep_screenshots)
+    if deleted:
+        console.print(
+            f"[green]已清理 {len(deleted)} 次运行[/green]：{', '.join(deleted[:8])}"
+            + (" …" if len(deleted) > 8 else "")
+        )
+    else:
+        console.print("[dim]无需清理[/dim]")
+
+
 @app.command("check-config")
 def check_config(models: Path = DEFAULT_MODELS, agent: Path = DEFAULT_AGENT) -> None:
     """校验配置文件并打印模型角色路由。"""
@@ -216,15 +242,21 @@ def run_command(
 async def _run_single(
     config: ModelsConfig, settings: AgentSettings, task: str, *, assume_yes: bool = False
 ) -> None:
+    from ue5agent.core.runlock import RunLockError, run_lock
     from ue5agent.llm.client import LiteLLMClient
     from ue5agent.tools.mcp_client import McpManager
     from ue5agent.tools.registry import ToolRegistry
 
-    llm = LiteLLMClient(config)
-    registry = ToolRegistry(_build_gate(settings, assume_yes=assume_yes))
-    async with McpManager(settings.mcp_servers) as manager:
-        await manager.register_all(registry)
-        await _execute_task(llm, registry, settings, task)
+    try:
+        with run_lock(Path("runs") / ".runner.lock"):  # D2.1 同工程单 runner
+            llm = LiteLLMClient(config)
+            registry = ToolRegistry(_build_gate(settings, assume_yes=assume_yes))
+            async with McpManager(settings.mcp_servers) as manager:
+                await manager.register_all(registry)
+                await _execute_task(llm, registry, settings, task, config=config)
+    except RunLockError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
 
 
 def _require_models(path: Path) -> ModelsConfig:
@@ -284,30 +316,45 @@ def _build_checkpoint_hook(settings: AgentSettings):
 
 async def _chat(config: ModelsConfig, settings: AgentSettings) -> None:
     # litellm 导入耗时数秒，放到真正需要时再加载
+    from ue5agent.core.runlock import RunLockError, run_lock
     from ue5agent.llm.client import LiteLLMClient
     from ue5agent.tools.mcp_client import McpManager
     from ue5agent.tools.registry import ToolRegistry
 
-    llm = LiteLLMClient(config)
-    registry = ToolRegistry(_build_gate(settings))
-    async with McpManager(settings.mcp_servers) as manager:
-        await manager.register_all(registry)
-        console.print(f"[dim]已加载 {len(registry)} 个工具；输入 exit 退出[/dim]")
-        # 每条输入是一个独立 TaskSession（runs/ 一个目录）；跨任务记忆留给后续里程碑
-        while True:
-            user_input = console.input("[bold cyan]you ›[/bold cyan] ").strip()
-            if user_input.lower() in {"exit", "quit"}:
-                break
-            if not user_input:
-                continue
-            await _execute_task(llm, registry, settings, user_input)
+    try:
+        lock = run_lock(Path("runs") / ".runner.lock")  # D2.1 同工程单 runner
+        lock.__enter__()
+    except RunLockError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+    try:
+        llm = LiteLLMClient(config)
+        registry = ToolRegistry(_build_gate(settings))
+        async with McpManager(settings.mcp_servers) as manager:
+            await manager.register_all(registry)
+            console.print(f"[dim]已加载 {len(registry)} 个工具；输入 exit 退出[/dim]")
+            # 每条输入是一个独立 TaskSession（runs/ 一个目录）；跨任务记忆留给后续里程碑
+            while True:
+                user_input = console.input("[bold cyan]you ›[/bold cyan] ").strip()
+                if user_input.lower() in {"exit", "quit"}:
+                    break
+                if not user_input:
+                    continue
+                await _execute_task(llm, registry, settings, user_input, config=config)
+    finally:
+        lock.__exit__(None, None, None)
 
 
-async def _execute_task(llm: Any, registry: Any, settings: AgentSettings, text: str) -> None:
+async def _execute_task(
+    llm: Any, registry: Any, settings: AgentSettings, text: str, *, config: Any = None
+) -> None:
     """执行单个任务：实时回显进度，结束打印报告。"""
     from ue5agent.agent.events import RunWriter
     from ue5agent.agent.runner import TaskRunner
     from ue5agent.agent.state import TaskSession
+    from ue5agent.core.redaction import collect_secret_values
+
+    secrets = collect_secret_values(config.secret_env_names()) if config is not None else set()
 
     class ConsoleRunWriter(RunWriter):
         """关键 trace 事件回显终端——长任务不再"看起来没反应"。"""
@@ -337,7 +384,7 @@ async def _execute_task(llm: Any, registry: Any, settings: AgentSettings, text: 
                 )
 
     console.print("[dim]任务执行中（规划→执行→验收）…[/dim]")
-    writer = ConsoleRunWriter(Path("runs"), TaskSession.new(text[:40]))
+    writer = ConsoleRunWriter(Path("runs"), TaskSession.new(text[:40]), secrets=secrets)
     # A4：配了 vision 角色才注入视觉审查钩子；未配则降级为"截图存档供人看"（行为同前）
     vision_reviewer = None
     if getattr(llm, "has_vision", False):

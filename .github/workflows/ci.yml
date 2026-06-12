@@ -1,4 +1,4 @@
-name: ci
+name: CI
 
 on:
   push:
@@ -6,12 +6,27 @@ on:
   pull_request:
 
 jobs:
-  check:
+  lint-test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
-      - run: uv sync
-      - run: uv run ruff check src tests
-      - run: uv run ruff format --check src tests
-      - run: uv run pytest -q
+
+      - name: 安装 uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: 同步依赖（含 dev 组）
+        run: uv sync --dev
+
+      - name: ruff lint
+        run: uv run ruff check src tests
+
+      - name: ruff format 检查
+        run: uv run ruff format --check src tests
+
+      - name: mypy 类型检查
+        run: uv run mypy src
+
+      - name: 单元测试（离线，外部依赖一律替身）
+        run: uv run pytest -q --tb=short -p no:cacheprovider
