@@ -22,6 +22,16 @@
   入 trace 不回传模型）；验收升级为两段式——确定性规则先行（compile/wb_validate/path_test
   事实可判时直接给结论，不调 LLM），LLM judge 兜底。首批产出 facts 的工具：ubt_compile、
   wb_build、wb_validate、path_test、repo_checkpoint。
+- PlanStep 契约 v2（B1）：步骤可声明 allowed_tools（步内工具白名单，ScopedRegistry
+  收紧工具面）、permission_ceiling（步内权限上限）、preconditions（editor_online 探测，
+  未满足时在执行提示注入补救指引）、success_checks（声明式验收绑定 facts 证据，缺证据
+  → insufficient 驱动补证据，优先级高于通用确定性规则）、rollback_policy（失败超限自动
+  wb_clear；dangerous 级回滚仅提示）、step_budget（步级预算只许收紧）。全部字段可省略，
+  弱模型产不出契约时行为与 v1 完全一致；旧 session.json 可直接加载。
+  契约 e2e 实测后补三处加固：契约自洽性修正（success_checks 要求的验证工具自动并入
+  allowed_tools，否则工具面过滤后证据永远补不上）；回滚按实际落地前缀清（wb_build
+  facts 带 prefix）；wb_validate 新增异前缀白盒残留检测（旧批次构件叠在布局区域会
+  堵门断 navmesh，且对本前缀对照不可见——实测曾被误诊为 agent radius 问题）。
 
 ### 修复
 

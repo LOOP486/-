@@ -54,7 +54,7 @@ agent 开发自身的复杂度清单。共同特征：不动架构，往既有�
 ## 横切：生产级强化（2026-06-12 外部评审吸收，细案见 development-plan.md Stage B/D）
 
 - [x] 证据信封 v1：ToolOutcome.facts + verifier 两段式（确定性规则先行，LLM judge 兜底）（A3，2026-06-12）
-- [ ] PlanStep 契约 v2：allowed_tools / preconditions / success_checks / rollback_policy / 步级预算（B1）
+- [x] PlanStep 契约 v2：allowed_tools / preconditions / success_checks / rollback_policy / 步级预算（B1，2026-06-12）
 - [ ] 工具效果声明：幂等性 / requires_checkpoint / rollback_tool / 非幂等工具重试治理（B2）
 - [ ] 错误分类与恢复策略表：bridge_down / partial_side_effect / evidence_missing 等差异化恢复（B3）
 - [ ] 上下文工程 v1：工程状态摘要注入、progress 文件、按工具类型的结果摘要器（B4）

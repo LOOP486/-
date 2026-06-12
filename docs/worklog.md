@@ -24,6 +24,7 @@ ue5agent：UE5 游戏开发 agent——C++ 实现功能、蓝图只读理解、�
 | P1.4 NavMesh/截图 | ✅ 完成（2026-06-12 以 Stage A1 完成：插件三命令 + 真机三房间验证） |
 | Stage A2 白盒校验器 | ✅ 完成。wb_validate（缺件/多件/漂移/穿插 + metrics），真机正负样本通过 |
 | Stage A3 证据信封 | ✅ 完成。[facts] → ToolOutcome.facts → trace；验收两段式（deterministic 优先） |
+| Stage B1 PlanStep 契约 | ✅ 完成。allowed_tools/ceiling/preconditions/success_checks/rollback/step_budget；验收优先级 contract→deterministic→judge |
 | Phase 2 白盒 | ✅ 完成：manifest + 布局 DSL 编译器（含门图连通性校验）+ wb_build/wb_clear MCP 工具。崩溃根因已根治（spawn 改运行唯一名，踩坑史第 7 条），**三房间完整 agent 端到端核验已通过**（run 20260611-222536：3 次 build 含"清旧建新"场景全程不崩、verify=pass、崩溃目录零新增） |
 
 ## 环境清单
@@ -50,6 +51,7 @@ ue5agent：UE5 游戏开发 agent——C++ 实现功能、蓝图只读理解、�
 8. **"卡很久没反应"的来源**：编辑器崩溃后桥端口关闭，agent 不会立即退出，而是对死掉的编辑器反复重试（每次 `WinError 10061 拒绝连接`，掺杂跑偏去编译 C++），把时间耗在无效重试上。根因（第 7 条）解决后不再触发崩溃，自然不再死循环；若仍见大量 10061，先确认编辑器进程是否还活着（`Get-Process *UnrealEditor*` + 探 55557 端口）。
 9. **任何异常都不准从"assistant 发出 tool_calls"到"tool 回包入列"之间逃逸**（2026-06-12 e2e 确诊）：一旦逃逸，history 里的 tool_calls 永远缺回包，该会话**之后每次** LLM 请求都被 API 拒（`insufficient tool messages following tool_calls`），步骤重试三次全空耗且报错样子像 API 故障。首个实例：非交互运行（bash 后台）下 WRITE_PROJECT 触发 `typer.confirm`，无 TTY 抛 Abort 从 gate 逃逸。已修三层：CLI 无 TTY 不挂确认器、pipeline 兜住 gate 一切异常转 [denied]、loop 调度异常转 [error] 仍回包（tests/test_loop.py::test_dispatch_exception_still_answers_tool_call）。若再见 BadRequestError 连发，先查 trace 里最后一个 llm_turn 是否带 tool_names 而其后无 tool_call 事件。
    - **9b：TTY 启发式在 Git Bash/pty 包装下会误判**（同日二次实测）：单看 `sys.stdin.isatty()` 在 bash 后台仍为 True，确认器被挂上、Abort 被兜住返回 False → write_project 全部被拒（报"未获用户确认"）。已改 stdin+stdout 双检，且 `ue5agent run` 加 `--yes/-y`——**脚本化/agent 调用 run 一律带 --yes**，别赌启发式。
+10. **白盒前缀纪律：异前缀残留是隐形杀手**（2026-06-12 契约 e2e 确诊）：模型自创 spawn 前缀（S1_）后任务 aborted，残留构件没人清（重建语义只清同前缀；当时回滚也按默认 WB 清）。下一个任务在同一 origin 落 WB_ 布局，**S1_ 旧墙正好横在新门洞上** → navmesh 在门处断开、path_test 全 partial；模型把现象误诊为 agent radius（看起来很合理！）。而 wb_validate 当时只查本前缀构件，对异前缀残留全盲——校验 PASS 但场景实际坏了。已修三处：① 契约自洽（success_checks 要求的验证工具自动并入 allowed_tools，planner._reconcile_contract）；② 回滚按实际前缀清（wb_build facts 带 prefix，runner 回滚读取）；③ wb_validate 宽查询 + 异前缀残留检测（与布局区域重叠的旧批次构件 → violation 并给 wb_clear 指引）。**经验：可达性异常先查场景里有没有别的批次的墙，再怀疑导航参数。**
 
 ## 下一步（按序）
 

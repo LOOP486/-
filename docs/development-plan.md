@@ -94,6 +94,9 @@
 
 外部评审主体建议。不动 ADR-0006 状态机架构，全部是往既有接缝加结构。
 
+> 进度：B1 ✅（2026-06-12，含 ScopedRegistry 工具面收紧与契约验收优先级
+> contract → deterministic → judge；弱模型无契约时行为与 v1 一致）。
+
 ### B1 PlanStep 契约 v2
 
 - **目标**：步骤从"自然语言 intent + acceptance"升级为带约束的结构化契约。
