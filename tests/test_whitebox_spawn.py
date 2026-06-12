@@ -70,7 +70,7 @@ def test_wb_build_is_idempotent_no_duplicate_spawn(monkeypatch):
     spec = wb_server.layout_from_dict(json.loads(_LAYOUT))
     placements = wb_server.compile_layout(spec, wb_server.load_manifest(wb_server._MANIFEST))
     existing = [f"WB_{p.name}" for p in placements]  # 上一轮已落地的同名构件
-    calls, present = _record_bridge(monkeypatch, existing=existing)
+    calls, _present = _record_bridge(monkeypatch, existing=existing)
 
     # 若 wb_build 不先清就 spawn，fake_send 的 assert 会因重名抛出 → 测试失败
     out = wb_server.wb_build(_LAYOUT)
@@ -144,7 +144,8 @@ def test_clear_rechecks_and_succeeds_when_first_delete_drops(monkeypatch):
         params = params or {}
         if command == "find_actors_by_name":
             pat = params.get("pattern", "")
-            return {"status": "success", "result": {"actors": [{"name": n} for n in present if pat in n]}}
+            actors = [{"name": n} for n in present if pat in n]
+            return {"status": "success", "result": {"actors": actors}}
         if command == "delete_actor":
             name = params.get("name")
             if state["drop_first"]:

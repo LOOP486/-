@@ -70,7 +70,7 @@ def send_command(
             return _send_once(command, params, host, port, timeout)
         except ConnectionRefusedError:
             raise  # 编辑器未开/桥未监听：重试无意义，立即上抛
-        except (TimeoutError, socket.timeout, ConnectionError, OSError) as exc:
+        except (TimeoutError, ConnectionError, OSError) as exc:
             last_exc = exc
             if attempt < retries:
                 time.sleep(_RETRY_BACKOFF * (attempt + 1))  # 线性退避，给桥喘息
