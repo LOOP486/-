@@ -15,7 +15,7 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-from ue5agent.core.errors import is_env_unready, mark_env_unready
+from ue5agent.core.errors import ErrorCategory, is_env_unready, mark_env_unready, mark_error
 from ue5agent.mcp_servers.ue_editor.bridge import DEFAULT_PORT, probe_editor, send_command
 
 mcp = FastMCP("ue-editor")
@@ -27,7 +27,9 @@ def _call(command: str, params: dict[str, Any] | None = None) -> str:
     except ConnectionRefusedError:
         return mark_env_unready("连不上编辑器桥：请先打开 UE 编辑器（UnrealMCP 插件随工程加载）")
     except (OSError, ConnectionError, TimeoutError) as exc:
-        return f"[error] 编辑器桥通信失败：{exc}"
+        # 区别于 ConnectionRefused（从未开）：连上后又断/超时 = 桥中途掉线，
+        # 标 bridge_down，由 runner 探活后决定重连或快速终止（避免对死桥空转重试）。
+        return mark_error(ErrorCategory.BRIDGE_DOWN, f"编辑器桥通信中断：{exc}")
     if response.get("status") == "error":
         return f"[error] {response.get('error', response)}"
     return json.dumps(response.get("result", response), ensure_ascii=False)

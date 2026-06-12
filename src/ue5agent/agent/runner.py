@@ -26,7 +26,7 @@ from ue5agent.agent.verifier import (
     verify_step,
 )
 from ue5agent.agent.vision_review import VisionReviewResult
-from ue5agent.core.errors import is_env_unready
+from ue5agent.core.errors import ErrorCategory, classify
 from ue5agent.core.loop import AgentLoop, BudgetExhausted
 from ue5agent.llm.types import ChatModel
 from ue5agent.tools.registry import ScopedRegistry, ToolRegistry
@@ -39,6 +39,26 @@ KERNEL_SYSTEM_PROMPT = """\
 VisionReviewer = Callable[[list[str], str], Awaitable[VisionReviewResult]]
 """视觉审查钩子（A4 子任务3）：入参 (截图路径列表, 关卡需求) → 结构化审查结果。
 注入式解耦——runner 不直接依赖 vision_review/config，未配 vision 时传 None 即关闭。"""
+
+# B3 恢复策略表：错误类别 → 恢复动作。未列出的类别（transient/ubt_compile_error/
+# tool_arg_error/evidence_missing/permission_denied）走默认 "retry"——带 judge 理由
+# 正常重试是这些类别的正确处理（编译错进修复循环、缺证据补采、参数错修正后重试）。
+_RECOVERY_TABLE: dict[ErrorCategory, str] = {
+    ErrorCategory.ENV_UNREADY: "abort_env",  # 桥从未开：重试无意义，快速终止
+    ErrorCategory.BRIDGE_DOWN: "probe_bridge",  # 桥中途掉线：探活后定夺
+    ErrorCategory.PARTIAL_SIDE_EFFECT: "rollback_retry",  # 半截副作用：先回滚再重试
+}
+
+_ABORT_HINTS: dict[ErrorCategory, str] = {
+    ErrorCategory.ENV_UNREADY: (
+        "[环境未就绪] 编辑器桥连接被拒：请先启动 UE 编辑器并加载工程"
+        "（UnrealMCP 插件随工程加载）后重跑。环境就绪前不再重试。"
+    ),
+    ErrorCategory.BRIDGE_DOWN: (
+        "[桥已掉线] 编辑器桥中途断开且探活仍不可达（编辑器可能已崩溃/退出）："
+        "请重启 UE 编辑器后重跑。不再对死桥空转重试。"
+    ),
+}
 
 
 @dataclass
@@ -58,8 +78,8 @@ class _EvidenceTee:
         self.tool_lines: list[str] = []
         self.facts: list[dict] = []
         """本次尝试中工具附带的结构化事实（A3 证据信封），喂给确定性验收规则。"""
-        self.env_unready = False
-        """本次尝试中是否出现过环境未就绪错误（如编辑器桥连接被拒）。"""
+        self.error_categories: list[ErrorCategory] = []
+        """本次尝试中工具失败的错误类别（B3），按出现顺序记录，供恢复策略表路由。"""
 
     def write(self, event: str, **data: Any) -> None:
         self._writer.write(event, **data)
@@ -69,8 +89,18 @@ class _EvidenceTee:
             facts = data.get("facts")
             if isinstance(facts, dict):
                 self.facts.append(facts)
-            if is_env_unready(preview):
-                self.env_unready = True
+            if preview.startswith(("[error]", "[denied]")):
+                self.error_categories.append(classify(preview))
+
+    @property
+    def env_unready(self) -> bool:
+        """本次尝试是否出现过环境未就绪错误（向后兼容；由错误类别派生）。"""
+        return ErrorCategory.ENV_UNREADY in self.error_categories
+
+    def dominant_error_category(self) -> ErrorCategory | None:
+        """本次尝试用于恢复路由的主导错误类别：取最后一个工具失败的类别
+        （最贴近"步骤为何没成"的现场），无失败则 None。"""
+        return self.error_categories[-1] if self.error_categories else None
 
     def evidence(self, last: int = 12) -> str:
         return "\n".join(self.tool_lines[-last:])
@@ -78,7 +108,7 @@ class _EvidenceTee:
     def reset(self) -> None:
         self.tool_lines.clear()
         self.facts.clear()
-        self.env_unready = False
+        self.error_categories.clear()
 
 
 class TaskRunner:
@@ -135,6 +165,18 @@ class TaskRunner:
             max_wall_seconds=wall_seconds,
             session_log=tee,
         )
+
+    async def _probe_editor_online(self) -> bool:
+        """探活编辑器桥是否在线（bridge_down 恢复用）。无探测工具时保守返回 True，
+        让步骤走正常重试而非误判掉线终止。"""
+        probe = next((n for n in self._registry.names() if n.endswith("editor_status")), None)
+        if probe is None:
+            return True
+        try:
+            outcome = await self._registry.run(probe, "{}")
+        except Exception:
+            return False
+        return outcome.text.lstrip().startswith("online")
 
     async def _check_preconditions(self, step: PlanStep) -> str | None:
         """探测步骤前置条件；未满足时返回补救指引（注入执行提示，由模型在步内补救）。"""
@@ -350,20 +392,35 @@ class TaskRunner:
                 if verdict.verdict == "pass":
                     step.status = "done"
                     break
-                if tee.env_unready:
-                    # 环境未就绪（如编辑器桥连接被拒）：重试只会空耗预算，直接终止
+                # B3 恢复策略表：按主导错误类别差异化处理（默认=正常重试）
+                category = tee.dominant_error_category()
+                recovery = "retry" if category is None else _RECOVERY_TABLE.get(category, "retry")
+                if recovery == "probe_bridge":
+                    # 桥中途掉线：探活一次。仍不可达 → 当作环境性失败快速终止（踩坑史第 8 条：
+                    # 别对死桥空转重试）；恢复在线 → 落入正常重试。
+                    online = await self._probe_editor_online()
+                    self._writer.event(
+                        "recover_action",
+                        step_id=step.id,
+                        action="probe_bridge",
+                        reason=f"bridge_down 探活：{'online' if online else 'offline'}",
+                    )
+                    recovery = "retry" if online else "abort_env"
+                if recovery == "abort_env":
+                    # 环境性失败（编辑器桥不可达/掉线）：重试只会空耗预算，直接终止并给指引
                     step.status = "failed"
                     aborted = True
                     hint = (
-                        "[环境未就绪] 编辑器桥连接被拒：请先启动 UE 编辑器并加载工程"
-                        "（UnrealMCP 插件随工程加载）后重跑。环境就绪前不再重试。"
+                        _ABORT_HINTS.get(category, _ABORT_HINTS[ErrorCategory.ENV_UNREADY])
+                        if category is not None
+                        else _ABORT_HINTS[ErrorCategory.ENV_UNREADY]
                     )
                     summaries[step.id] = f"{summaries.get(step.id, '')}\n\n{hint}".strip()
                     self._writer.event(
                         "recover_action",
                         step_id=step.id,
                         action="abort",
-                        reason="env_unready：编辑器桥不可达，跳过重试",
+                        reason=f"{category.value if category else 'env'}：环境不可达，跳过重试",
                     )
                     break
                 if step.attempts >= self._max_step_attempts:
@@ -374,6 +431,9 @@ class TaskRunner:
                     )
                     await self._apply_rollback(step, tee.facts)
                     break
+                if recovery == "rollback_retry":
+                    # 部分副作用（如 spawn 落了一半）：重试前先回滚清理，避免残留叠加
+                    await self._apply_rollback(step, tee.facts)
                 self._writer.event(
                     "recover_action", step_id=step.id, action="retry", reason=verdict.reason
                 )

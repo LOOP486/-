@@ -11,7 +11,7 @@ from ue5agent.agent.runner import TaskRunner
 from ue5agent.agent.state import PlanStep, TaskSession
 from ue5agent.agent.verifier import deterministic_verdict, evaluate_success_checks
 from ue5agent.agent.vision_review import parse_review
-from ue5agent.core.errors import mark_env_unready
+from ue5agent.core.errors import ErrorCategory, mark_env_unready, mark_error
 from ue5agent.core.permissions import PermissionGate, PermissionLevel
 from ue5agent.llm.types import AssistantTurn
 from ue5agent.tools.registry import ScopedRegistry, ToolRegistry, ToolSpec
@@ -199,6 +199,90 @@ async def test_env_unready_aborts_without_retry(tmp_path):
     events = read_events(writer.trace_path)
     aborts = [e for e in events if e["event"] == "recover_action"]
     assert aborts and "env_unready" in aborts[0]["reason"]
+
+
+def _bridge_tool_registry(tool_text: str, *, editor_online: bool) -> ToolRegistry:
+    """注册一个返回 bridge_down 错误的工具 + editor_status 探活工具（B3 恢复测试用）。"""
+    registry = ToolRegistry(PermissionGate())
+
+    async def wb_build(layout_json: str = "") -> str:
+        return tool_text
+
+    async def editor_status() -> str:
+        return "online：桥可达" if editor_online else "offline：桥不可达"
+
+    registry.register(
+        ToolSpec(
+            name="ue_whitebox__wb_build",
+            description="",
+            parameters={"type": "object", "properties": {"layout_json": {"type": "string"}}},
+            level=PermissionLevel.WRITE_SAFE,
+            handler=wb_build,
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="ue_editor__editor_status",
+            description="",
+            parameters={"type": "object", "properties": {}},
+            level=PermissionLevel.READ,
+            handler=editor_status,
+        )
+    )
+    return registry
+
+
+async def test_bridge_down_offline_aborts_fast(tmp_path):
+    """桥中途掉线 + 探活仍 offline：当作环境性失败快速终止，不空转耗尽重试（踩坑史第8条）。"""
+    bridge_err = mark_error(ErrorCategory.BRIDGE_DOWN, "编辑器桥通信中断：WinError 10054")
+    registry = _bridge_tool_registry(bridge_err, editor_online=False)
+    model = FakeModel(
+        [
+            plan("standard", ("搭白盒", "落地成功"), ("再搭", "再成功")),
+            tool_turn("ue_whitebox__wb_build", '{"layout_json": "{}"}'),
+            AssistantTurn(content="桥断了"),
+            judge("fail", "无构建证据"),
+        ]
+    )
+    writer = RunWriter(tmp_path, TaskSession.new("桥掉线"))
+    runner = TaskRunner(model, registry, writer)
+    outcome = await runner.run("搭白盒")
+    assert not outcome.success
+    step = writer.session.plan[0]
+    assert step.status == "failed"
+    assert step.attempts == 1  # 探活 offline → 快速终止，不消耗剩余重试
+    assert writer.session.plan[1].status == "skipped"
+    events = read_events(writer.trace_path)
+    actions = [e for e in events if e["event"] == "recover_action"]
+    assert any(e["action"] == "probe_bridge" and "offline" in e["reason"] for e in actions)
+    assert any(e["action"] == "abort" and "bridge_down" in e["reason"] for e in actions)
+
+
+async def test_bridge_down_online_retries_normally(tmp_path):
+    """桥瞬断但探活恢复 online：走正常重试（不快速终止），第二次成功收口。"""
+    bridge_err = mark_error(ErrorCategory.BRIDGE_DOWN, "编辑器桥通信中断：偶发超时")
+    registry = _bridge_tool_registry(bridge_err, editor_online=True)
+    model = FakeModel(
+        [
+            plan("standard", ("搭白盒", "落地成功")),
+            tool_turn("ue_whitebox__wb_build", '{"layout_json": "{}"}'),
+            AssistantTurn(content="第一次桥抖了一下"),
+            judge("fail", "无构建证据"),
+            AssistantTurn(content="重试这次成功了"),
+            judge("pass"),
+        ]
+    )
+    writer = RunWriter(tmp_path, TaskSession.new("桥瞬断"))
+    runner = TaskRunner(model, registry, writer)
+    outcome = await runner.run("搭白盒")
+    assert outcome.success
+    step = writer.session.plan[0]
+    assert step.status == "done"
+    assert step.attempts == 2  # 探活 online → 正常重试，第二次过
+    events = read_events(writer.trace_path)
+    actions = [e for e in events if e["event"] == "recover_action"]
+    assert any(e["action"] == "probe_bridge" and "online" in e["reason"] for e in actions)
+    assert any(e["action"] == "retry" for e in actions)
 
 
 def test_report_clips_long_summary_with_marker():
