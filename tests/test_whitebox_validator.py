@@ -117,6 +117,31 @@ def test_non_wb_actors_ignored():
     assert report.ok, report.violations
 
 
+def test_foreign_prefix_residue_in_layout_area_flagged():
+    """异前缀残留回归：旧批次（如 S1_）构件叠在布局区域 → violation 并给清理指引
+    （真机 e2e 实测：残留墙堵门导致 path_test 全 partial，被误诊为 agent radius）。"""
+    spec, manifest = _spec_and_manifest()
+    actors = _perfect_actors(spec, manifest)
+    # 残留墙横在布局中央（布局 x[0,800] y[0,400]）
+    actors.append(
+        ActorView(name="S1_a8b165e_A_north_0", location=(400, 200, 150), scale=(4, 0.2, 3))
+    )
+    report = validate_layout(spec, manifest, actors)
+    assert not report.ok
+    assert any("异前缀白盒残留" in v and "S1_" in v and "wb_clear" in v for v in report.violations)
+
+
+def test_foreign_prefix_residue_far_away_not_flagged():
+    spec, manifest = _spec_and_manifest()
+    actors = _perfect_actors(spec, manifest)
+    # 远离布局区域（布局 x[0,800]，残留在 x=99000）的旧批次不拦验收
+    actors.append(
+        ActorView(name="S1_a8b165e_B_floor", location=(99000, 99000, -10), scale=(4, 4, 0.2))
+    )
+    report = validate_layout(spec, manifest, actors)
+    assert report.ok, report.violations
+
+
 def test_wb_validate_tool_formats_report(monkeypatch):
     """wb_validate 工具：fake bridge 返回完美落地 → PASS 文本。"""
     spec, manifest = _spec_and_manifest()

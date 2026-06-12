@@ -72,3 +72,80 @@ class ToolRegistry:
     async def run(self, name: str, arguments_json: str) -> Any:
         """结构化入口：返回 ToolOutcome（含 facts 证据信封），loop 用它写 trace。"""
         return await self._ensure_pipeline().run(name, arguments_json)
+
+
+class ScopedRegistry:
+    """按步骤契约收紧的注册表视图（B1）：工具白名单 + 权限上限。
+
+    不修改底层注册表；loop 经此视图取 specs 与执行。白名单匹配支持裸名——
+    planner 通常写 `wb_build`，而注册名是 `ue_whitebox__wb_build`。
+    越权调用返回 [denied] 文本（不抛出），与管线的失败语义一致。
+    """
+
+    def __init__(
+        self,
+        base: ToolRegistry,
+        *,
+        allowed_tools: list[str] | None = None,
+        permission_ceiling: str = "",
+    ):
+        self._base = base
+        self._allowed = list(allowed_tools or [])
+        self._ceiling: PermissionLevel | None = None
+        if permission_ceiling:
+            try:
+                self._ceiling = PermissionLevel(permission_ceiling)
+            except ValueError:
+                self._ceiling = None  # 非法值视为不限，契约宽于实际比误杀安全
+
+    def _deny_reason(self, spec: ToolSpec) -> str | None:
+        """返回拒绝原因；放行返回 None。显式点名优先于权限上限——
+        白名单按名指定是比上限更具体的契约声明（planner 实测会同时声明
+        ceiling=read 与白名单内的写工具，按上限拦会让步骤无解）。"""
+        from ue5agent.core.permissions import level_rank
+
+        explicit = any(
+            spec.name == entry or spec.name.endswith(f"__{entry}") for entry in self._allowed
+        )
+        if self._allowed and not explicit:
+            return f"不在本步骤工具白名单（{self._allowed}）"
+        if (
+            not explicit
+            and self._ceiling is not None
+            and level_rank(spec.level) > level_rank(self._ceiling)
+        ):
+            return f"超出本步骤权限上限（{self._ceiling}，该工具为 {spec.level}）"
+        return None
+
+    def _tool_permitted(self, spec: ToolSpec) -> bool:
+        return self._deny_reason(spec) is None
+
+    def __len__(self) -> int:
+        return len(self.names())
+
+    def get(self, name: str) -> ToolSpec | None:
+        spec = self._base.get(name)
+        return spec if spec is not None and self._tool_permitted(spec) else None
+
+    def names(self) -> list[str]:
+        return [n for n in self._base.names() if self.get(n) is not None]
+
+    def specs(self) -> list[dict[str, Any]]:
+        permitted = set(self.names())
+        return [s for s in self._base.specs() if s["function"]["name"] in permitted]
+
+    async def run(self, name: str, arguments_json: str) -> Any:
+        from ue5agent.agent.tool_pipeline import ToolOutcome  # 函数级导入避免循环依赖
+
+        spec = self._base.get(name)
+        reason = self._deny_reason(spec) if spec is not None else None
+        if reason is not None:
+            return ToolOutcome(
+                ok=False,
+                text=f"[denied] 本步骤契约不允许使用 {name}：{reason}，换契约内的工具完成",
+                error_kind="denied",
+            )
+        return await self._base.run(name, arguments_json)
+
+    async def dispatch(self, name: str, arguments_json: str) -> str:
+        return (await self.run(name, arguments_json)).text

@@ -33,6 +33,9 @@ def wb_build(layout_json: str, prefix: str = "WB") -> str:
     "标记销毁 + 延迟 GC"，旧名在 GC 前仍占命名空间，复用同名 spawn 会触发引擎
     Fatal error（"Cannot generate unique name"）直接崩编辑器。唯一名从根上规避。
 
+    前缀纪律：保持默认 prefix="WB"，不要自创前缀——重建语义只清同前缀旧构件，
+    异前缀残留会叠在场景里堵门、断 navmesh（wb_validate 能检出但应避免发生）。
+
     布局格式（单位=格，1 格=100uu；坐标系：x 东 y 北）：
     {"name": "训练场", "origin": [5000, 5000, 0],
      "rooms": [{"name": "main", "rect": [x, y, 宽, 深],
@@ -71,10 +74,29 @@ def wb_build(layout_json: str, prefix: str = "WB") -> str:
     except (RuntimeError, OSError, ConnectionError) as exc:
         return f"[error] 落地失败（编辑器开着吗？）：{exc}"
     cleared_note = f"（已先清理 {cleared} 个旧构件）" if cleared else ""
-    facts = {"kind": "wb_build", "ok": True, "rooms": len(spec.rooms), "components": len(names)}
+    # 回传各房间的世界坐标中心：path_test/截图直接用这些数（单位 uu，1 格=100uu），
+    # 不要自己换算——格坐标误当世界坐标是实测高发错误（差 100 倍）
+    grid = load_manifest(_MANIFEST).grid
+    ox, oy, _oz = spec.origin
+    centers = {
+        room.name: [
+            round(ox + (room.rect[0] + room.rect[2] / 2) * grid),
+            round(oy + (room.rect[1] + room.rect[3] / 2) * grid),
+        ]
+        for room in spec.rooms
+    }
+    facts = {
+        "kind": "wb_build",
+        "ok": True,
+        "rooms": len(spec.rooms),
+        "components": len(names),
+        "prefix": prefix,
+    }
     return (
         f"搭建完成：{len(spec.rooms)} 个房间，{len(names)} 个构件，"
-        f"位于 origin={spec.origin}，前缀 {prefix}_{cleared_note}（wb_clear 可整批撤销）"
+        f"位于 origin={spec.origin}，前缀 {prefix}_{cleared_note}（wb_clear 可整批撤销）\n"
+        f"房间中心（世界坐标 uu，path_test/截图请直接使用）："
+        f"{json.dumps(centers, ensure_ascii=False)}"
         f"\n[facts] {json.dumps(facts, ensure_ascii=False)}"
     )
 
@@ -83,9 +105,9 @@ def wb_build(layout_json: str, prefix: str = "WB") -> str:
 def wb_validate(layout_json: str, prefix: str = "WB") -> str:
     """对照布局 JSON 校验编辑器中已落地的白盒构件（确定性几何检查，只读）。
 
-    回读场景中 `<prefix>_` 构件的实测坐标，与布局编译出的期望放置对照，检查：
-    缺件（spawn 部分失败）、多件（残留/外部添加）、位置漂移、构件穿插。
-    返回 PASS/FAIL + violations 列表 + 关卡 metrics（房间数/门数/地板面积等）。
+    回读场景实测坐标，与布局编译出的期望放置对照，检查：缺件（spawn 部分失败）、
+    多件（残留/外部添加）、位置漂移、构件穿插、异前缀白盒残留（旧批次构件叠在
+    布局区域会堵门断 navmesh）。返回 PASS/FAIL + violations + 关卡 metrics。
     物理可达性请另用 ue_editor 的 navmesh_rebuild + path_test。
     """
     try:
@@ -98,7 +120,8 @@ def wb_validate(layout_json: str, prefix: str = "WB") -> str:
     except LayoutError as exc:
         return f"[error] 布局校验未通过：{exc}"
     try:
-        response = send_command("find_actors_by_name", {"pattern": f"{prefix}_"})
+        # 宽查询（任何含下划线的 actor）：异前缀残留必须能被看见，validator 负责过滤
+        response = send_command("find_actors_by_name", {"pattern": "_"})
     except ConnectionRefusedError:
         return mark_env_unready(
             "编辑器桥连接被拒。请先启动 UE 编辑器并加载工程（UnrealMCP 插件随工程加载）"

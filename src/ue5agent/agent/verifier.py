@@ -71,6 +71,51 @@ def _fact_brief(fact: dict) -> str:
     return json.dumps(keep, ensure_ascii=False) if keep else "无详情"
 
 
+def evaluate_success_checks(checks: list[dict], facts: list[dict]) -> VerifyResult | None:
+    """步骤契约的声明式验收（B1）：每条 check 绑定一类事实。
+
+    check 形如 {"kind": "path_test", "field": "reachable", "equals": true}，
+    field/equals 缺省为 ok/true。判定：
+    - 任一 check 的事实存在但字段不符 → fail；
+    - 任一 check 的事实缺失 → insufficient（驱动执行方补调验证工具）；
+    - 全部满足 → pass；checks 无有效条目 → None（回落到通用规则/judge）。
+    """
+    latest: dict[str, dict] = {}
+    for fact in facts:
+        kind = fact.get("kind")
+        if isinstance(kind, str):
+            latest[kind] = fact
+    missing: list[str] = []
+    failed: list[str] = []
+    valid = 0
+    for check in checks:
+        if not isinstance(check, dict):
+            continue
+        kind = str(check.get("kind", "")).strip()
+        if not kind:
+            continue
+        valid += 1
+        matched = latest.get(kind)
+        if matched is None:
+            missing.append(kind)
+            continue
+        field_name = str(check.get("field", "ok"))
+        expected = check.get("equals", True)
+        actual = matched.get(field_name)
+        if actual != expected:
+            failed.append(f"{kind}.{field_name}={actual!r}（期望 {expected!r}）")
+    if not valid:
+        return None
+    if failed:
+        return VerifyResult("fail", "契约检查未过：" + "；".join(failed))
+    if missing:
+        return VerifyResult(
+            "insufficient",
+            "缺少契约要求的证据：" + "、".join(missing) + "——请调用相应验证工具产生证据",
+        )
+    return VerifyResult("pass", f"契约检查全部通过（{valid} 项）")
+
+
 async def verify_step(
     llm: ChatModel,
     *,

@@ -25,6 +25,19 @@ class PermissionLevel(StrEnum):
         return None
 
 
+_LEVEL_RANK = {
+    PermissionLevel.READ: 0,
+    PermissionLevel.WRITE_SAFE: 1,
+    PermissionLevel.WRITE_PROJECT: 2,
+    PermissionLevel.DANGEROUS: 3,
+}
+
+
+def level_rank(level: PermissionLevel) -> int:
+    """权限级别的严格序（步骤契约的 permission_ceiling 比较用）。"""
+    return _LEVEL_RANK[level]
+
+
 class ToolDenied(Exception):
     """工具调用被授权网关拒绝。"""
 

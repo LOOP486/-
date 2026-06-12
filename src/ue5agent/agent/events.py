@@ -25,6 +25,10 @@ EVENT_TYPES = frozenset(
         "checkpoint",
         "budget_warning",
         "run_end",
+        # B1 步骤契约
+        "precondition_unmet",
+        "precondition_unknown",
+        "rollback_action",
     }
 )
 

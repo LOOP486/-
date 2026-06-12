@@ -78,9 +78,49 @@ def validate_layout(
 
     matched = _diff_expected_actual(expected, actors, prefix, report)
     _check_overlaps(actors, prefix, report)
+    _check_foreign_residue(expected, actors, prefix, report)
     _fill_metrics(spec, expected, actors, prefix, report)
     report.metrics["matched_count"] = matched
     return report
+
+
+_FOREIGN_PATTERN = re.compile(r"^([A-Za-z0-9]{1,8})_([0-9a-f]{4,})_(.+)$")
+"""泛化的白盒批次命名形态：异前缀残留（上次任务未清理）也长这样。"""
+
+
+def _check_foreign_residue(
+    expected: list[Placement],
+    actors: list[ActorView],
+    prefix: str,
+    report: ValidationReport,
+) -> None:
+    """异前缀白盒残留检测：与布局区域重叠的旧批次构件会堵门、断 navmesh，
+    但它们不属于本前缀，缺件/多件对照天然看不见——必须单独检。
+    （真机 e2e 实测：S1_ 残留墙横在新布局门洞上，path_test 全部 partial，
+    模型误诊为 agent radius。）"""
+    if not expected:
+        return
+    # 布局包围盒（外扩半格，贴边残留也算）
+    xs_lo = min(p.location[0] - p.scale[0] * _CUBE_HALF for p in expected) - 50
+    xs_hi = max(p.location[0] + p.scale[0] * _CUBE_HALF for p in expected) + 50
+    ys_lo = min(p.location[1] - p.scale[1] * _CUBE_HALF for p in expected) - 50
+    ys_hi = max(p.location[1] + p.scale[1] * _CUBE_HALF for p in expected) + 50
+    foreign: dict[str, int] = {}
+    for actor in actors:
+        if parse_batch_name(actor.name, prefix) is not None:
+            continue  # 本前缀构件走缺件/多件对照
+        match = _FOREIGN_PATTERN.match(actor.name)
+        if match is None:
+            continue  # 非白盒命名形态的场景 actor（PlayerStart 等）不管
+        box = _aabb(actor)
+        if box[0][1] < xs_lo or box[0][0] > xs_hi or box[1][1] < ys_lo or box[1][0] > ys_hi:
+            continue  # 不在布局区域内的旧批次不拦验收（但场景整洁是另一回事）
+        foreign[match.group(1)] = foreign.get(match.group(1), 0) + 1
+    for other_prefix, count in sorted(foreign.items()):
+        report.violations.append(
+            f"异前缀白盒残留：{other_prefix}_ ×{count} 与布局区域重叠"
+            f'（会堵门/断 navmesh；用 wb_clear(prefix="{other_prefix}") 清除）'
+        )
 
 
 def _diff_expected_actual(

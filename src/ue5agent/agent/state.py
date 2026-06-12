@@ -42,6 +42,20 @@ class PlanStep:
     attempts: int = 0
     evidence: list[str] = field(default_factory=list)
     """验收证据：Artifact.path 引用"""
+    # ---- 契约字段（B1）：全部带默认值，弱模型省略时行为同 v1 ----
+    allowed_tools: list[str] = field(default_factory=list)
+    """本步允许的工具白名单（裸名或全名）；空 = 不限"""
+    permission_ceiling: str = ""
+    """本步允许的最高权限级（read/write_safe/write_project/dangerous）；空 = 不限"""
+    preconditions: list[str] = field(default_factory=list)
+    """前置条件（如 editor_online），执行前探测、未满足时在提示中注入补救指引"""
+    success_checks: list[dict] = field(default_factory=list)
+    """声明式验收：[{"kind": "wb_validate", "field": "ok", "equals": true}]，
+    绑定 facts 证据通道（A3）；缺证据 → insufficient，驱动补证据重试"""
+    rollback_policy: str = "none"
+    """步骤最终失败时的回滚策略：none | wb_clear（restore_checkpoint 仅提示不自动执行）"""
+    step_budget: dict = field(default_factory=dict)
+    """步级预算收紧：{"max_seconds": int, "max_turns": int}，只能小于 runner 默认值"""
 
 
 @dataclass

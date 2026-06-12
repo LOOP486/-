@@ -8,6 +8,7 @@ intake/plan → 逐步 [execute（步内微循环 AgentLoop）→ verify（judge
 
 from __future__ import annotations
 
+import json
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -15,11 +16,17 @@ from typing import Any
 from ue5agent.agent.events import RunWriter
 from ue5agent.agent.planner import make_plan
 from ue5agent.agent.report import build_report
-from ue5agent.agent.verifier import VerifyResult, deterministic_verdict, verify_step
+from ue5agent.agent.state import PlanStep
+from ue5agent.agent.verifier import (
+    VerifyResult,
+    deterministic_verdict,
+    evaluate_success_checks,
+    verify_step,
+)
 from ue5agent.core.errors import is_env_unready
 from ue5agent.core.loop import AgentLoop, BudgetExhausted
 from ue5agent.llm.types import ChatModel
-from ue5agent.tools.registry import ToolRegistry
+from ue5agent.tools.registry import ScopedRegistry, ToolRegistry
 
 KERNEL_SYSTEM_PROMPT = """\
 你是按计划执行任务的工程 agent。完成当前步骤后用一句话总结做了什么；
@@ -90,6 +97,101 @@ class TaskRunner:
         self._step_wall_seconds = step_wall_seconds
         self._total_wall_seconds = total_wall_seconds
 
+    def _build_step_loop(self, step: PlanStep, tee: _EvidenceTee) -> AgentLoop:
+        """按步骤契约构造微循环（B1）：工具面收紧、预算只许收小不许放大。"""
+        registry: Any = self._registry
+        if step.allowed_tools or step.permission_ceiling:
+            registry = ScopedRegistry(
+                self._registry,
+                allowed_tools=step.allowed_tools,
+                permission_ceiling=step.permission_ceiling,
+            )
+        max_iterations = self._step_max_iterations
+        wall_seconds = self._step_wall_seconds
+        budget = step.step_budget or {}
+        try:
+            if budget.get("max_turns"):
+                max_iterations = min(int(budget["max_turns"]), max_iterations)
+            if budget.get("max_seconds"):
+                wall_seconds = min(float(budget["max_seconds"]), wall_seconds)
+        except (TypeError, ValueError):
+            pass  # 预算字段不合法时沿用 runner 默认值
+        return AgentLoop(
+            self._llm,
+            registry,
+            system_prompt=self._system_prompt,
+            max_iterations=max_iterations,
+            max_wall_seconds=wall_seconds,
+            session_log=tee,
+        )
+
+    async def _check_preconditions(self, step: PlanStep) -> str | None:
+        """探测步骤前置条件；未满足时返回补救指引（注入执行提示，由模型在步内补救）。"""
+        unmet: list[str] = []
+        for cond in step.preconditions:
+            if cond == "editor_online":
+                probe = next(
+                    (n for n in self._registry.names() if n.endswith("editor_status")), None
+                )
+                if probe is None:
+                    continue  # 无探测工具：条件未知，不拦截
+                try:
+                    outcome = await self._registry.run(probe, "{}")
+                    online = outcome.text.lstrip().startswith("online")
+                except Exception:
+                    online = False
+                if not online:
+                    unmet.append(
+                        "editor_online（编辑器桥不可达；若有 editor_launch 工具可先启动编辑器）"
+                    )
+            else:
+                self._writer.event("precondition_unknown", step_id=step.id, condition=cond)
+        if unmet:
+            self._writer.event("precondition_unmet", step_id=step.id, conditions=unmet)
+            return "；".join(unmet)
+        return None
+
+    async def _apply_rollback(self, step: PlanStep, facts: list[dict]) -> None:
+        """步骤最终失败后的契约回滚。dangerous 级回滚（restore_checkpoint）只提示不自动执行。"""
+        policy = step.rollback_policy
+        if policy in ("", "none"):
+            return
+        if policy == "wb_clear":
+            tool = next((n for n in self._registry.names() if n.endswith("wb_clear")), None)
+            if tool is None:
+                self._writer.event(
+                    "rollback_action",
+                    step_id=step.id,
+                    policy=policy,
+                    result="未挂载 wb_clear，跳过",
+                )
+                return
+            # 清理必须用本步实际落地的前缀（模型可能没用默认 WB），从 wb_build 事实取
+            prefix = next(
+                (
+                    f["prefix"]
+                    for f in reversed(facts)
+                    if f.get("kind") == "wb_build" and isinstance(f.get("prefix"), str)
+                ),
+                None,
+            )
+            arguments = json.dumps({"prefix": prefix}) if prefix else "{}"
+            try:
+                outcome = await self._registry.run(tool, arguments)
+                result = outcome.text[:200]
+            except Exception as exc:
+                result = f"[error] {type(exc).__name__}: {exc}"
+            self._writer.event("rollback_action", step_id=step.id, policy=policy, result=result)
+            return
+        # restore_checkpoint 等危险回滚：自动 checkpoint 已在写操作前打好，
+        # 还原属 dangerous 级，留给用户决定（repo_restore + checkpoint ref）
+        self._writer.event(
+            "rollback_action",
+            step_id=step.id,
+            policy=policy,
+            result="未自动执行（dangerous 级）；如需还原请用 repo_list_checkpoints + repo_restore",
+        )
+
     async def run(self, goal: str) -> RunOutcome:
         session = self._session
         session.goal = goal
@@ -109,14 +211,6 @@ class TaskRunner:
         self._writer.save_session()
 
         tee = _EvidenceTee(self._writer)
-        loop = AgentLoop(
-            self._llm,
-            self._registry,
-            system_prompt=self._system_prompt,
-            max_iterations=self._step_max_iterations,
-            max_wall_seconds=self._step_wall_seconds,
-            session_log=tee,
-        )
         history: list[dict[str, Any]] = []
         summaries: dict[str, str] = {}
         aborted = False
@@ -141,6 +235,10 @@ class TaskRunner:
                     f"总目标：{goal}\n当前步骤（{step.id}）：{step.intent}\n"
                     f"验收标准：{step.acceptance or '无'}"
                 )
+                precondition_hint = await self._check_preconditions(step)
+                if precondition_hint:
+                    prompt += f"\n[前置条件未满足] {precondition_hint}——请先恢复环境再做本步骤。"
+                loop = self._build_step_loop(step, tee)
                 try:
                     result = await loop.run(prompt, role="coder", history=history)
                     summaries[step.id] = result.final_text
@@ -150,8 +248,19 @@ class TaskRunner:
                     summaries[step.id] = f"[步骤异常] {type(exc).__name__}: {exc}"
                 self._writer.event("phase_exit", phase="execute", step_id=step.id)
 
-                # A3 两段式：确定性规则可判则不再调 LLM judge（更可靠且省 token）
-                det = deterministic_verdict(tee.facts)
+                # 验收优先级：步骤契约 success_checks（B1）→ 通用确定性规则（A3）→ LLM judge
+                mode = "judge"
+                det = (
+                    evaluate_success_checks(step.success_checks, tee.facts)
+                    if step.success_checks
+                    else None
+                )
+                if det is not None:
+                    mode = "contract"
+                else:
+                    det = deterministic_verdict(tee.facts)
+                    if det is not None:
+                        mode = "deterministic"
                 if det is not None:
                     verdict = det
                 else:
@@ -171,7 +280,7 @@ class TaskRunner:
                     step_id=step.id,
                     verdict=verdict.verdict,
                     reason=verdict.reason,
-                    mode="deterministic" if det is not None else "judge",
+                    mode=mode,
                 )
                 if verdict.verdict == "pass":
                     step.status = "done"
@@ -198,6 +307,7 @@ class TaskRunner:
                     self._writer.event(
                         "recover_action", step_id=step.id, action="abort", reason=verdict.reason
                     )
+                    await self._apply_rollback(step, tee.facts)
                     break
                 self._writer.event(
                     "recover_action", step_id=step.id, action="retry", reason=verdict.reason
