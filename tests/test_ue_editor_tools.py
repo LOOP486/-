@@ -1,5 +1,6 @@
 """ue_editor 关卡验证三工具（A1）：fake bridge，不碰真编辑器。"""
 
+import json
 from pathlib import Path
 
 import ue5agent.mcp_servers.ue_editor.server as ed_server
@@ -38,6 +39,35 @@ def test_screenshot_camera_params_passthrough(monkeypatch):
     assert params["location"] == [100, 200, 3000]
     assert params["rotation"] == [-90, 0, 0]
     assert Path(params["file_path"]).is_absolute()
+
+
+def test_screenshot_success_emits_screenshot_facts(monkeypatch):
+    """A4：截图成功须落 screenshot 事实，path=实际落盘绝对路径（runner 据此触发视觉审查）。"""
+    _record_bridge(monkeypatch)
+    out = ed_server.viewport_screenshot(file_path="shot.png")
+    assert "[facts]" in out
+    facts = json.loads(out.split("[facts]", 1)[1].strip())
+    assert facts["kind"] == "screenshot"
+    assert facts["ok"] is True
+    assert Path(facts["path"]) == Path("shot.png").resolve()
+
+
+def test_screenshot_bridge_error_emits_no_facts(monkeypatch):
+    """桥报错时不得伪造 screenshot 事实（否则会审查到不存在的截图）。"""
+    _record_bridge(monkeypatch, response={"status": "error", "error": "viewport busy"})
+    out = ed_server.viewport_screenshot(file_path="shot.png")
+    assert out.startswith("[error]")
+    assert "[facts]" not in out
+
+
+def test_screenshot_env_unready_emits_no_facts(monkeypatch):
+    def fake_send(command, params=None, **_kwargs):
+        raise ConnectionRefusedError("no editor")
+
+    monkeypatch.setattr(ed_server, "send_command", fake_send)
+    out = ed_server.viewport_screenshot(file_path="shot.png")
+    assert ed_server.is_env_unready(out)
+    assert "[facts]" not in out
 
 
 def test_navmesh_rebuild_composes_ensure_bounds(monkeypatch):

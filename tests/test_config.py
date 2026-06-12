@@ -53,6 +53,34 @@ def test_vision_flag(tmp_path):
     assert load_models_config(path).has_vision is False
 
 
+def test_provider_params_parsed(tmp_path):
+    path = tmp_path / "models.yaml"
+    path.write_text(
+        """\
+providers:
+  moonshot:
+    base_url: https://api.moonshot.cn/v1
+    api_key_env: MOONSHOT_API_KEY
+    params: {temperature: 1}
+roles:
+  planner: moonshot/kimi-k2.6
+  vision: moonshot/kimi-k2.6
+""",
+        encoding="utf-8",
+    )
+    config = load_models_config(path)
+    assert config.providers["moonshot"].params == {"temperature": 1}
+    assert config.has_vision is True
+    # 默认无 params
+    assert load_models_config(_write(tmp_path, VALID_MODELS)).providers["deepseek"].params == {}
+
+
+def _write(tmp_path, text):
+    path = tmp_path / "models2.yaml"
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
 def test_agent_settings_all_optional(tmp_path):
     path = tmp_path / "agent.yaml"
     path.write_text("limits: {max_iterations: 10}\n", encoding="utf-8")

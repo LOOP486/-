@@ -15,7 +15,7 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-from ue5agent.core.errors import mark_env_unready
+from ue5agent.core.errors import is_env_unready, mark_env_unready
 from ue5agent.mcp_servers.ue_editor.bridge import DEFAULT_PORT, probe_editor, send_command
 
 mcp = FastMCP("ue-editor")
@@ -104,7 +104,12 @@ def viewport_screenshot(
         params["location"] = location
     if rotation is not None:
         params["rotation"] = rotation
-    return _call("viewport_screenshot", params)
+    out = _call("viewport_screenshot", params)
+    if out.startswith("[error]") or is_env_unready(out):
+        return out
+    # screenshot 事实：runner 据此发现本步截图并触发 A4 视觉审查（路径 = 实际落盘路径）
+    facts = {"kind": "screenshot", "ok": True, "path": params["file_path"]}
+    return f"{out}\n[facts] {json.dumps(facts, ensure_ascii=False)}"
 
 
 @mcp.tool()

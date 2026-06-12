@@ -22,6 +22,11 @@ class ProviderConfig(BaseModel):
 
     base_url: str | None = None
     api_key_env: str = Field(description="存放 API key 的环境变量名")
+    params: dict[str, Any] = Field(
+        default_factory=dict,
+        description="该 provider 全部请求附加的固定参数（如 temperature）；"
+        "用于满足模型硬约束，例如 Kimi kimi-k2.6 只接受 temperature=1。",
+    )
 
 
 class ModelsConfig(BaseModel):

@@ -48,6 +48,11 @@ class LiteLLMClient:
         self._request_timeout = request_timeout_seconds
         self._sleep = sleep or asyncio.sleep
 
+    @property
+    def has_vision(self) -> bool:
+        """是否配置了多模态 vision 角色（缺失时截图视觉验证不可用）。"""
+        return self._config.has_vision
+
     def model_for(self, role: str) -> str:
         """角色未配置时回退到主控模型。"""
         return self._config.roles.get(role) or self._config.roles["planner"]
@@ -114,7 +119,7 @@ class LiteLLMClient:
     def _provider_kwargs(self, model_ref: str) -> dict[str, Any]:
         provider = model_ref.split("/", 1)[0]
         provider_config = self._config.providers[provider]
-        kwargs: dict[str, Any] = {}
+        kwargs: dict[str, Any] = dict(provider_config.params)
         if provider_config.base_url:
             kwargs["api_base"] = provider_config.base_url
         api_key = os.environ.get(provider_config.api_key_env)

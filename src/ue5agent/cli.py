@@ -338,7 +338,29 @@ async def _execute_task(llm: Any, registry: Any, settings: AgentSettings, text: 
 
     console.print("[dim]任务执行中（规划→执行→验收）…[/dim]")
     writer = ConsoleRunWriter(Path("runs"), TaskSession.new(text[:40]))
-    runner = TaskRunner(llm, registry, writer, step_max_iterations=settings.limits.max_iterations)
+    # A4：配了 vision 角色才注入视觉审查钩子；未配则降级为"截图存档供人看"（行为同前）
+    vision_reviewer = None
+    if getattr(llm, "has_vision", False):
+        from ue5agent.agent.vision_review import review_screenshots
+
+        async def vision_reviewer(paths: list[str], requirement: str) -> Any:
+            # litellm 对部分多模态端点（moonshot 实测）的调用会阻塞事件循环、令 runner 的
+            # asyncio 超时失效（定时器得不到执行机会）。放进工作线程跑独立事件循环：主循环
+            # 保持空闲，硬超时才能可靠触发；线程内若挂起则成孤儿，但不再拖死整个任务。
+            def _blocking() -> Any:
+                return asyncio.run(
+                    review_screenshots(llm, requirement=requirement, screenshot_paths=list(paths))
+                )
+
+            return await asyncio.to_thread(_blocking)
+
+    runner = TaskRunner(
+        llm,
+        registry,
+        writer,
+        step_max_iterations=settings.limits.max_iterations,
+        vision_reviewer=vision_reviewer,
+    )
     outcome = await runner.run(text)
     # 主输出 = 完整答案；过程性报告归档 runs/，仅失败时展示以便排查
     if outcome.success and outcome.final_answer:

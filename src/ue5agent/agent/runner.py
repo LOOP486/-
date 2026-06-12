@@ -8,8 +8,10 @@ intake/plan → 逐步 [execute（步内微循环 AgentLoop）→ verify（judge
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -23,6 +25,7 @@ from ue5agent.agent.verifier import (
     evaluate_success_checks,
     verify_step,
 )
+from ue5agent.agent.vision_review import VisionReviewResult
 from ue5agent.core.errors import is_env_unready
 from ue5agent.core.loop import AgentLoop, BudgetExhausted
 from ue5agent.llm.types import ChatModel
@@ -32,6 +35,10 @@ KERNEL_SYSTEM_PROMPT = """\
 你是按计划执行任务的工程 agent。完成当前步骤后用一句话总结做了什么；
 修改类步骤必须先用工具产生验证证据（编译/测试/检查结果）再总结。
 """
+
+VisionReviewer = Callable[[list[str], str], Awaitable[VisionReviewResult]]
+"""视觉审查钩子（A4 子任务3）：入参 (截图路径列表, 关卡需求) → 结构化审查结果。
+注入式解耦——runner 不直接依赖 vision_review/config，未配 vision 时传 None 即关闭。"""
 
 
 @dataclass
@@ -86,6 +93,8 @@ class TaskRunner:
         step_max_iterations: int = 15,
         step_wall_seconds: float = 300.0,
         total_wall_seconds: float = 1200.0,
+        vision_reviewer: VisionReviewer | None = None,
+        vision_timeout_seconds: float = 120.0,
     ):
         self._llm = llm
         self._registry = registry
@@ -96,6 +105,8 @@ class TaskRunner:
         self._step_max_iterations = step_max_iterations
         self._step_wall_seconds = step_wall_seconds
         self._total_wall_seconds = total_wall_seconds
+        self._vision_reviewer = vision_reviewer
+        self._vision_timeout = vision_timeout_seconds
 
     def _build_step_loop(self, step: PlanStep, tee: _EvidenceTee) -> AgentLoop:
         """按步骤契约构造微循环（B1）：工具面收紧、预算只许收小不许放大。"""
@@ -192,6 +203,57 @@ class TaskRunner:
             result="未自动执行（dangerous 级）；如需还原请用 repo_list_checkpoints + repo_restore",
         )
 
+    async def _run_vision_review(
+        self, step: PlanStep, goal: str, tee: _EvidenceTee
+    ) -> VisionReviewResult | None:
+        """A4 子任务3：对本步产出的截图做视觉审查，结果并入 tee.facts 驱动验收。
+
+        触发条件：注入了 vision_reviewer（已配 vision 角色）且本步实际产出了截图
+        （viewport_screenshot 落地的 screenshot 事实）。两者缺一则跳过——视觉审查是
+        增量证据，绝不改变"没截图任务"的既有行为。审查结果以 vision_review 事实并入
+        证据通道：存在 high 问题或解析失败 → ok=False，被 deterministic_verdict 判 fail。
+        审查链路本身故障（vision 模型不可用等）只记 trace、不炸步骤验收。
+        """
+        if self._vision_reviewer is None:
+            return None
+        shots = [
+            str(f["path"]) for f in tee.facts if f.get("kind") == "screenshot" and f.get("path")
+        ]
+        if not shots:
+            return None
+        # 硬超时兜底：litellm 对某些多模态端点（实测 moonshot）的调用会阻塞事件循环、
+        # 不遵守自身 request_timeout，会无限冻结整个 run（wall budget 检查在步边界，
+        # 拦不住步内挂起）。两点保证可靠超时：① reviewer 内部把 LLM 调用放进工作线程
+        # （cli 接线），主事件循环保持空闲；② 这里用 asyncio.wait（而非 wait_for）——
+        # 超时只放弃 pending 任务（线程成孤儿），不去 await 不可取消的执行器 future。
+        task = asyncio.ensure_future(self._vision_reviewer(shots, goal))
+        done, _pending = await asyncio.wait({task}, timeout=self._vision_timeout)
+        if task not in done:
+            self._writer.event(
+                "vision_review_error",
+                step_id=step.id,
+                error=f"视觉审查超时（>{self._vision_timeout:.0f}s），本步降级为不做视觉门禁",
+            )
+            return None
+        try:
+            result = task.result()
+        except Exception as exc:  # 视觉审查故障不应改变步骤命运，降级为"截图存档供人看"
+            self._writer.event(
+                "vision_review_error",
+                step_id=step.id,
+                error=f"{type(exc).__name__}: {exc}",
+            )
+            return None
+        tee.facts.append(result.to_facts())
+        self._writer.event(
+            "vision_review",
+            step_id=step.id,
+            passed=result.passed,
+            high_count=len(result.high_severity),
+            summary=result.summary(),
+        )
+        return result
+
     async def run(self, goal: str) -> RunOutcome:
         session = self._session
         session.goal = goal
@@ -247,6 +309,9 @@ class TaskRunner:
                 except Exception as exc:  # LLM/工具底层故障：记为步骤失败，不炸整个会话
                     summaries[step.id] = f"[步骤异常] {type(exc).__name__}: {exc}"
                 self._writer.event("phase_exit", phase="execute", step_id=step.id)
+
+                # A4：对本步截图做视觉审查，结果并入 tee.facts（驱动下方确定性验收）
+                vision_result = await self._run_vision_review(step, goal, tee)
 
                 # 验收优先级：步骤契约 success_checks（B1）→ 通用确定性规则（A3）→ LLM judge
                 mode = "judge"
@@ -312,15 +377,21 @@ class TaskRunner:
                 self._writer.event(
                     "recover_action", step_id=step.id, action="retry", reason=verdict.reason
                 )
-                history.append(
-                    {
-                        "role": "user",
-                        "content": (
-                            f"步骤 {step.id} 验收未通过（{verdict.verdict}）：{verdict.reason}。"
-                            "请修正并补充验证证据。"
-                        ),
-                    }
+                retry_note = (
+                    f"步骤 {step.id} 验收未通过（{verdict.verdict}）：{verdict.reason}。"
+                    "请修正并补充验证证据。"
                 )
+                # A4 局部重生成回灌：把视觉问题与问题区域喂回模型，引导其重新落地。
+                # 整批重建（wb_build 先清同前缀再重搭）是兜底路径；模型应优先修问题区域。
+                if vision_result is not None and not vision_result.passed:
+                    areas = "、".join(sorted({i.area for i in vision_result.high_severity}))
+                    retry_note += f"\n视觉审查：{vision_result.summary()}。"
+                    if areas:
+                        retry_note += (
+                            f"请重点修正这些区域（{areas}）的布局，再用 wb_build 重新落地"
+                            "（wb_build 会先整批清理同前缀旧构件再重建）。"
+                        )
+                history.append({"role": "user", "content": retry_note})
             self._writer.save_session()
 
         session.status = "aborted" if aborted else "done"

@@ -29,6 +29,9 @@ EVENT_TYPES = frozenset(
         "precondition_unmet",
         "precondition_unknown",
         "rollback_action",
+        # A4 视觉审查
+        "vision_review",
+        "vision_review_error",
     }
 )
 

@@ -1,5 +1,6 @@
 """K4：TaskRunner 状态机各转移路径（FakeModel 按调用顺序脚本化）。"""
 
+import asyncio
 import json
 
 from tests.test_loop import FakeModel, make_registry, tool_turn
@@ -9,6 +10,7 @@ from ue5agent.agent.report import build_report
 from ue5agent.agent.runner import TaskRunner
 from ue5agent.agent.state import PlanStep, TaskSession
 from ue5agent.agent.verifier import deterministic_verdict, evaluate_success_checks
+from ue5agent.agent.vision_review import parse_review
 from ue5agent.core.errors import mark_env_unready
 from ue5agent.core.permissions import PermissionGate, PermissionLevel
 from ue5agent.llm.types import AssistantTurn
@@ -638,6 +640,186 @@ async def test_contract_rollback_uses_actual_build_prefix(tmp_path):
     outcome = await runner.run("白盒任务")
     assert not outcome.success
     assert cleared == ["S1"]
+
+
+# ---------- A4 视觉审查集成（runner 局部重生成回灌）----------
+
+
+def _vision_registry() -> ToolRegistry:
+    """注册会落 screenshot/wb_validate 事实的工具（供 A4 集成测试用）。"""
+    registry = ToolRegistry(PermissionGate())
+
+    async def viewport_screenshot(file_path: str = "") -> str:
+        return 'saved\n[facts] {"kind": "screenshot", "ok": true, "path": "/tmp/shot.png"}'
+
+    async def wb_validate(layout_json: str = "") -> str:
+        return '校验PASS\n[facts] {"kind": "wb_validate", "ok": true, "violations": 0}'
+
+    registry.register(
+        ToolSpec(
+            name="ue_editor__viewport_screenshot",
+            description="",
+            parameters={"type": "object", "properties": {"file_path": {"type": "string"}}},
+            level=PermissionLevel.READ,
+            handler=viewport_screenshot,
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="ue_whitebox__wb_validate",
+            description="",
+            parameters={"type": "object", "properties": {"layout_json": {"type": "string"}}},
+            level=PermissionLevel.READ,
+            handler=wb_validate,
+        )
+    )
+    return registry
+
+
+class _FakeReviewer:
+    """按调用顺序返回预设审查结果，并记录收到的 (截图路径, 需求)。"""
+
+    def __init__(self, results):
+        self._results = list(results)
+        self.calls: list[tuple[list[str], str]] = []
+
+    async def __call__(self, paths, requirement):
+        self.calls.append((list(paths), requirement))
+        return self._results.pop(0)
+
+
+async def test_vision_high_issue_fails_then_regenerates_and_passes(tmp_path):
+    """A4：截图被视觉审查判 high 问题 → 步骤 fail；问题区域回灌 history → 重做后
+    决定性证据（wb_validate）+ 视觉通过 → pass。全程不调 judge。"""
+    reviewer = _FakeReviewer(
+        [
+            parse_review(
+                '{"issues": [{"area": "房间A", "issue": "与房间B未连通", "severity": "high"}]}'
+            ),
+            parse_review('{"issues": []}'),
+        ]
+    )
+    model = FakeModel(
+        [
+            plan("standard", ("搭建并目视校验", "布局符合需求")),
+            # 第 1 次尝试：只截图（视觉审查会判 high → fail）
+            tool_turn("ue_editor__viewport_screenshot", "{}"),
+            AssistantTurn(content="截了俯视图"),
+            # 第 2 次尝试：修正后重新校验+截图（视觉通过 + wb_validate 决定性 ok）
+            tool_turn("ue_whitebox__wb_validate", '{"layout_json": "{}"}'),
+            tool_turn("ue_editor__viewport_screenshot", "{}"),
+            AssistantTurn(content="已修正房间A并重新校验"),
+        ]
+    )
+    writer = RunWriter(tmp_path, TaskSession.new("视觉迭代"))
+    runner = TaskRunner(model, _vision_registry(), writer, vision_reviewer=reviewer)
+    outcome = await runner.run("搭一个两房间连通的关卡")
+
+    assert outcome.success
+    assert writer.session.plan[0].attempts == 2
+    # 审查被调用两次，且拿到的是截图实际落盘路径
+    assert len(reviewer.calls) == 2
+    assert reviewer.calls[0][0] == ["/tmp/shot.png"]
+    assert reviewer.calls[0][1] == "搭一个两房间连通的关卡"
+    # 视觉问题（区域名）回灌进了执行方上下文
+    assert any(any("房间A" in str(m.get("content")) for m in view) for view in model.seen_messages)
+    events = read_events(writer.trace_path)
+    vis = [e for e in events if e["event"] == "vision_review"]
+    assert [e["passed"] for e in vis] == [False, True]
+    verifies = [e for e in events if e["event"] == "verify_result"]
+    assert verifies[0]["verdict"] == "fail" and verifies[0]["mode"] == "deterministic"
+    assert verifies[1]["verdict"] == "pass"
+
+
+async def test_no_reviewer_keeps_legacy_behavior(tmp_path):
+    """未注入 reviewer（未配 vision）：截图照常，但不产生 vision_review 事实，
+    验收回落到 judge——行为与 A4 之前完全一致。"""
+    model = FakeModel(
+        [
+            plan("standard", ("截图", "看起来对")),
+            tool_turn("ue_editor__viewport_screenshot", "{}"),
+            AssistantTurn(content="截好了"),
+            judge("pass"),
+        ]
+    )
+    writer = RunWriter(tmp_path, TaskSession.new("无视觉"))
+    runner = TaskRunner(model, _vision_registry(), writer, vision_reviewer=None)
+    outcome = await runner.run("截个图")
+    assert outcome.success
+    events = [e["event"] for e in read_events(writer.trace_path)]
+    assert "vision_review" not in events
+
+
+async def test_vision_reviewer_failure_does_not_crash_step(tmp_path):
+    """视觉审查链路本身故障（vision 模型不可用等）：记 trace、不炸步骤，
+    验收照常回落 judge。"""
+
+    async def boom(paths, requirement):
+        raise RuntimeError("vision 模型 503")
+
+    model = FakeModel(
+        [
+            plan("standard", ("截图", "看起来对")),
+            tool_turn("ue_editor__viewport_screenshot", "{}"),
+            AssistantTurn(content="截好了"),
+            judge("pass"),
+        ]
+    )
+    writer = RunWriter(tmp_path, TaskSession.new("视觉故障"))
+    runner = TaskRunner(model, _vision_registry(), writer, vision_reviewer=boom)
+    outcome = await runner.run("截个图")
+    assert outcome.success
+    events = [e["event"] for e in read_events(writer.trace_path)]
+    assert "vision_review_error" in events
+    assert "vision_review" not in events
+
+
+async def test_vision_review_hard_timeout_degrades(tmp_path):
+    """视觉审查挂起超过硬超时 → 记 vision_review_error、降级不阻断（litellm 对某些
+    多模态端点异步挂起不遵守自身超时的真机教训），步骤照常走 judge。"""
+
+    async def hang(paths, requirement):
+        await asyncio.sleep(10)
+        raise AssertionError("不应执行到这里")
+
+    model = FakeModel(
+        [
+            plan("standard", ("截图", "看起来对")),
+            tool_turn("ue_editor__viewport_screenshot", "{}"),
+            AssistantTurn(content="截好了"),
+            judge("pass"),
+        ]
+    )
+    writer = RunWriter(tmp_path, TaskSession.new("视觉超时"))
+    runner = TaskRunner(
+        model, _vision_registry(), writer, vision_reviewer=hang, vision_timeout_seconds=0.05
+    )
+    outcome = await runner.run("截个图")
+    assert outcome.success
+    errs = [e for e in read_events(writer.trace_path) if e["event"] == "vision_review_error"]
+    assert errs and "超时" in errs[0]["error"]
+
+
+async def test_vision_skipped_without_screenshots(tmp_path):
+    """本步没截图：即便注入了 reviewer 也不触发审查（视觉是增量证据）。"""
+    reviewer = _FakeReviewer([parse_review('{"issues": []}')])
+    model = FakeModel(
+        [
+            plan("standard", ("只校验", "校验通过")),
+            tool_turn("ue_whitebox__wb_validate", '{"layout_json": "{}"}'),
+            AssistantTurn(content="校验过了"),
+        ]
+    )
+    writer = RunWriter(tmp_path, TaskSession.new("无截图"))
+    runner = TaskRunner(model, _vision_registry(), writer, vision_reviewer=reviewer)
+    outcome = await runner.run("只跑校验")
+    assert outcome.success
+    assert reviewer.calls == []  # 没截图 → 审查未被调用
+    events = [e["event"] for e in read_events(writer.trace_path)]
+    assert "vision_review" not in events
+
+
+# ---------- B1 PlanStep 契约（续）----------
 
 
 async def test_contract_reconciles_check_tools_into_allowlist():
