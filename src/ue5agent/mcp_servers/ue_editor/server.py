@@ -343,6 +343,121 @@ def functest_list(filter: str = "", max: int = 200) -> str:
     return _call("functest_list", params)
 
 
+@mcp.tool()
+def import_fbx(
+    tasks: list[dict[str, Any]] | None = None,
+    import_materials: bool = False,
+    replace_existing: bool = True,
+    save: bool = True,
+    import_uniform_scale: float = 1.0,
+    transform_vertex_to_absolute: bool = True,
+    bake_pivot_in_vertex: bool = False,
+    convert_scene_unit: bool = False,
+    timeout: float = 600.0,
+) -> str:
+    """批量把 FBX 文件导入为 StaticMesh 资产（WB-1 资产库地基）。会写工程（生成 .uasset）。
+
+    走 legacy FBX 工厂，确定性地按参数控制是否导材质——白盒只关心几何，
+    默认 import_materials=False，导入的网格用引擎默认材质。一个 FBX（含多网格的
+    collection）合并成单个 StaticMesh。单件失败不影响其余件，结果逐件回报。
+
+    缩放与原点（关键）：FBX 若按"米"建模，UE 需 import_uniform_scale=100 才能得到正确
+    real-world 尺寸（米→uu）；transform_vertex_to_absolute=False 可避免把 DCC 里物体的
+    世界位置烘进顶点（否则网格会偏离资产原点很远），让网格留在局部原点。模块化建筑套件
+    推荐 import_uniform_scale=100 + transform_vertex_to_absolute=False。
+
+    Args:
+        tasks: 导入任务列表，每项 {"filename": FBX 绝对/相对路径,
+            "destination_path": 目标内容路径如 /Game/LevelPrototyping/Meshes/ArchKit/wall,
+            "asset_name": 可选，导入后的资产名（缺省用文件名）}
+        import_materials: 是否一并导入材质/贴图（默认 False=用默认材质）
+        replace_existing: 同名资产是否覆盖（默认 True）
+        save: 导入后是否落盘保存（默认 True）
+        import_uniform_scale: 几何统一缩放（默认 1.0；米制源资产用 100 换算成 uu）
+        transform_vertex_to_absolute: 是否把节点世界变换烘入顶点（默认 True=UE 默认；
+            模块化资产传 False 让网格回到局部原点，避免原点远离几何）
+        bake_pivot_in_vertex: 是否把 DCC 旋转 pivot 作为网格原点（仅当
+            transform_vertex_to_absolute=False 生效，默认 False）
+        convert_scene_unit: 是否把 FBX 场景单位换算到 UE 厘米（米制源资产传 True 得 ×100
+            正确尺寸；独立于顶点变换烘焙，可与 transform_vertex_to_absolute=False 共存）
+        timeout: 整批导入最长等待秒数（自动钳到 [30, 3600]，90 件留足余量）
+    """
+    if not tasks:
+        return "[error] tasks 不能为空（每项需含 filename 与 destination_path）"
+    normalized: list[dict[str, Any]] = []
+    for task in tasks:
+        if not isinstance(task, dict):
+            return "[error] tasks 每项必须是对象 {filename, destination_path, asset_name?}"
+        filename = str(task.get("filename", "")).strip()
+        destination = str(task.get("destination_path", "")).strip()
+        if not filename or not destination:
+            return "[error] tasks 每项必须含非空 filename 与 destination_path"
+        # C++ 侧在编辑器进程 cwd 下解析，必须传绝对路径（截图工具同理）
+        entry: dict[str, Any] = {
+            "filename": Path(filename).resolve().as_posix(),
+            "destination_path": destination,
+        }
+        if task.get("asset_name"):
+            entry["asset_name"] = str(task["asset_name"])
+        normalized.append(entry)
+    params: dict[str, Any] = {
+        "tasks": normalized,
+        "import_materials": bool(import_materials),
+        "replace_existing": bool(replace_existing),
+        "save": bool(save),
+        "import_uniform_scale": float(import_uniform_scale),
+        "transform_vertex_to_absolute": bool(transform_vertex_to_absolute),
+        "bake_pivot_in_vertex": bool(bake_pivot_in_vertex),
+        "convert_scene_unit": bool(convert_scene_unit),
+    }
+    budget = max(30.0, min(float(timeout), 3600.0))
+    try:
+        response = send_command("import_fbx", params, timeout=budget)
+    except ConnectionRefusedError:
+        return mark_env_unready("连不上编辑器桥：请先打开 UE 编辑器（UnrealMCP 插件随工程加载）")
+    except (OSError, ConnectionError, TimeoutError) as exc:
+        return mark_error(ErrorCategory.BRIDGE_DOWN, f"编辑器桥通信中断：{exc}")
+    if response.get("status") == "error":
+        return f"[error] {response.get('error', response)}"
+    result = response.get("result", response)
+    imported = int(result.get("imported", 0))
+    failed = int(result.get("failed", 0))
+    facts = {"kind": "import_fbx", "ok": failed == 0, "imported": imported, "failed": failed}
+    body = json.dumps(result, ensure_ascii=False)
+    return f"{body}\n[facts] {json.dumps(facts, ensure_ascii=False)}"
+
+
+@mcp.tool()
+def get_mesh_bounds(asset_path: str) -> str:
+    """读取 StaticMesh 资产 scale=1 时的本地包围盒真实尺寸（uu）。只读。
+
+    用于实测验证导入缩放是否正确（对照清单期望尺寸，如 Wall8_4 应约 800×20×400）。
+
+    Args:
+        asset_path: StaticMesh 资产路径，如 /Game/LevelPrototyping/Meshes/ArchKit/wall/Wall8_4
+    """
+    if not asset_path or not asset_path.strip():
+        return "[error] asset_path 不能为空"
+    return _call("get_mesh_bounds", {"asset_path": asset_path.strip()})
+
+
+@mcp.tool()
+def set_mesh_build_scale(asset_path: str, scale: float = 1.0) -> str:
+    """设置 StaticMesh 的 BuildScale3D 并重建（几何围绕本地原点缩放，原点不变）。写工程。
+
+    用于把"原点正确但尺寸不对"的网格按比例缩放到正确尺寸——FBX 导入的缩放选项与
+    transform_vertex_to_absolute=False（保持局部原点）互斥，故改用 build scale 解耦：
+    米制源资产 scale=100 即可在不动原点的前提下放大到正确 uu。BuildScale3D 为绝对值、幂等。
+
+    Args:
+        asset_path: StaticMesh 资产路径，如 /Game/LevelPrototyping/Meshes/ArchKit/wall/Wall8_4
+        scale: 构建缩放系数（默认 1.0；米制源资产用 100）
+    """
+    if not asset_path or not asset_path.strip():
+        return "[error] asset_path 不能为空"
+    return _call("set_mesh_build_scale", {"asset_path": asset_path.strip(), "scale": float(scale)})
+
+
 def main() -> None:
     mcp.run()
 

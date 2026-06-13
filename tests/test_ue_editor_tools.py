@@ -130,6 +130,9 @@ _EXPECTED_TOOLS = {
     "pie_smoke",
     "run_functional_test",
     "functest_list",
+    "import_fbx",
+    "get_mesh_bounds",
+    "set_mesh_build_scale",
 }
 
 # 编辑/批量构建类桥命令一律不得在瘦桥源码中出现（防止未来误暴露写能力）。
@@ -353,3 +356,150 @@ def test_functest_list_passes_filter(monkeypatch):
     command, params = calls[0]
     assert command == "functest_list"
     assert params == {"max": 50, "filter": "Functional"}
+
+
+# ---------- WB-1：import_fbx（批量导入 FBX 为 StaticMesh） ----------
+
+
+def test_import_fbx_normalizes_tasks_and_passes_flags(monkeypatch):
+    """tasks 透传到 import_fbx 桥命令：filename 解析为绝对 posix 路径，flags 一并下发。"""
+    calls = _record_bridge(
+        monkeypatch,
+        response={"status": "success", "result": {"imported": 1, "failed": 0, "results": []}},
+    )
+    ed_server.import_fbx(
+        tasks=[
+            {
+                "filename": "a/Wall.fbx",
+                "destination_path": "/Game/Kit/wall",
+                "asset_name": "Wall",
+            }
+        ],
+        import_materials=False,
+        import_uniform_scale=100,
+        transform_vertex_to_absolute=False,
+    )
+    command, params = calls[0]
+    assert command == "import_fbx"
+    assert params["import_materials"] is False
+    assert params["replace_existing"] is True and params["save"] is True
+    assert params["import_uniform_scale"] == 100.0
+    assert params["transform_vertex_to_absolute"] is False
+    assert params["bake_pivot_in_vertex"] is False
+    task = params["tasks"][0]
+    assert Path(task["filename"]).is_absolute(), "C++ 侧 cwd 不同，必须绝对路径"
+    assert "\\" not in task["filename"], "应规范成 posix 正斜杠"
+    assert task["destination_path"] == "/Game/Kit/wall"
+    assert task["asset_name"] == "Wall"
+
+
+def test_import_fbx_default_scale_and_transform(monkeypatch):
+    """默认值：scale=1.0、transform_vertex_to_absolute=True（与 UE 默认一致）。"""
+    calls = _record_bridge(
+        monkeypatch,
+        response={"status": "success", "result": {"imported": 1, "failed": 0, "results": []}},
+    )
+    ed_server.import_fbx(tasks=[{"filename": "x.fbx", "destination_path": "/Game/K"}])
+    _, params = calls[0]
+    assert params["import_uniform_scale"] == 1.0
+    assert params["transform_vertex_to_absolute"] is True
+
+
+def test_import_fbx_emits_facts(monkeypatch):
+    """导入成功落 import_fbx 事实：failed=0 → ok=True，带 imported/failed 计数。"""
+    _record_bridge(
+        monkeypatch,
+        response={"status": "success", "result": {"imported": 3, "failed": 0, "results": []}},
+    )
+    out = ed_server.import_fbx(tasks=[{"filename": "x.fbx", "destination_path": "/Game/K"}])
+    facts = json.loads(out.split("[facts]", 1)[1].strip())
+    assert facts["kind"] == "import_fbx"
+    assert facts["ok"] is True and facts["imported"] == 3 and facts["failed"] == 0
+
+
+def test_import_fbx_partial_failure_marks_not_ok(monkeypatch):
+    """有任意一件失败 → ok=False（缺件应暴露，不掩盖）。"""
+    _record_bridge(
+        monkeypatch,
+        response={"status": "success", "result": {"imported": 2, "failed": 1, "results": []}},
+    )
+    out = ed_server.import_fbx(tasks=[{"filename": "x.fbx", "destination_path": "/Game/K"}])
+    facts = json.loads(out.split("[facts]", 1)[1].strip())
+    assert facts["ok"] is False and facts["failed"] == 1
+
+
+def test_import_fbx_empty_tasks_rejected(monkeypatch):
+    """空 tasks 直接拒绝，不触发任何桥调用。"""
+    calls = _record_bridge(monkeypatch)
+    out = ed_server.import_fbx(tasks=[])
+    assert out.startswith("[error]")
+    assert not calls
+
+
+def test_import_fbx_missing_fields_rejected(monkeypatch):
+    """缺 destination_path 直接拒绝，不触发桥调用。"""
+    calls = _record_bridge(monkeypatch)
+    out = ed_server.import_fbx(tasks=[{"filename": "x.fbx"}])
+    assert out.startswith("[error]")
+    assert not calls
+
+
+def test_import_fbx_bridge_error_emits_no_facts(monkeypatch):
+    """桥报错时不得伪造 import_fbx 事实。"""
+    _record_bridge(monkeypatch, response={"status": "error", "error": "import failed"})
+    out = ed_server.import_fbx(tasks=[{"filename": "x.fbx", "destination_path": "/Game/K"}])
+    assert out.startswith("[error]")
+    assert "[facts]" not in out
+
+
+def test_import_fbx_convert_scene_unit_passthrough(monkeypatch):
+    """convert_scene_unit 透传到桥命令（米制源 ×100 用）。"""
+    calls = _record_bridge(
+        monkeypatch,
+        response={"status": "success", "result": {"imported": 1, "failed": 0, "results": []}},
+    )
+    ed_server.import_fbx(
+        tasks=[{"filename": "x.fbx", "destination_path": "/Game/K"}], convert_scene_unit=True
+    )
+    _, params = calls[0]
+    assert params["convert_scene_unit"] is True
+
+
+def test_get_mesh_bounds_calls_bridge(monkeypatch):
+    """get_mesh_bounds 透传 asset_path 到 get_mesh_bounds 桥命令。"""
+    calls = _record_bridge(
+        monkeypatch,
+        response={"status": "success", "result": {"size": [800, 20, 400]}},
+    )
+    ed_server.get_mesh_bounds("/Game/Kit/wall/Wall8_4")
+    command, params = calls[0]
+    assert command == "get_mesh_bounds"
+    assert params == {"asset_path": "/Game/Kit/wall/Wall8_4"}
+
+
+def test_get_mesh_bounds_empty_rejected(monkeypatch):
+    """空 asset_path 直接拒绝，不触发桥调用。"""
+    calls = _record_bridge(monkeypatch)
+    out = ed_server.get_mesh_bounds("  ")
+    assert out.startswith("[error]")
+    assert not calls
+
+
+def test_set_mesh_build_scale_calls_bridge(monkeypatch):
+    """set_mesh_build_scale 透传 asset_path/scale 到桥命令。"""
+    calls = _record_bridge(
+        monkeypatch,
+        response={"status": "success", "result": {"size": [800, 20, 400]}},
+    )
+    ed_server.set_mesh_build_scale("/Game/Kit/wall/Wall8_4", scale=100)
+    command, params = calls[0]
+    assert command == "set_mesh_build_scale"
+    assert params == {"asset_path": "/Game/Kit/wall/Wall8_4", "scale": 100.0}
+
+
+def test_set_mesh_build_scale_empty_rejected(monkeypatch):
+    """空 asset_path 直接拒绝。"""
+    calls = _record_bridge(monkeypatch)
+    out = ed_server.set_mesh_build_scale("", scale=100)
+    assert out.startswith("[error]")
+    assert not calls

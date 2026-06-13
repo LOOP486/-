@@ -26,6 +26,8 @@ mcp_servers:
       navmesh_rebuild: write_project # 生成导航体积 + 重建 NavMesh（改关卡）
       pie_smoke: write_project # 进入 PIE 运行期（改运行状态）
       run_functional_test: write_project # 运行 Automation/Functional Test（进 PIE/改运行状态）
+      import_fbx: write_project # 批量导入 FBX 为 StaticMesh（写工程，生成 .uasset）
+      set_mesh_build_scale: write_project # 改 StaticMesh 的 BuildScale3D 并重建保存（写工程）
   ue_lifecycle:
     command: ["uv", "run", "python", "-m", "ue5agent.mcp_servers.ue_lifecycle"]
     permission: dangerous # 启动编辑器进程；还需加入下方 allowlist 才会放行
