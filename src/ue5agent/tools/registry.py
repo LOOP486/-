@@ -41,8 +41,8 @@ class ToolRegistry:
     def __len__(self) -> int:
         return len(self._tools)
 
-    def register(self, spec: ToolSpec) -> None:
-        if spec.name in self._tools:
+    def register(self, spec: ToolSpec, *, replace: bool = False) -> None:
+        if spec.name in self._tools and not replace:
             raise ValueError(f"工具重名：{spec.name}")
         self._tools[spec.name] = spec
 

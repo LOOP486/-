@@ -35,6 +35,9 @@ EVENT_TYPES = frozenset(
         "vision_review_error",
         # B4 上下文工程
         "context_brief",
+        # E2 子代理
+        "subagent_start",
+        "subagent_end",
     }
 )
 

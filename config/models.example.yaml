@@ -18,6 +18,16 @@ roles:
   planner: anthropic/claude-sonnet-4-6 # 主控与规划：用最强的模型
   coder: deepseek/deepseek-chat # 批量代码：性价比优先
   vision: openai/gpt-4o # 截图审查：必须是多模态模型，否则视觉验证不可用
+  # 以下角色可选，未配置时回退到 planner（行为不变）：
+  # judge: deepseek/deepseek-chat   # 验收兜底：确定性规则判不了时才调，可用便宜模型
+  # explorer: deepseek/deepseek-chat # 子代理探索（E2 spawn_subagent 默认角色）
+
+# provider 级固定参数（满足模型硬约束）：注入该 provider 的所有请求
+# providers:
+#   moonshot:
+#     base_url: https://api.moonshot.cn/v1
+#     api_key_env: MOONSHOT_API_KEY
+#     params: { temperature: 1 } # 例：Kimi kimi-k2.6 仅接受 temperature=1
 
 # 可选：角色级降级链——主模型限流/不可用时依次尝试
 # fallbacks:

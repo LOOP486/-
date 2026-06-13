@@ -401,6 +401,12 @@ async def _execute_task(
 
             return await asyncio.to_thread(_blocking)
 
+    # E2：注册子代理能力——步内可 spawn 上下文隔离的只读探索子代理（闭包指向本次 writer，
+    # chat 复用同一 registry 故 replace=True）。
+    from ue5agent.agent.subagent import register_spawn_subagent
+
+    register_spawn_subagent(registry, llm=llm, writer=writer)
+
     runner = TaskRunner(
         llm,
         registry,
