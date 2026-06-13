@@ -11,9 +11,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from ue5agent.whitebox.manifest import Manifest
+from ue5agent.whitebox.manifest import AssetDef, Manifest
 
 WALLS = ("north", "south", "east", "west")
+
+_FLOOR_THICKNESS = 20.0
+"""地板板厚（uu）：顶面贴 z=0，向下 20uu。cube 基准 100uu 时即旧逻辑的 scale.z=0.2。"""
 
 
 class LayoutError(Exception):
@@ -86,12 +89,36 @@ def layout_from_dict(data: dict) -> LayoutSpec:
 
 def compile_layout(spec: LayoutSpec, manifest: Manifest) -> list[Placement]:
     _validate(spec)
-    cube = manifest.require("cube")
+    # 按结构角色取件（v1 清单无 roles → 回退 cube，行为不变）。
+    floor_asset = manifest.asset_for_role("floor")
+    wall_asset = manifest.asset_for_role("wall")
     g = manifest.grid
     placements: list[Placement] = []
     for room in spec.rooms:
-        placements += _compile_room(room, spec, cube.path, g)
+        placements += _compile_room(room, spec, floor_asset, wall_asset, g)
     return _dedupe_shared_walls(placements)
+
+
+def _fit_placement(
+    name: str,
+    asset: AssetDef,
+    tmin: tuple[float, float, float],
+    tsize: tuple[float, float, float],
+) -> Placement:
+    """把资产缩放填满目标世界 AABB（tmin..tmin+tsize），按 pivot 补偿出 UE 落地点。
+
+    UE 把资产原点放在 location；原点在 AABB 内的归一化位置即 pivot，
+    故 location = tmin + pivot * tsize，scale = tsize / 资产基准尺寸。
+    cube（pivot=[.5,.5,.5]、base=100）代入即还原升级前的"中心放置"逻辑（逐字节一致）。
+    """
+    base = asset.size
+    scale = (tsize[0] / base[0], tsize[1] / base[1], tsize[2] / base[2])
+    location = (
+        tmin[0] + asset.pivot[0] * tsize[0],
+        tmin[1] + asset.pivot[1] * tsize[1],
+        tmin[2] + asset.pivot[2] * tsize[2],
+    )
+    return Placement(name=name, asset_path=asset.path, location=location, scale=scale)
 
 
 def _dedupe_shared_walls(placements: list[Placement]) -> list[Placement]:
@@ -216,16 +243,18 @@ def _interiors_overlap(a: tuple[int, int, int, int], b: tuple[int, int, int, int
     return ax < bx + bw and bx < ax + aw and ay < by + bd and by < ay + ad
 
 
-def _compile_room(room: Room, spec: LayoutSpec, cube: str, g: float) -> list[Placement]:
+def _compile_room(
+    room: Room, spec: LayoutSpec, floor_asset: AssetDef, wall_asset: AssetDef, g: float
+) -> list[Placement]:
     x, y, w, d = room.rect
     h, t = spec.wall_height, spec.wall_thickness
     ox, oy, oz = spec.origin
     out = [
-        Placement(  # 地板：顶面在 z=0，厚 20uu
-            name=f"{room.name}_floor",
-            asset_path=cube,
-            location=(ox + (x + w / 2) * g, oy + (y + d / 2) * g, oz - 10),
-            scale=(w * g / 100, d * g / 100, 0.2),
+        _fit_placement(  # 地板：顶面在 z=0，向下 _FLOOR_THICKNESS
+            f"{room.name}_floor",
+            floor_asset,
+            tmin=(ox + x * g, oy + y * g, oz - _FLOOR_THICKNESS),
+            tsize=(w * g, d * g, _FLOOR_THICKNESS),
         )
     ]
     doors_by_wall: dict[str, list[tuple[int, int]]] = {wall: [] for wall in WALLS}
@@ -235,23 +264,19 @@ def _compile_room(room: Room, spec: LayoutSpec, cube: str, g: float) -> list[Pla
     def add_wall(wall: str, length: int) -> None:
         for index, (s, e) in enumerate(_segments(length, doors_by_wall[wall], room.name, wall)):
             run = (e - s) * g
-            mid = (s + e) / 2 * g
             if wall == "south":
-                loc, scale = (ox + (x * g) + mid, oy + y * g + t / 2), (run / 100, t / 100)
+                tmin = (ox + (x + s) * g, oy + y * g, oz)
+                tsize = (run, t, h)
             elif wall == "north":
-                loc, scale = (ox + (x * g) + mid, oy + (y + d) * g - t / 2), (run / 100, t / 100)
+                tmin = (ox + (x + s) * g, oy + (y + d) * g - t, oz)
+                tsize = (run, t, h)
             elif wall == "west":
-                loc, scale = (ox + x * g + t / 2, oy + (y * g) + mid), (t / 100, run / 100)
+                tmin = (ox + x * g, oy + (y + s) * g, oz)
+                tsize = (t, run, h)
             else:  # east
-                loc, scale = (ox + (x + w) * g - t / 2, oy + (y * g) + mid), (t / 100, run / 100)
-            out.append(
-                Placement(
-                    name=f"{room.name}_{wall}_{index}",
-                    asset_path=cube,
-                    location=(loc[0], loc[1], oz + h / 2),
-                    scale=(scale[0], scale[1], h / 100),
-                )
-            )
+                tmin = (ox + (x + w) * g - t, oy + (y + s) * g, oz)
+                tsize = (t, run, h)
+            out.append(_fit_placement(f"{room.name}_{wall}_{index}", wall_asset, tmin, tsize))
 
     add_wall("south", w)
     add_wall("north", w)

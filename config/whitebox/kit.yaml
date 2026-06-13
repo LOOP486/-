@@ -1,0 +1,730 @@
+# 白盒资产清单 v2（由 scripts/fbx_probe.py 从 FBX 离线生成，请人工复核）
+# 来源：E:/BaiduSyncdisk/LEVEL DESIGN/assets/Architecture Model/UE_Exports/fbx
+# 单位：size 为缩放=1 的包围盒(uu)，由 FBX 米制 ×100 得到（UE 导入 1m→100uu）。
+# pivot：归一化原点位置(未 clamp)，[0.5,0.5,0]=底面中心；编译器据此补偿落地。
+# 待办：① [已完成] path 已回填为真实导入路径 /Game/LevelPrototyping/Meshes/ArchKit/<类别>/<名字>
+#         （2026-06-13 经 import_fbx 把 80 件 FBX 导入 agent_test，默认材质）；
+#       ② 审带 needs_review 的件；③ 确认下方 roles 角色映射。
+#       当前 v1 loader 会忽略 v2 扩展字段，不影响加载。
+version: 2
+grid: 100
+
+# 结构角色 → 资产 key 的默认映射（best-guess，请确认/替换）
+roles:
+  floor: floor_n
+  wall: wall1_4
+  wall_door: doorframe1_2_1
+
+assets:
+  # ---- floor (5) ----
+  floor2_2:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/floor/Floor2_2
+    source_fbx: objects/Floor2_2.fbx
+    size: [200, 200, 100]
+    category: floor
+    pivot: [0.0, 1.0, 0.0]
+    footprint: [2, 2]
+    tags: [structure, ground]
+  floor4_4:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/floor/Floor4_4
+    source_fbx: objects/Floor4_4.fbx
+    size: [400, 400, 100]
+    category: floor
+    pivot: [0.0, 1.0, 0.0]
+    footprint: [4, 4]
+    tags: [structure, ground]
+  floor_n:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/floor/Floor_n
+    source_fbx: objects/Floor_n.fbx
+    size: [100, 100, 20]
+    category: floor
+    pivot: [0.0, 1.0, 0.0]
+    footprint: [1, 1]
+    tags: [structure, ground]
+  flooroutdoor:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/floor/Flooroutdoor
+    source_fbx: objects/Flooroutdoor.fbx
+    size: [200, 200, 45]
+    category: floor
+    pivot: [0.5, 0.5, 0.333]
+    footprint: [2, 2]
+    tags: [structure, ground]
+    desc: "室外地板"
+  flooroutdoor_001:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/floor/Flooroutdoor_001
+    source_fbx: objects/Flooroutdoor_001.fbx
+    size: [200, 200, 45]
+    category: floor
+    pivot: [0.5, 0.5, 0.5]
+    footprint: [2, 2]
+    tags: [structure, ground]
+    desc: "室外地板"
+
+  # ---- wall (10) ----
+  wall1_1:   # _needs_review: 原点在几何外(pivot 越界)，落地前建议归零或人工核对
+    path: /Game/LevelPrototyping/Meshes/ArchKit/wall/Wall1_1
+    source_fbx: objects/Wall1_1.fbx
+    size: [100, 20, 100]
+    category: wall
+    pivot: [0.0, 1.0, 2.0]
+    footprint: [1, 1]
+    tags: [structure, vertical]
+    needs_review: true
+    review: "原点在几何外(pivot 越界)，落地前建议归零或人工核对"
+  wall1_2:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/wall/Wall1_2
+    source_fbx: objects/Wall1_2.fbx
+    size: [100, 20, 200]
+    category: wall
+    pivot: [0.0, 1.0, 1.0]
+    footprint: [1, 1]
+    tags: [structure, vertical]
+  wall1_4:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/wall/Wall1_4
+    source_fbx: objects/Wall1_4.fbx
+    size: [100, 20, 400]
+    category: wall
+    pivot: [0.0, 1.0, 0.0]
+    footprint: [1, 1]
+    tags: [structure, vertical]
+  wall2_1:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/wall/Wall2_1
+    source_fbx: objects/Wall2_1.fbx
+    size: [200, 20, 100]
+    category: wall
+    pivot: [0.0, 1.0, 0.0]
+    footprint: [2, 1]
+    tags: [structure, vertical]
+  wall2_2:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/wall/Wall2_2
+    source_fbx: objects/Wall2_2.fbx
+    size: [200, 20, 200]
+    category: wall
+    pivot: [0.0, 1.0, 0.0]
+    footprint: [2, 1]
+    tags: [structure, vertical]
+  wall2_4:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/wall/Wall2_4
+    source_fbx: objects/Wall2_4.fbx
+    size: [200, 20, 400]
+    category: wall
+    pivot: [0.0, 1.0, 0.0]
+    footprint: [2, 1]
+    tags: [structure, vertical]
+  wall4_1:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/wall/Wall4_1
+    source_fbx: objects/Wall4_1.fbx
+    size: [400, 20, 100]
+    category: wall
+    pivot: [0.0, 1.0, 0.0]
+    footprint: [4, 1]
+    tags: [structure, vertical]
+  wall4_2:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/wall/Wall4_2
+    source_fbx: objects/Wall4_2.fbx
+    size: [400, 20, 200]
+    category: wall
+    pivot: [0.0, 1.0, 0.0]
+    footprint: [4, 1]
+    tags: [structure, vertical]
+  wall4_4:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/wall/Wall4_4
+    source_fbx: objects/Wall4_4.fbx
+    size: [400, 20, 400]
+    category: wall
+    pivot: [0.0, 1.0, 0.0]
+    footprint: [4, 1]
+    tags: [structure, vertical]
+  wall8_4:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/wall/Wall8_4
+    source_fbx: objects/Wall8_4.fbx
+    size: [800, 20, 400]
+    category: wall
+    pivot: [0.0, 1.0, 0.0]
+    footprint: [8, 1]
+    tags: [structure, vertical]
+
+  # ---- corner (2) ----
+  cornerwall1_3:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/corner/CornerWall1_3
+    source_fbx: objects/CornerWall1_3.fbx
+    size: [100, 100, 300]
+    category: corner
+    pivot: [0.4, 0.6, 0.5]
+    footprint: [1, 1]
+    tags: [structure, vertical]
+  cornerwall1_3_001:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/corner/CornerWall1_3_001
+    source_fbx: objects/CornerWall1_3_001.fbx
+    size: [80, 80, 300]
+    category: corner
+    pivot: [0.583, 0.417, 0.5]
+    footprint: [1, 1]
+    tags: [structure, vertical]
+
+  # ---- wall_door (6) ----
+  doorframe1_2_1:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/wall_door/Doorframe1_2_1
+    source_fbx: objects/Doorframe1_2_1.fbx
+    size: [210, 56, 400]
+    category: wall_door
+    pivot: [0.143, 0.5, 0.025]
+    footprint: [2, 1]
+    tags: [structure, vertical, opening]
+    desc: "门洞框"
+  doorframe2_2_4:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/wall_door/Doorframe2_2_4
+    source_fbx: objects/Doorframe2_2_4.fbx
+    size: [280, 56, 400]
+    category: wall_door
+    pivot: [0.107, 0.5, 0.025]
+    footprint: [3, 1]
+    tags: [structure, vertical, opening]
+    desc: "门洞框"
+  doorframe3_2_4:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/wall_door/Doorframe3_2_4
+    source_fbx: objects/Doorframe3_2_4.fbx
+    size: [380, 56, 400]
+    category: wall_door
+    pivot: [0.079, 0.5, 0.025]
+    footprint: [4, 1]
+    tags: [structure, vertical, opening]
+    desc: "门洞框"
+  doorframe4_3:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/wall_door/Doorframe4_3
+    source_fbx: objects/Doorframe4_3.fbx
+    size: [480, 66, 400]
+    category: wall_door
+    pivot: [0.062, 0.5, 0.025]
+    footprint: [5, 1]
+    tags: [structure, vertical, opening]
+    desc: "门洞框"
+  doorframe5_2_4:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/wall_door/Doorframe5_2_4
+    source_fbx: objects/Doorframe5_2_4.fbx
+    size: [580, 56, 400]
+    category: wall_door
+    pivot: [0.052, 0.5, 0.025]
+    footprint: [6, 1]
+    tags: [structure, vertical, opening]
+    desc: "门洞框"
+  irongrilledoor:   # _needs_review: 铁栅门，确认是门扇还是门洞
+    path: /Game/LevelPrototyping/Meshes/ArchKit/wall_door/irongrilledoor
+    source_fbx: objects/irongrilledoor.fbx
+    size: [203, 5, 303]
+    category: wall_door
+    pivot: [0.08, 0.445, 0.417]
+    footprint: [2, 1]
+    tags: [structure, opening]
+    needs_review: true
+    review: "铁栅门，确认是门扇还是门洞"
+
+  # ---- window (9) ----
+  window1_4:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/window/Window1_4
+    source_fbx: objects/Window1_4.fbx
+    size: [100, 52, 400]
+    category: window
+    pivot: [0.0, 0.691, 0.0]
+    footprint: [1, 1]
+    tags: [structure, vertical, window]
+  window1_4_high:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/window/Window1_4_high
+    source_fbx: objects/Window1_4_high.fbx
+    size: [100, 52, 400]
+    category: window
+    pivot: [0.0, 0.691, 0.0]
+    footprint: [1, 1]
+    tags: [structure, vertical, window]
+  window1_4_low:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/window/Window1_4_low
+    source_fbx: objects/Window1_4_low.fbx
+    size: [100, 52, 400]
+    category: window
+    pivot: [0.0, 0.691, 0.125]
+    footprint: [1, 1]
+    tags: [structure, vertical, window]
+  window2_4:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/window/Window2_4
+    source_fbx: objects/Window2_4.fbx
+    size: [200, 52, 400]
+    category: window
+    pivot: [0.0, 0.693, 0.0]
+    footprint: [2, 1]
+    tags: [structure, vertical, window]
+  window2_4_high:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/window/Window2_4_high
+    source_fbx: objects/Window2_4_high.fbx
+    size: [200, 52, 400]
+    category: window
+    pivot: [0.0, 0.693, 0.0]
+    footprint: [2, 1]
+    tags: [structure, vertical, window]
+  window2_4_low:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/window/Window2_4_low
+    source_fbx: objects/Window2_4_low.fbx
+    size: [200, 52, 400]
+    category: window
+    pivot: [0.0, 0.691, 0.125]
+    footprint: [2, 1]
+    tags: [structure, vertical, window]
+  window4_4:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/window/Window4_4
+    source_fbx: objects/Window4_4.fbx
+    size: [400, 52, 400]
+    category: window
+    pivot: [0.0, 0.693, 0.0]
+    footprint: [4, 1]
+    tags: [structure, vertical, window]
+  window4_4_high:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/window/Window4_4_high
+    source_fbx: objects/Window4_4_high.fbx
+    size: [400, 52, 400]
+    category: window
+    pivot: [0.0, 0.693, 0.0]
+    footprint: [4, 1]
+    tags: [structure, vertical, window]
+  window4_4_low:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/window/Window4_4_low
+    source_fbx: objects/Window4_4_low.fbx
+    size: [400, 52, 400]
+    category: window
+    pivot: [0.0, 0.691, 0.125]
+    footprint: [4, 1]
+    tags: [structure, vertical, window]
+
+  # ---- glass_wall (5) ----
+  w_gls_frm_2_3:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/glass_wall/W_GLS_FRM_2_3
+    source_fbx: objects/W_GLS_FRM_2_3.fbx
+    size: [200, 20, 300]
+    category: glass_wall
+    pivot: [0.0, 1.0, -0.0]
+    footprint: [2, 1]
+    tags: [structure, vertical, window]
+    desc: "玻璃幕墙"
+  w_gls_frm_4_3:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/glass_wall/W_GLS_FRM_4_3
+    source_fbx: objects/W_GLS_FRM_4_3.fbx
+    size: [400, 20, 300]
+    category: glass_wall
+    pivot: [-0.0, 1.0, 0.0]
+    footprint: [4, 1]
+    tags: [structure, vertical, window]
+    desc: "玻璃幕墙"
+  w_gls_frm_6_3:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/glass_wall/W_GLS_FRM_6_3
+    source_fbx: objects/W_GLS_FRM_6_3.fbx
+    size: [600, 20, 300]
+    category: glass_wall
+    pivot: [-0.0, 1.0, -0.0]
+    footprint: [6, 1]
+    tags: [structure, vertical, window]
+    desc: "玻璃幕墙"
+  w_gls_frm_8_3:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/glass_wall/W_GLS_FRM_8_3
+    source_fbx: objects/W_GLS_FRM_8_3.fbx
+    size: [800, 20, 300]
+    category: glass_wall
+    pivot: [-0.0, 1.0, 0.0]
+    footprint: [8, 1]
+    tags: [structure, vertical, window]
+    desc: "玻璃幕墙"
+  w_gls_frm_n_3:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/glass_wall/W_GLS_FRM_n_3
+    source_fbx: objects/W_GLS_FRM_n_3.fbx
+    size: [300, 20, 300]
+    category: glass_wall
+    pivot: [0.0, 1.0, -0.0]
+    footprint: [3, 1]
+    tags: [structure, vertical, window]
+    desc: "玻璃幕墙"
+
+  # ---- pillar (2) ----
+  pillar:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/pillar/Pillar
+    source_fbx: objects/Pillar.fbx
+    size: [40, 40, 400]
+    category: pillar
+    pivot: [0.5, 0.5, 0.0]
+    footprint: [1, 1]
+    tags: [structure, vertical]
+  pillar_circle:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/pillar/Pillar_Circle
+    source_fbx: objects/Pillar_Circle.fbx
+    size: [60, 60, 400]
+    category: pillar
+    pivot: [0.5, 0.5, 0.0]
+    footprint: [1, 1]
+    tags: [structure, vertical]
+
+  # ---- stair (4) ----
+  stair_1:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/stair/Stair_1
+    source_fbx: objects/Stair_1.fbx
+    size: [100, 200, 100]
+    category: stair
+    pivot: [0.0, 0.0, 0.0]
+    footprint: [1, 2]
+    tags: [structure, vertical, traversal]
+  stair_1_001:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/stair/Stair_1_001
+    source_fbx: objects/Stair_1_001.fbx
+    size: [100, 200, 100]
+    category: stair
+    pivot: [0.0, 0.0, 0.0]
+    footprint: [1, 2]
+    tags: [structure, vertical, traversal]
+  stair_2:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/stair/Stair_2
+    source_fbx: objects/Stair_2.fbx
+    size: [300, 550, 400]
+    category: stair
+    pivot: [0.0, 0.0, 0.0]
+    footprint: [3, 6]
+    tags: [structure, vertical, traversal]
+  stair_2_001:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/stair/Stair_2_001
+    source_fbx: objects/Stair_2_001.fbx
+    size: [300, 550, 400]
+    category: stair
+    pivot: [0.0, 0.0, 0.0]
+    footprint: [3, 6]
+    tags: [structure, vertical, traversal]
+
+  # ---- roof (3) ----
+  gridbeamroof2_1:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/roof/GridBeamRoof2_1
+    source_fbx: objects/GridBeamRoof2_1.fbx
+    size: [400, 400, 100]
+    category: roof
+    pivot: [-0.0, 1.0, 0.0]
+    footprint: [4, 4]
+    tags: [structure, ceiling]
+  roofoverhang:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/roof/RoofOverhang
+    source_fbx: objects/RoofOverhang.fbx
+    size: [279, 100, 300]
+    category: roof
+    pivot: [0.0, -0.0, 0.0]
+    footprint: [3, 1]
+    tags: [structure, ceiling]
+  tri_beamroof:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/roof/Tri_BeamRoof
+    source_fbx: objects/Tri_BeamRoof.fbx
+    size: [50, 352, 108]
+    category: roof
+    pivot: [0.0, 0.875, -0.0]
+    footprint: [1, 4]
+    tags: [structure, ceiling]
+
+  # ---- fence (8) ----
+  fence_0_8_1:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/fence/Fence_0_8_1
+    source_fbx: objects/Fence_0_8_1.fbx
+    size: [103, 3, 81]
+    category: fence
+    pivot: [0.5, 0.5, 0.757]
+    footprint: [1, 1]
+    tags: [cover, barrier]
+  fence_0_8_1_001:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/fence/Fence_0_8_1_001
+    source_fbx: objects/Fence_0_8_1_001.fbx
+    size: [159, 6, 84]
+    category: fence
+    pivot: [0.5, 0.5, 0.74]
+    footprint: [2, 1]
+    tags: [cover, barrier]
+  fence_0_8_1_002:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/fence/Fence_0_8_1_002
+    source_fbx: objects/Fence_0_8_1_002.fbx
+    size: [109, 6, 84]
+    category: fence
+    pivot: [0.5, 0.5, 0.74]
+    footprint: [1, 1]
+    tags: [cover, barrier]
+  fence_0_8_1_008:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/fence/Fence_0_8_1_008
+    source_fbx: objects/Fence_0_8_1_008.fbx
+    size: [569, 300, 462]
+    category: fence
+    pivot: [0.837, 0.975, 0.585]
+    footprint: [6, 3]
+    tags: [cover, barrier]
+  fence_0_8_1_011:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/fence/Fence_0_8_1_011
+    source_fbx: objects/Fence_0_8_1_011.fbx
+    size: [100, 233, 165]
+    category: fence
+    pivot: [0.504, 0.43, 0.612]
+    footprint: [1, 2]
+    tags: [cover, barrier]
+  fence_0_8_1_5:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/fence/Fence_0_8_1_5
+    source_fbx: objects/Fence_0_8_1_5.fbx
+    size: [153, 3, 81]
+    category: fence
+    pivot: [0.5, 0.5, 0.757]
+    footprint: [2, 1]
+    tags: [cover, barrier]
+  fence_0_8_2:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/fence/Fence_0_8_2
+    source_fbx: objects/Fence_0_8_2.fbx
+    size: [203, 3, 81]
+    category: fence
+    pivot: [0.5, 0.5, 0.757]
+    footprint: [2, 1]
+    tags: [cover, barrier]
+  fence_0_8_2_001:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/fence/Fence_0_8_2_001
+    source_fbx: objects/Fence_0_8_2_001.fbx
+    size: [209, 6, 84]
+    category: fence
+    pivot: [0.5, 0.5, 0.74]
+    footprint: [2, 1]
+    tags: [cover, barrier]
+
+  # ---- cover (4) ----
+  shippingcontainer:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/cover/ShippingContainer
+    source_fbx: objects/ShippingContainer.fbx
+    size: [606, 267, 282]
+    category: cover
+    pivot: [0.0, 0.044, 0.041]
+    footprint: [6, 3]
+    tags: [cover, prop, large]
+    desc: "集装箱(大掩体)"
+  smallwoodencrate_001:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/cover/SmallWoodenCrate_001
+    source_fbx: objects/SmallWoodenCrate_001.fbx
+    size: [113, 73, 80]
+    category: cover
+    pivot: [0.013, 0.431, 0.0]
+    footprint: [1, 1]
+    tags: [cover, prop]
+    desc: "木箱"
+  smallwoodencrate_002:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/cover/SmallWoodenCrate_002
+    source_fbx: objects/SmallWoodenCrate_002.fbx
+    size: [113, 73, 49]
+    category: cover
+    pivot: [0.013, 0.431, 0.0]
+    footprint: [1, 1]
+    tags: [cover, prop]
+    desc: "木箱"
+  smallwoodencrate_003:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/cover/SmallWoodenCrate_003
+    source_fbx: objects/SmallWoodenCrate_003.fbx
+    size: [63, 43, 49]
+    category: cover
+    pivot: [0.023, 0.033, 0.0]
+    footprint: [1, 1]
+    tags: [cover, prop]
+    desc: "木箱"
+
+  # ---- prop (22) ----
+  collection10:   # _needs_review: 组合件，内容未知需确认语义/footprint
+    path: /Game/LevelPrototyping/Meshes/ArchKit/prop/Collection10
+    source_fbx: collections/Collection10.fbx
+    size: [211, 213, 180]
+    category: prop
+    pivot: [0.473, 0.47, 0.556]
+    footprint: [2, 2]
+    tags: [prop, combined]
+    needs_review: true
+    review: "组合件，内容未知需确认语义/footprint"
+  collection6:   # _needs_review: 组合件，内容未知需确认语义/footprint
+    path: /Game/LevelPrototyping/Meshes/ArchKit/prop/Collection6
+    source_fbx: collections/Collection6.fbx
+    size: [211, 213, 149]
+    category: prop
+    pivot: [0.473, 0.47, 0.672]
+    footprint: [2, 2]
+    tags: [prop, combined]
+    needs_review: true
+    review: "组合件，内容未知需确认语义/footprint"
+  collection7:   # _needs_review: 组合件，内容未知需确认语义/footprint；原点在几何外(pivot 越界)，落地前建议归零或人工核对
+    path: /Game/LevelPrototyping/Meshes/ArchKit/prop/Collection7
+    source_fbx: collections/Collection7.fbx
+    size: [200, 213, 243]
+    category: prop
+    pivot: [0.5, 0.47, 1.082]
+    footprint: [2, 2]
+    tags: [prop, combined]
+    needs_review: true
+    review: "组合件，内容未知需确认语义/footprint；原点在几何外(pivot 越界)，落地前建议归零或人工核对"
+  collection8:   # _needs_review: 组合件，内容未知需确认语义/footprint
+    path: /Game/LevelPrototyping/Meshes/ArchKit/prop/Collection8
+    source_fbx: collections/Collection8.fbx
+    size: [113, 73, 80]
+    category: prop
+    pivot: [0.013, 0.431, 0.0]
+    footprint: [1, 1]
+    tags: [prop, combined]
+    needs_review: true
+    review: "组合件，内容未知需确认语义/footprint"
+  collection9:   # _needs_review: 组合件，内容未知需确认语义/footprint
+    path: /Game/LevelPrototyping/Meshes/ArchKit/prop/Collection9
+    source_fbx: collections/Collection9.fbx
+    size: [741, 1187, 200]
+    category: prop
+    pivot: [0.865, 0.916, 0.5]
+    footprint: [7, 12]
+    tags: [prop, combined]
+    needs_review: true
+    review: "组合件，内容未知需确认语义/footprint"
+  doorlock:   # _needs_review: 门锁挂件，建议作 Doorframe 的附件而非独立件
+    path: /Game/LevelPrototyping/Meshes/ArchKit/prop/doorlock
+    source_fbx: objects/doorlock.fbx
+    size: [73, 14, 36]
+    category: prop
+    pivot: [0.25, 0.5, 0.5]
+    footprint: [1, 1]
+    tags: [prop, attachment]
+    needs_review: true
+    review: "门锁挂件，建议作 Doorframe 的附件而非独立件"
+  littlecabinet:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/prop/littleCabinet
+    source_fbx: collections/littleCabinet.fbx
+    size: [61, 51, 87]
+    category: prop
+    pivot: [0.5, 0.392, 0.525]
+    footprint: [1, 1]
+    tags: [prop]
+    desc: "小柜"
+  pipeline:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/prop/Pipeline
+    source_fbx: objects/Pipeline.fbx
+    size: [100, 60, 60]
+    category: prop
+    pivot: [0.0, 0.5, 0.5]
+    footprint: [1, 1]
+    tags: [prop]
+    desc: "管道"
+  pipeline_001:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/prop/Pipeline_001
+    source_fbx: objects/Pipeline_001.fbx
+    size: [133, 60, 119]
+    category: prop
+    pivot: [1.0, 0.5, 0.25]
+    footprint: [1, 1]
+    tags: [prop]
+    desc: "管道"
+  pipeline_002:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/prop/Pipeline_002
+    source_fbx: objects/Pipeline_002.fbx
+    size: [133, 60, 119]
+    category: prop
+    pivot: [-0.0, 0.5, 0.75]
+    footprint: [1, 1]
+    tags: [prop]
+    desc: "管道"
+  table_1_2_0_6_0_001:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/prop/Table_1_2_0_6_0_001
+    source_fbx: objects/Table_1_2_0_6_0_001.fbx
+    size: [90, 98, 187]
+    category: prop
+    pivot: [0.648, 0.481, 0.234]
+    footprint: [1, 1]
+    tags: [prop]
+    desc: "桌子"
+  table_1_2_0_6_0_002:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/prop/Table_1_2_0_6_0_002
+    source_fbx: objects/Table_1_2_0_6_0_002.fbx
+    size: [331, 98, 187]
+    category: prop
+    pivot: [0.177, 0.481, 0.234]
+    footprint: [3, 1]
+    tags: [prop]
+    desc: "桌子"
+  table_1_2_0_6_0_75:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/prop/Table_1_2_0_6_0_75
+    source_fbx: objects/Table_1_2_0_6_0_75.fbx
+    size: [120, 60, 80]
+    category: prop
+    pivot: [0.498, 0.496, 0.569]
+    footprint: [1, 1]
+    tags: [prop]
+    desc: "桌子"
+  table_1_4_0_7_0_75:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/prop/Table_1_4_0_7_0_75
+    source_fbx: objects/Table_1_4_0_7_0_75.fbx
+    size: [140, 70, 80]
+    category: prop
+    pivot: [0.427, 0.568, 0.569]
+    footprint: [1, 1]
+    tags: [prop]
+    desc: "桌子"
+  table_1_8_0_8_0_001:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/prop/Table_1_8_0_8_0_001
+    source_fbx: objects/Table_1_8_0_8_0_001.fbx
+    size: [180, 80, 80]
+    category: prop
+    pivot: [0.332, 0.622, 0.569]
+    footprint: [2, 1]
+    tags: [prop]
+    desc: "桌子"
+  table_1_8_0_8_0_75:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/prop/Table_1_8_0_8_0_75
+    source_fbx: objects/Table_1_8_0_8_0_75.fbx
+    size: [180, 80, 80]
+    category: prop
+    pivot: [0.332, 0.622, 0.569]
+    footprint: [2, 1]
+    tags: [prop]
+    desc: "桌子"
+  tallcabinet:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/prop/TallCabinet
+    source_fbx: objects/TallCabinet.fbx
+    size: [140, 45, 200]
+    category: prop
+    pivot: [0.0, 0.0, 0.0]
+    footprint: [1, 1]
+    tags: [prop]
+    desc: "高柜"
+  truck2low:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/prop/Truck2Low
+    source_fbx: objects/Truck2Low.fbx
+    size: [534, 270, 238]
+    category: prop
+    pivot: [0.202, 0.5, 0.592]
+    footprint: [5, 3]
+    tags: [prop, large]
+    desc: "卡车"
+  truck_3low_001:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/prop/Truck_3Low_001
+    source_fbx: objects/Truck_3Low_001.fbx
+    size: [534, 270, 238]
+    category: prop
+    pivot: [0.202, 0.5, 0.592]
+    footprint: [5, 3]
+    tags: [prop, large]
+    desc: "卡车"
+  truck_low:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/prop/Truck_Low
+    source_fbx: objects/Truck_Low.fbx
+    size: [533, 270, 257]
+    category: prop
+    pivot: [0.201, 0.499, 0.552]
+    footprint: [5, 3]
+    tags: [prop, large]
+    desc: "卡车"
+  woodplank:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/prop/WoodPlank
+    source_fbx: objects/WoodPlank.fbx
+    size: [10, 200, 3]
+    category: prop
+    pivot: [0.0, 1.0, 0.0]
+    footprint: [1, 2]
+    tags: [prop]
+    desc: "木板"
+  woodplank_001:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/prop/WoodPlank_001
+    source_fbx: objects/WoodPlank_001.fbx
+    size: [10, 100, 3]
+    category: prop
+    pivot: [0.0, 1.0, 0.0]
+    footprint: [1, 1]
+    tags: [prop]
+    desc: "木板"
+
