@@ -10,6 +10,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import sys
 import time
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -23,7 +24,9 @@ def _pid_alive(pid: int) -> bool:
     """跨平台判断进程是否存活（best-effort）。"""
     if pid <= 0:
         return False
-    if os.name == "nt":
+    # 用 sys.platform（而非 os.name）做平台判别：mypy 仅对 sys.platform=="win32" 做
+    # 平台收窄，在非 win32 目标下跳过该块的类型检查，避免 Linux CI 上误报 ctypes.windll。
+    if sys.platform == "win32":
         import ctypes
 
         process_query_limited = 0x1000
