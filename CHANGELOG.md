@@ -6,6 +6,33 @@
 
 ### 新增（Stage E：行为闭环与编排）
 
+- 运行期功能测试（E1 收口，**真机验证通过 2026-06-13**）：`ue_editor` 新增 `run_functional_test(
+  test_name, timeout, poll_interval)`（write_project）与 `functest_list(filter, max)`（read，发现
+  可用测试）。Automation/Functional Test 在编辑器主线程异步执行（自身可进出 PIE），故插件拆成
+  `functest_start`（触发）+ `functest_poll`（推进 latent 命令并取结果）两命令，Python 侧跨帧轮询
+  编排；落 `functional_test` 事实（ok=passed，带 error/warning 计数），超时不伪造通过。
+  - 插件 C++（agent_test，commit 待提交）：`HandleFunctestStart/Poll/List`——
+    StartTestByName + 跨帧 ExecuteLatentCommands + StopTest + ExecInfo 解析；functest_list 经
+    GetValidTestNames（放宽 RequestedTestFilter）列全部已注册测试名。
+  - 真机验证：functest_list 列出 4854 个测试；负向（不存在的名）正确报 not found；正向
+    `run_functional_test("FFColorSmokeTest")` 经 start→跨帧 poll→finish 真跑通、passed=true。
+- UE 在线评测档（E3 / C3，**真机出基线 2026-06-13**）：`ue5agent eval --suite ue` 用完整
+  TaskRunner + 真实 MCP 工具面跑端到端任务，度量**通过率 / 一次通过率 / 平均迭代次数 /
+  人工干预次数**（无人值守恒 0）。
+  - 新增 `evals/ue_suite.py`（编排/指标/检查器，注入式 run_one 可离线单测）+
+    `evals/tasks/ue.yaml`（蓝图理解/白盒校验+可达/运行期 functest 四个干净基线用例）+
+    `evals/tasks/ue_faults.yaml`（故障注入：编辑器断连/UBT 多错误/白盒部分失败/PIE 报错，
+    需手动制造故障后单跑）。
+  - cli `eval --suite ue` 先 probe_editor 探活（offline→退出不伪造分），在线则挂载 MCP +
+    逐任务 TaskRunner；`--out` 先落盘基线再打印（避免控制台输出异常丢报告）。
+  - **首份 UE 基线**（deepseek/deepseek-chat，2026-06-13，evals/baselines/ue/）：
+    4/4 通过、一次通过率 100%、平均迭代 1.5、人工干预 0。
+  - 故障注入真机复核：杀编辑器后单跑 → env_unready → 1 次尝试快速终止（13s，不空转重试），
+    报告含环境未就绪指引（B3 恢复策略表当前代码生效）。
+  - 沙盒两档（basic/hard）仍是离线 CI 门禁；eval 参数 `--tasks` 改 Option，新增 `--agent`。
+
+### 已有（Stage E 此前批次）
+
 - 运行期验证闭环（E1，真机验证通过）：`ue_editor` 新增两个工具（UnrealMCP 插件同步
   新增 C++ 命令）——
   - `pie_smoke(seconds)`：在编辑器里启动 PIE 跑若干秒，结束后返回期间**新增**的

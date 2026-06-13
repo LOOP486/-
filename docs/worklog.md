@@ -1,14 +1,20 @@
 # 工作日志（对话交接用）
 
-> 最后更新：2026-06-13（一次插件编译完成 C2 收尾 + D1.1 服务端 + E1，全部真机验证）。
+> 最后更新：2026-06-13（E1 收口 run_functional_test 真机 + E3 真机出 UE 基线）。
 > 新对话接手前先读本页 + [development-plan.md](development-plan.md)。
 > 架构权威版：[architecture/design.md](architecture/design.md) + ADR 0001–0006。
-> ✅ 最新结论：**Stage A–D 全收口、E2 离线完成、E1 + C2 收尾 + D1.1 服务端真机完成（2026-06-13）**。
-> 一次插件 C++ 改动 + 重编译落地三件（commit agent_test 4d280a5）：
-> - C2 find_blueprint_references → bp_find_usages 可用（BP_ThirdPersonCharacter→GameMode）；
-> - D1.1 插件 token 生成/写盘 + 握手校验（无 token 拒/带 token 放行/protocol 不符报错）；
-> - E1 pie_smoke（pie_start/stop + MCPLogCapture 窗口精确计数）+ output_log_tail。
-> 279 单测全绿，mypy 零错误。剩余 Stage E：run_functional_test（真机）、E3 完整基准+UE 在线 eval（真机）。
+> ✅ 最新结论：**Stage A–D 全收口；Stage E（E1/E2/E3）全部真机收口**。
+> 本轮（真机，编辑器在线）：
+> - **E1 收口**：插件 C++ 新增 functest_start/functest_poll/functest_list（一次编译落地，
+>   StartTestByName + 跨帧 ExecuteLatentCommands + StopTest + GetValidTestNames）；ue_editor 新增
+>   `run_functional_test`(write_project，跨帧轮询编排+functional_test 事实) 与 `functest_list`(read)。
+>   真机验证：functest_list 列 4854 测试、FFColorSmokeTest 真跑通 passed=true、负向名报 not found。
+> - **E3 真机出基线**：`eval --suite ue --out evals/baselines/ue/deepseek-2026-06-13.json` →
+>   4/4 通过、一次通过率 100%、平均迭代 1.5、人工干预 0（含 run_functional_test 用例）。
+>   故障注入复核：杀编辑器后单跑 → env_unready → 1 次尝试快速终止（13s，不空转）。
+> 291 单测全绿、ruff+mypy 全绿。
+> **插件改动尚未提交 agent_test git**（functest 三命令在 EpicUnrealMCPEditorCommands.*/Bridge.cpp）；
+> 下次可 commit。编辑器本轮被重启过，结束时已重新拉起在线。
 
 ## 项目一句话
 
@@ -26,7 +32,7 @@ ue5agent：UE5 游戏开发 agent——C++ 实现功能、蓝图只读理解、�
 | Phase 2 白盒（Stage A 全部） | ✅ **完成并真机终验**：manifest + DSL 编译器 + wb_build/wb_clear + wb_validate 校验器 + 证据信封 + A4 视觉迭代闭环（截图→Kimi 审查→问题区域回灌重生成）。「三房间死斗」全链路 e2e 通过 |
 | Stage B（kernel 体系化） | ✅ B1 契约 v2 / B2 工具效果声明 / B3 错误分类与恢复策略表 / B4 上下文工程（工程摘要注入 + progress.md + 工具结果摘要器）全部完成 |
 | Stage D（安全与工程化） | ✅ **全收口**：secret 掩码、注入围栏、桥鉴权（D1.1 客户端+服务端 2026-06-13 真机）、运行锁、runs prune、CI |
-| Stage E（Phase 3） | 🔶 E2 子代理 ✅ 离线；E1 ✅ pie_smoke+output_log_tail 真机；run_functional_test ⬜（真机）、E3 完整基准+UE 在线 eval ⬜（真机） |
+| Stage E（Phase 3） | ✅ **全部真机收口**：E1（pie_smoke/output_log_tail/run_functional_test）、E2 子代理、E3 UE 在线 eval（首份基线 4/4 通过）。仅"更多故障注入用例"为持续补充项 |
 
 ## 环境清单
 
@@ -36,7 +42,9 @@ ue5agent：UE5 游戏开发 agent——C++ 实现功能、蓝图只读理解、�
   `UE_MCP_TOKEN_FILE` 指向它，客户端握手自动出示；裸 `send_command`（不经 cli load_dotenv）会被拒，
   调试时需手动带 `UE_MCP_TOKEN_FILE` 环境变量。插件源码在 agent_test 仓库（独立 git）。
 - 用户入口：双击 ue5agent-chat.bat 或 `uv run ue5agent run "任务" --yes`；trace 回放 `uv run ue5agent trace`；清理旧运行 `uv run ue5agent runs prune`
-- 279 个单测全绿；评测 `uv run ue5agent eval`（basic+hard 双档基线满分，evals/baselines/）
+- 291 个单测全绿；评测 `uv run ue5agent eval`（basic+hard 双档基线满分，evals/baselines/）；
+  UE 在线档 `uv run ue5agent eval --suite ue`（需编辑器在线，离线探活失败即退出不跑分；
+  首份基线 evals/baselines/ue/deepseek-2026-06-13.json）
 - 插件重编译流程：关编辑器（DLL 锁）→ `run_build(engine, uproject, 'agent_testEditor')` → 重启编辑器
   → 轮询 probe_editor。本会话首编 19.8s、增量 9.5s。
 

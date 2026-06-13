@@ -130,17 +130,30 @@ def _render_event(event: dict[str, Any]) -> None:
 
 @app.command("eval")
 def eval_command(
-    tasks: Path = Path("evals/tasks/basic.yaml"),
+    tasks: Path | None = typer.Option(
+        None, "--tasks", help="任务文件；缺省按 --suite 选默认（sandbox→basic.yaml，ue→ue.yaml）"
+    ),
     models: Path = DEFAULT_MODELS,
+    agent: Path = DEFAULT_AGENT,
     role: str = "planner",
+    suite: str = typer.Option(
+        "sandbox", "--suite", help="评测档：sandbox（离线沙盒，CI 门禁）或 ue（真机，需编辑器在线）"
+    ),
     out: Path | None = typer.Option(None, "--out", help="把报告另存为 JSON（基线归档用）"),
 ) -> None:
-    """跑迷你评测集：每个任务在干净沙盒中运行，输出通过率与失败原因。"""
+    """跑评测集：sandbox 档在干净沙盒中度量工具调用能力（离线）；ue 档用完整 TaskRunner
+    + 真实 MCP 工具面跑端到端任务（需编辑器在线），度量一次通过率/迭代次数/人工干预次数。"""
     config = _require_models(models)
+    if suite == "ue":
+        settings = load_agent_settings(agent) if agent.exists() else AgentSettings()
+        tasks_path = tasks or Path("evals/tasks/ue.yaml")
+        asyncio.run(_run_ue_eval(config, settings, tasks_path, role=role, out=out))
+        return
+
     from ue5agent.evals.runner import load_tasks, run_eval
     from ue5agent.llm.client import LiteLLMClient
 
-    task_list = load_tasks(tasks)
+    task_list = load_tasks(tasks or Path("evals/tasks/basic.yaml"))
     client = LiteLLMClient(config)
     model_ref = client.model_for(role)
     report = asyncio.run(run_eval(task_list, lambda: client, role=role))
@@ -175,6 +188,127 @@ def eval_command(
         console.print(f"[dim]报告已存 {out}[/dim]")
     if report.pass_rate < 1.0:
         raise typer.Exit(1)
+
+
+async def _run_ue_eval(
+    config: ModelsConfig,
+    settings: AgentSettings,
+    tasks_path: Path,
+    *,
+    role: str = "planner",
+    out: Path | None = None,
+) -> None:
+    """UE 在线评测档（E3/C3）：探活编辑器 → 挂载 MCP → 每个任务用完整 TaskRunner 跑端到端。
+
+    编排/指标/检查器在 evals.ue_suite（可离线单测）；本函数只提供真机 run_one 回调。
+    """
+    from ue5agent.agent.events import RunWriter
+    from ue5agent.agent.runner import TaskRunner
+    from ue5agent.agent.state import TaskSession
+    from ue5agent.core.redaction import collect_secret_values
+    from ue5agent.core.runlock import RunLockError, run_lock
+    from ue5agent.evals.ue_suite import UeEvalTask, UeRunRecord, load_ue_tasks, run_ue_suite
+    from ue5agent.llm.client import LiteLLMClient
+    from ue5agent.mcp_servers.ue_editor.bridge import probe_editor
+    from ue5agent.tools.mcp_client import McpManager
+    from ue5agent.tools.registry import ToolRegistry
+
+    if not tasks_path.exists():
+        console.print(f"[red]未找到任务文件 {tasks_path}[/red]")
+        raise typer.Exit(1)
+    if not probe_editor():
+        console.print(
+            "[red]UE 编辑器桥不可达[/red]：ue 档需先打开编辑器并加载 agent_test 工程"
+            "（UnrealMCP 插件随工程加载）。不在线时不跑分以免伪造结果。"
+        )
+        raise typer.Exit(2)
+
+    task_list = load_ue_tasks(tasks_path)
+    secrets = collect_secret_values(config.secret_env_names())
+    llm = LiteLLMClient(config)
+    model_ref = llm.model_for(role)
+
+    try:
+        with run_lock(Path("runs") / ".runner.lock"):  # D2.1 同工程单 runner
+            registry = ToolRegistry(_build_gate(settings, assume_yes=True))  # 评测无人值守
+            async with McpManager(settings.mcp_servers) as manager:
+                await manager.register_all(registry)
+
+                async def run_one(task: UeEvalTask) -> UeRunRecord:
+                    writer = RunWriter(Path("runs"), TaskSession.new(task.name), secrets=secrets)
+                    runner = TaskRunner(
+                        llm,
+                        registry,
+                        writer,
+                        step_max_iterations=settings.limits.max_iterations,
+                    )
+                    try:
+                        outcome = await runner.run(task.prompt)
+                    except Exception as exc:  # 单任务异常记为失败，不中断整批
+                        return UeRunRecord(success=False, error=f"{type(exc).__name__}: {exc}")
+                    plan = writer.session.plan
+                    return UeRunRecord(
+                        success=outcome.success,
+                        final_answer=outcome.final_answer or outcome.report,
+                        iteration_count=sum(s.attempts for s in plan),
+                        max_step_attempts=max((s.attempts for s in plan), default=0),
+                        human_intervention=0,  # 无人值守 eval 不触发确认器
+                    )
+
+                report = await run_ue_suite(task_list, run_one)
+    except RunLockError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+
+    # 先落盘基线产物，再打印——避免控制台输出异常（如 stdout 被重定向时 Windows
+    # 偶发 OSError 22）导致已跑完的报告丢失。
+    if out:
+        _dump_ue_report(out, model_ref, role, report)
+
+    table = Table(title=f"UE 评测报告（角色：{role}，模型：{model_ref}）")
+    table.add_column("任务")
+    table.add_column("结果")
+    table.add_column("迭代", justify="right")
+    table.add_column("失败原因")
+    for result in report.results:
+        table.add_row(
+            result.name,
+            "[green]通过[/green]" if result.passed else "[red]失败[/red]",
+            str(result.iteration_count),
+            "；".join(result.failures),
+        )
+    console.print(table)
+    passed = sum(1 for r in report.results if r.passed)
+    console.print(
+        f"通过率 [bold]{report.pass_rate:.0%}[/bold]（{passed}/{len(report.results)}）"
+        f" · 一次通过率 {report.first_try_pass_rate:.0%}"
+        f" · 平均迭代 {report.avg_iterations:.1f}"
+        f" · 人工干预 {report.total_human_intervention} 次"
+    )
+    if out:
+        console.print(f"[dim]报告已存 {out}[/dim]")
+    if report.pass_rate < 1.0:
+        raise typer.Exit(1)
+
+
+def _dump_ue_report(out: Path, model_ref: str, role: str, report: Any) -> None:
+    import json
+    import time
+    from dataclasses import asdict
+
+    payload = {
+        "suite": "ue",
+        "model": model_ref,
+        "role": role,
+        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "pass_rate": report.pass_rate,
+        "first_try_pass_rate": report.first_try_pass_rate,
+        "avg_iterations": report.avg_iterations,
+        "total_human_intervention": report.total_human_intervention,
+        "results": [asdict(result) for result in report.results],
+    }
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def _estimate_cost(model_ref: str, prompt_tokens: int, completion_tokens: int) -> float | None:

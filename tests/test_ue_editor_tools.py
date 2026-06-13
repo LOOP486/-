@@ -128,6 +128,8 @@ _EXPECTED_TOOLS = {
     "path_test",
     "output_log_tail",
     "pie_smoke",
+    "run_functional_test",
+    "functest_list",
 }
 
 # 编辑/批量构建类桥命令一律不得在瘦桥源码中出现（防止未来误暴露写能力）。
@@ -251,3 +253,103 @@ def test_pie_smoke_start_failure_short_circuits(monkeypatch):
     out = ed_server.pie_smoke()
     assert ed_server.is_env_unready(out)
     assert commands == ["pie_start"]
+
+
+# ---------- E1 收尾：run_functional_test（Automation/Functional Test，start + 轮询） ----------
+
+
+def test_run_functional_test_polls_until_finished_pass(monkeypatch):
+    """触发后轮询至 finished；passed 时落 functional_test 事实 ok=True。"""
+    commands: list[str] = []
+    polls = iter(
+        [
+            {"status": "success", "result": {"finished": False}},
+            {
+                "status": "success",
+                "result": {"finished": True, "passed": True, "error_count": 0, "warning_count": 2},
+            },
+        ]
+    )
+
+    def fake_send(command, params=None, **_kwargs):
+        commands.append(command)
+        if command == "functest_start":
+            return {"status": "success", "result": {"started": True}}
+        return next(polls)
+
+    monkeypatch.setattr(ed_server, "send_command", fake_send)
+    monkeypatch.setattr(ed_server.time, "sleep", lambda _s: None)
+    out = ed_server.run_functional_test("FT_Combat", timeout=30)
+    assert commands == ["functest_start", "functest_poll", "functest_poll"]
+    facts = json.loads(out.split("[facts]", 1)[1].strip())
+    assert facts["kind"] == "functional_test"
+    assert facts["ok"] is True and facts["passed"] is True
+    assert facts["test_name"] == "FT_Combat" and facts["warning_count"] == 2
+
+
+def test_run_functional_test_reports_failure(monkeypatch):
+    """测试 finished 但 passed=False → 事实 ok=False，带错误计数。"""
+
+    def fake_send(command, params=None, **_kwargs):
+        if command == "functest_start":
+            return {"status": "success", "result": {}}
+        return {
+            "status": "success",
+            "result": {"finished": True, "passed": False, "error_count": 4},
+        }
+
+    monkeypatch.setattr(ed_server, "send_command", fake_send)
+    monkeypatch.setattr(ed_server.time, "sleep", lambda _s: None)
+    out = ed_server.run_functional_test("FT_Combat")
+    facts = json.loads(out.split("[facts]", 1)[1].strip())
+    assert facts["ok"] is False and facts["passed"] is False and facts["error_count"] == 4
+
+
+def test_run_functional_test_timeout_does_not_fabricate(monkeypatch):
+    """始终 finished=False → 超时不落 functional_test 事实（缺证据应判 fail 而非假成功）。"""
+
+    def fake_send(command, params=None, **_kwargs):
+        if command == "functest_start":
+            return {"status": "success", "result": {}}
+        return {"status": "success", "result": {"finished": False}}
+
+    monkeypatch.setattr(ed_server, "send_command", fake_send)
+    monkeypatch.setattr(ed_server.time, "sleep", lambda _s: None)
+    out = ed_server.run_functional_test("FT_Stuck", timeout=5, poll_interval=1)
+    assert "[facts]" not in out
+    assert "未完成" in out
+
+
+def test_run_functional_test_empty_name_rejected(monkeypatch):
+    """空 test_name 直接拒绝，不触发任何桥调用。"""
+    calls = _record_bridge(monkeypatch)
+    out = ed_server.run_functional_test("  ")
+    assert out.startswith("[error]")
+    assert not calls
+
+
+def test_run_functional_test_start_failure_short_circuits(monkeypatch):
+    """functest_start 失败（编辑器未开）直接返回，不再轮询。"""
+    commands: list[str] = []
+
+    def fake_send(command, params=None, **_kwargs):
+        commands.append(command)
+        raise ConnectionRefusedError("no editor")
+
+    monkeypatch.setattr(ed_server, "send_command", fake_send)
+    monkeypatch.setattr(ed_server.time, "sleep", lambda _s: None)
+    out = ed_server.run_functional_test("FT_Combat")
+    assert ed_server.is_env_unready(out)
+    assert commands == ["functest_start"]
+
+
+def test_functest_list_passes_filter(monkeypatch):
+    """functest_list 透传 filter/max 到 functest_list 桥命令。"""
+    calls = _record_bridge(
+        monkeypatch,
+        response={"status": "success", "result": {"total": 1, "returned": 1, "tests": ["X"]}},
+    )
+    ed_server.functest_list(filter="Functional", max=50)
+    command, params = calls[0]
+    assert command == "functest_list"
+    assert params == {"max": 50, "filter": "Functional"}

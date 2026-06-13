@@ -1,0 +1,43 @@
+# UE 在线评测基线档（E3 / C3）：需 UE 编辑器在线 + UnrealMCP 插件加载 + agent_test 工程。
+# 跑法：先打开编辑器并加载工程，再
+#   uv run ue5agent eval --suite ue --out evals/baselines/ue/<model>-<date>.json
+# 度量：通过率 / 一次通过率 / 平均迭代次数 / 人工干预次数（无人值守恒 0）。
+# 检查类型见 src/ue5agent/evals/ue_suite.py::evaluate_ue_check
+#
+# 本档只放"编辑器在线即应通过"的干净用例（作真机回归基线）。故障注入用例在 ue_faults.yaml
+# （需手动制造故障后单独跑）。沙盒两档（basic/hard）仍是离线 CI 门禁。
+# cli 会先探活，编辑器 offline 直接提示退出、不伪造分数。
+
+# ---- 蓝图只读理解（C2 标准答案）----
+- name: read_blueprint_and_explain
+  prompt: 解释蓝图 BP_ThirdPersonCharacter 做了什么：它继承自什么、有哪些组件、响应哪些输入。
+  max_iterations: 12
+  checks:
+    - { type: run_succeeded }
+    - { type: final_contains, text: Character }
+    - { type: final_contains_any, texts: ["Camera", "相机", "摄像机"] }
+    - { type: final_contains_any, texts: ["Move", "移动", "输入"] }
+
+- name: blueprint_find_usages
+  prompt: 查一下谁引用了蓝图 BP_ThirdPersonCharacter，把引用它的资产列出来。
+  max_iterations: 10
+  checks:
+    - { type: run_succeeded }
+    - { type: final_contains_any, texts: ["GameMode", "BP_ThirdPersonGameMode", "引用"] }
+
+# ---- 白盒搭建 + 确定性校验 + 可达性（Stage A 闭环）----
+- name: wb_build_and_validate
+  prompt: 搭一个两房间连通的白盒关卡（每个房间 8x8，两房之间留门洞连通），然后校验构件无重叠、房间封闭，并验证两房间之间导航可达。
+  max_iterations: 30
+  checks:
+    - { type: run_succeeded }
+    - { type: final_contains_any, texts: ["可达", "reachable", "连通", "PASS", "通过"] }
+
+# ---- 运行期功能测试（E1：run_functional_test）----
+# 用引擎自带的 smoke automation 测试做确定性运行期验证（FFColorSmokeTest 实测稳定通过）。
+- name: run_functional_test_smoke
+  prompt: 运行名为 FFColorSmokeTest 的 automation 测试，报告它是否通过、有没有报错。
+  max_iterations: 10
+  checks:
+    - { type: run_succeeded }
+    - { type: final_contains_any, texts: ["通过", "passed", "pass", "成功", "无报错", "0"] }

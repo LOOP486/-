@@ -213,6 +213,15 @@
 
 ## Stage E：Phase 3 行为闭环（待 Stage A–C 后细化）
 
+> 细案见 [stage-e-plan.md](stage-e-plan.md)。进度（2026-06-13，**全部真机收口**）：
+> - E1 ✅ pie_smoke+output_log_tail + **run_functional_test 真机收口**（插件 functest_start/poll/list
+>   = StartTestByName + 跨帧 ExecuteLatentCommands + StopTest + GetValidTestNames；Python 跨帧轮询 +
+>   functional_test 事实；FFColorSmokeTest 真跑通 passed=true）。
+> - E2 ✅ 子代理体系（离线单测覆盖，与主循环集成）。
+> - E3 ✅ **真机出基线**：evals/ue_suite.py + ue.yaml(+ue_faults.yaml) + `eval --suite ue` 真机路径；
+>   首份 UE 基线 deepseek-chat 4/4 通过、一次通过率 100%、平均迭代 1.5、人工干预 0
+>   （evals/baselines/ue/）；故障注入复核 env_unready 1 次尝试快速终止。
+
 保持 roadmap 既有定义，开工前单独出细案（同 P1 模式）：
 
 - PIE smoke test 与 UE Automation/Functional Test 闭环（评审指出的 UE5 E2E 剩余面：Output Log parser、Blueprint compile check、BuildCookRun smoke 归此）。

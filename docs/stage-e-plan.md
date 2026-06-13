@@ -29,8 +29,12 @@
        由 Python 侧 `pie_smoke` 工具编排 start→等待→stop。当前播放当前关卡（map 参数留后续）。
      - `output_log_tail(lines, severity)`：读 Output Log 尾部（按级别过滤）。
      - 新增 `MCPLogCapture`（GLog 环形捕获，线程安全 + 单调序号窗口精确 + 滤控制消息/Verbose）。
-     - ⬜ `run_functional_test`：UE Automation/Functional Test——留后续（同样需 PIE 异步会话，
-       benefit from pie 会话管线先跑稳；最重最不确定，单独做）。
+     - ✅ `run_functional_test`：UE Automation/Functional Test——**真机验证通过（2026-06-13）**。
+       插件 `functest_start`（StartTestByName 触发）+ `functest_poll`（跨帧 ExecuteLatentCommands
+       推进 + StopTest + ExecInfo 解析）两命令 + `functest_list`（GetValidTestNames 发现）；
+       Python `run_functional_test(test_name,timeout,poll_interval)` 跨帧轮询编排，落
+       `functional_test` 事实（ok=passed），超时不伪造。真机：functest_list 列出 4854 个测试，
+       `run_functional_test("FFColorSmokeTest")` 真跑通 passed=true，负向名正确报 not found。
   2. ✅ `ue_editor` 注册：pie_smoke 标 write_project（进 PIE/改状态），output_log_tail 标 read。
   3. ✅ A3 证据信封：pie 落 `pie` 事实（ok=error_count==0）、output_log_tail 落 `output_log` 事实。
   4. ⬜ B3 `pie_crash` 类别：未单列——PIE 期间编辑器若崩，桥失联自然归 bridge_down（已有恢复），
@@ -62,16 +66,32 @@
   嵌套深度 1（恒排除 spawn_subagent 自身防递归失控）；子代理工具的 facts 不进主步骤证据通道
   （验证类工具应在主步骤跑）；预算 8 轮/180s 小于主步骤（子任务跑不完该拆小，不吞主任务墙钟）。
 
-## E3 完整评测基准与 UE 在线 eval（含 C3）
+## E3 完整评测基准与 UE 在线 eval（含 C3）✅（2026-06-13：框架 + 用例 + 指标 + 真机基线全部完成）
 
 - **目标**：统一 C3（UE 在线 eval 档）+ 完整基准跑分，量化"一次通过率/迭代次数/人工干预次数/token/成本"。
 - **任务**：
-  1. eval 框架扩展：`evals/runner.py` 支持"MCP 挂载 + 编辑器在线"的执行路径（现仅 LLM 沙盒任务）；新增 `ue5agent eval --suite ue`。
-  2. UE suite 用例（evals/tasks/ue.yaml）：read_blueprint_and_explain（C2 标准答案）、wb_build_and_validate、故障注入类（编辑器断连 / UBT 多错误 / 白盒部分失败 / PIE 报错）。
-  3. 指标扩展：ResultReport 增加 iteration_count / human_intervention（本工具为 0 干预跑通率）；基线归档 evals/baselines/ue/。
-  4. 沙盒两档（basic/hard）继续作为离线 CI 门禁；UE 档作为真机回归（编辑器在线时跑）。
-- **验收**：编辑器开启时 `ue5agent eval --suite ue` 跑分并出基线；沙盒档仍离线满分。
-- **依赖**：E1（PIE 用例）、C2 收尾（蓝图标准答案）、编辑器在线。
+  1. ✅ eval 框架扩展：`evals/ue_suite.py`（编排/指标/检查器，注入式 `run_one` 可离线单测）+
+     `ue5agent eval --suite ue` 真机路径（probe_editor 探活 → 挂载 MCP → 逐任务 TaskRunner）。
+  2. ✅ UE suite 用例 `evals/tasks/ue.yaml`（干净基线：read_blueprint_and_explain /
+     blueprint_find_usages / wb_build_and_validate / run_functional_test_smoke）+
+     `evals/tasks/ue_faults.yaml`（故障注入：编辑器断连 / UBT 多错误 / 白盒部分失败 / PIE 报错，
+     需手动制造故障后单跑——不与基线混跑）。
+  3. ✅ 指标：iteration_count（=Σ attempts）/ max_step_attempts（一次通过判据）/
+     human_intervention（无人值守恒 0）；report 出 pass_rate / first_try_pass_rate /
+     avg_iterations / total_human_intervention；`--out` 先落盘再打印（防控制台异常丢报告）。
+  4. ✅ 沙盒两档（basic/hard）仍离线 CI 门禁；UE 档真机回归。
+- **验收 ✅（真机 2026-06-13）**：`eval --suite ue --out evals/baselines/ue/deepseek-2026-06-13.json`
+  → **4/4 通过、一次通过率 100%、平均迭代 1.5、人工干预 0**（含 run_functional_test 用例 agent
+  端到端跑通）。故障注入复核：杀编辑器后单跑 → env_unready → 1 次尝试快速终止（13s 不空转）。
+- **依赖**：E1 ✅、C2 ✅、编辑器在线（跑分阶段）。
+
+### 插件命令契约（已落地真机 2026-06-13）
+
+- `functest_start{test_name}` → `{started:bool, test_name}`：StartTestByName 触发，立即返回。
+- `functest_poll` → `{finished:bool, passed:bool, error_count, warning_count, errors[]}`：
+  ExecuteLatentCommands 跨帧推进；完成时 StopTest + ExecInfo。
+- `functest_list{filter?, max?}` → `{total, returned, tests[]}`：GetValidTestNames（临时放宽
+  RequestedTestFilter 到 ApplicationContextMask|FilterMask）。
 
 ## 建议施工顺序
 

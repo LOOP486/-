@@ -39,9 +39,9 @@
 
 > 细案见 [stage-e-plan.md](stage-e-plan.md)（E1 PIE/Automation、E2 子代理、E3 基准+UE eval）。下列项多需 UE 在线 + 插件 C++。
 
-- [x] 运行期验证闭环（E1，2026-06-13 真机：pie_smoke 启 PIE 跑 N 秒读运行期 Error/Warning + output_log_tail 读 Output Log，插件 MCPLogCapture/pie_start/pie_stop C++；窗口精确计数）。Functional Test 生成与运行留后续
+- [x] 运行期验证闭环（E1，2026-06-13 真机：pie_smoke 启 PIE 跑 N 秒读运行期 Error/Warning + output_log_tail 读 Output Log；**run_functional_test 真机收口**——插件 functest_start/poll/list（StartTestByName + 跨帧 ExecuteLatentCommands + StopTest），Python 跨帧轮询 + functional_test 事实，FFColorSmokeTest 真跑通 passed=true）
 - [x] 子代理体系（上下文隔离 + 按角色配模型）（E2，2026-06-13：agent/subagent.py spawn_subagent 工具——独立 history/system + 只读 ScopedRegistry 工具面 + 角色级模型路由 + 只回摘要、全文落 artifact；离线单测覆盖隔离/工具面/角色/错误降级，与主循环集成）
-- [ ] 完整评测基准工程与跑分（一次通过率/迭代次数/人工干预次数）（E3=含 C3，细案就绪，待真机）
+- [x] 完整评测基准工程与跑分（一次通过率/迭代次数/人工干预次数）（E3=含 C3，**2026-06-13 真机出基线**：evals/ue_suite.py + evals/tasks/ue.yaml(+ue_faults.yaml) + `eval --suite ue` 真机路径；首份 UE 基线 deepseek-chat 4/4 通过、一次通过率 100%、平均迭代 1.5、人工干预 0，evals/baselines/ue/；故障注入复核 env_unready 1 次尝试快速终止）
 - [x] CI（GitHub Actions：ruff + pytest）（D2.3，2026-06-12：.github/workflows/ci.yml = uv sync + ruff check/format + mypy + pytest 离线）
 
 ## 横切：agent 工程化（贯穿各阶段，按优先级排序）

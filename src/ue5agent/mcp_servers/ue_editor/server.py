@@ -274,6 +274,75 @@ def pie_smoke(seconds: float = 3.0) -> str:
     return f"{out}\n[facts] {json.dumps(facts, ensure_ascii=False)}"
 
 
+@mcp.tool()
+def run_functional_test(test_name: str, timeout: float = 60.0, poll_interval: float = 1.0) -> str:
+    """运行期功能测试（E1）：触发一个 UE Functional/Automation Test，轮询至完成后返回结果。
+
+    用于"改完蓝图/关卡后验证一段具体行为是否正确"（比编译/几何/导航/PIE 冒烟更精确）。
+    Automation Test 在编辑器主线程异步执行（自身可能进出 PIE），故拆成插件
+    `functest_start`（触发）+ `functest_poll`（查进度）两命令，由本工具在 MCP 进程里
+    轮询等待，不阻塞编辑器 GameThread（同 pie_smoke 的拆分理由）。
+
+    Args:
+        test_name: 要运行的测试名（Automation 测试全名或 Functional Test 资产名）
+        timeout: 最长等待秒数（自动钳到 [5, 600]）；超时不伪造结果，按未完成报告
+        poll_interval: 轮询间隔秒（自动钳到 [0.2, 10]）
+    """
+    if not test_name or not test_name.strip():
+        return "[error] test_name 不能为空"
+    budget = max(5.0, min(float(timeout), 600.0))
+    interval = max(0.2, min(float(poll_interval), 10.0))
+    started = _call("functest_start", {"test_name": test_name})
+    if started.startswith("[error]") or is_env_unready(started):
+        return started
+    elapsed = 0.0
+    last = ""
+    while elapsed < budget:
+        time.sleep(interval)
+        elapsed += interval
+        last = _call("functest_poll", {})
+        if last.startswith("[error]") or is_env_unready(last):
+            return last
+        try:
+            result = json.loads(last)
+        except json.JSONDecodeError:
+            continue  # 进度未返回完整 JSON，继续轮询
+        if not result.get("finished"):
+            continue
+        passed = bool(result.get("passed"))
+        errors = int(result.get("error_count", 0))
+        warnings = int(result.get("warning_count", 0))
+        facts = {
+            "kind": "functional_test",
+            "ok": passed,
+            "test_name": test_name,
+            "passed": passed,
+            "error_count": errors,
+            "warning_count": warnings,
+        }
+        return f"{last}\n[facts] {json.dumps(facts, ensure_ascii=False)}"
+    # 超时：绝不伪造通过事实（缺证据应判 fail，而非假成功）。
+    return mark_error(
+        ErrorCategory.TRANSIENT,
+        f"功能测试 {test_name} 在 {budget:.0f}s 内未完成（已轮询 {elapsed:.0f}s）。"
+        "可增大 timeout，或检查测试是否卡住。",
+    )
+
+
+@mcp.tool()
+def functest_list(filter: str = "", max: int = 200) -> str:
+    """列出已注册的 Automation/Functional 测试名（供发现可用 run_functional_test 目标）。只读。
+
+    Args:
+        filter: 可选子串过滤（大小写不敏感），如 "Functional" 只看功能测试
+        max: 返回上限（默认 200）
+    """
+    params: dict[str, Any] = {"max": max}
+    if filter:
+        params["filter"] = filter
+    return _call("functest_list", params)
+
+
 def main() -> None:
     mcp.run()
 

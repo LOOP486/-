@@ -1,0 +1,46 @@
+# UE 故障注入档（E3 故障注入子集）：验证恢复策略表（B3）在真实故障下的路由。
+# 与 ue.yaml 不同——每个用例需先人工制造对应故障条件，再单独跑该用例：
+#   uv run ue5agent eval --suite ue --tasks evals/tasks/ue_faults.yaml
+# 不要把本档与基线档混跑（故障条件不具备时这些用例会"假成功"拉低基线）。
+#
+# 设计原则：agent 应优雅 fail-fast / 走恢复路径，而非空转耗尽重试或假成功。
+# run_failed 检查 = run 应判失败收口；no_human_intervention = 无人值守不该卡确认。
+
+# 1) 编辑器断连 → env_unready / bridge_down → 快速终止
+- name: fault_editor_disconnected
+  # 前置：运行前关闭编辑器（或运行中途 Stop-Process UnrealEditor）。
+  # 期望：桥不可达 → env_unready/bridge_down → runner 快速终止、不空转重试、报告含环境指引。
+  prompt: 读取当前关卡里的全部 Actor 并统计数量，报告统计结果。
+  max_iterations: 8
+  checks:
+    - { type: run_failed }
+    - { type: no_human_intervention }
+
+# 2) UBT 多错误 → 编译错误进修复循环，不应空转/假成功
+- name: fault_ubt_compile_errors
+  # 前置：在 agent_test 的某个 C++ 源（如一个测试用 .cpp）里注入语法错误后再跑；
+  #       或让 agent 写明显非法的 C++。期望：ubt_compile 返回结构化多错误 →
+  #       agent 进修复循环；若无法修复则如实判失败，绝不报告"编译通过"。
+  prompt: 编译工程 agent_testEditor，如果有编译错误，列出前几条错误信息。
+  max_iterations: 10
+  checks:
+    - { type: final_not_contains, text: "编译通过，无错误" }
+
+# 3) 白盒部分失败 → partial_side_effect → 回滚后重试
+- name: fault_whitebox_partial
+  # 前置：人为让部分 spawn 失败（如桥高频丢响应 / 预置同名残留）。
+  # 期望：partial_side_effect → 先 wb_clear 回滚再重试；不把半成品当成功。
+  prompt: 搭一个三房间训练场（每房 8x8，两两连通），落地后用 wb_validate 校验，确认无残留、无重叠。
+  max_iterations: 30
+  checks:
+    - { type: run_succeeded }
+    - { type: final_contains_any, texts: ["校验", "validate", "无重叠", "PASS", "通过"] }
+
+# 4) PIE 报错 → 运行期 Error 应被 pie_smoke 捕获、判失败
+- name: fault_pie_runtime_error
+  # 前置：在当前关卡放一个 BeginPlay 就报 Error/崩的蓝图（或故意写错的逻辑）。
+  # 期望：pie_smoke 返回 error_count>0 → pie 事实 ok=False → 验收 fail，不报告"运行无错误"。
+  prompt: 对当前关卡跑一次 PIE 冒烟（约 3 秒），报告运行期有没有 Error。
+  max_iterations: 10
+  checks:
+    - { type: final_not_contains, text: "运行期无任何错误" }

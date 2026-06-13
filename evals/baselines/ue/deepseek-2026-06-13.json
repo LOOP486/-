@@ -1,0 +1,48 @@
+{
+  "suite": "ue",
+  "model": "deepseek/deepseek-chat",
+  "role": "planner",
+  "timestamp": "2026-06-13 11:47:43",
+  "pass_rate": 1.0,
+  "first_try_pass_rate": 1.0,
+  "avg_iterations": 1.5,
+  "total_human_intervention": 0,
+  "results": [
+    {
+      "name": "read_blueprint_and_explain",
+      "passed": true,
+      "failures": [],
+      "success": true,
+      "iteration_count": 1,
+      "max_step_attempts": 1,
+      "human_intervention": 0
+    },
+    {
+      "name": "blueprint_find_usages",
+      "passed": true,
+      "failures": [],
+      "success": true,
+      "iteration_count": 1,
+      "max_step_attempts": 1,
+      "human_intervention": 0
+    },
+    {
+      "name": "wb_build_and_validate",
+      "passed": true,
+      "failures": [],
+      "success": true,
+      "iteration_count": 3,
+      "max_step_attempts": 1,
+      "human_intervention": 0
+    },
+    {
+      "name": "run_functional_test_smoke",
+      "passed": true,
+      "failures": [],
+      "success": true,
+      "iteration_count": 1,
+      "max_step_attempts": 1,
+      "human_intervention": 0
+    }
+  ]
+}

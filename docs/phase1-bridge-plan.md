@@ -47,8 +47,11 @@ agent 能回答「这个蓝图做了什么、谁在用它」，并具备资产�
 | `path_test` | path_test | read | 两点导航可达性 |
 | `output_log_tail` | output_log_tail | read | 读 Output Log 尾部（按级别） |
 | `pie_smoke` | pie_start + pie_stop | **write_project** | PIE 跑 N 秒读运行期 Error/Warning |
+| `run_functional_test` | functest_start + functest_poll | **write_project** | 运行 Automation/Functional Test，跨帧轮询至完成（真机验证 2026-06-13） |
+| `functest_list` | functest_list | read | 列出已注册的 Automation/Functional 测试名（发现可跑目标） |
 
-写级工具：`navmesh_rebuild` 与 `pie_smoke`（write_project，触发自动 checkpoint 语义）；其余全部 read。
+写级工具：`navmesh_rebuild`、`pie_smoke` 与 `run_functional_test`（write_project，触发自动
+checkpoint 语义）；其余全部 read。
 蓝图相关一律只读（ADR-0003），不提供任何蓝图编辑/编译/连线命令。
 
 ### P1.3 蓝图只读导出四件套（自研重点）= Stage C2
