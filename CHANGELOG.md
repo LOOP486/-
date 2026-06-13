@@ -4,6 +4,34 @@
 
 ## [未发布]
 
+### 新增（WB-1：资产库地基）
+
+- FBX 批量导入（**真机导入 80 件通过 2026-06-13**）：`ue_editor` 新增 `import_fbx(tasks,
+  import_materials, replace_existing, save, import_uniform_scale, transform_vertex_to_absolute,
+  bake_pivot_in_vertex, timeout)`（write_project）——把 FBX 批量导入为 StaticMesh 资产，逐件回报
+  ok/asset_path，落 `import_fbx` 事实（ok=失败数为 0，带 imported/failed 计数）。
+  - 缩放与原点参数：`import_uniform_scale`（米制源 ×100→uu）、`transform_vertex_to_absolute`
+    （传 False 让网格回局部原点、不烘 DCC 世界位置）——模块化套件按此对齐离线扫描的 size/pivot。
+  - 插件 C++（agent_test，commit 待提交）：`HandleImportFbx`——校验后**一次性**把全部任务交
+    `IAssetTools::ImportAssetTasks`，并在导入期间**临时关 `Interchange.FeatureFlags.Import.FBX`
+    强制走 legacy `UFbxFactory`**（Interchange 异步导入会在桥的 GameThread 任务内 pump TaskGraph，
+    触发 RecursionGuard 断言崩溃；legacy 同步内联且 honor UFbxImportUI 的缩放/原点/材质选项）；
+    `UnrealMCP.Build.cs` 加 `AssetTools` 依赖。
+  - 真机落地：按 `config/whitebox/kit.yaml` 把 ArchKit 80 件 FBX 导入
+    `/Game/LevelPrototyping/Meshes/ArchKit/<类别>/<名字>`（import_materials=False 用默认材质，
+    transform_vertex_to_absolute=False 修正原点偏移），各类别数量与清单完全吻合；kit.yaml 的
+    80 条 `path` 已回填为真实导入路径（WB-1 待办①完成）。
+- 网格尺寸校验与修正工具（**实测验证 2026-06-13**）：`ue_editor` 新增
+  `get_mesh_bounds(asset_path)`（read，返回 StaticMesh 本地包围盒真实 uu 尺寸）+
+  `set_mesh_build_scale(asset_path, scale)`（write_project，设 BuildScale3D 并重建保存）。
+  - 关键发现：FBX 导入的缩放选项（ImportUniformScale / ConvertSceneUnit）只在
+    `transform_vertex_to_absolute=True` 时生效，而该项又会把 DCC 世界位置烘进顶点致原点偏移——
+    二者互斥。故改用 **BuildScale3D 在导入后对几何缩放**（围绕本地原点，原点不变），解耦尺寸与原点。
+  - 插件 C++ `HandleSetMeshBuildScale`：设 `BuildSettings.BuildScale3D` → `Build()` →
+    **`FStaticMeshCompilingManager::FinishCompilation` 阻塞等异步构建完成**（否则保存的是未缩放旧数据、
+    不持久化，且累积异步任务会致崩）→ 保存。米制 ArchKit 80 件经 build_scale=100 校正到正确 uu 尺寸
+    （Wall8_4 实测 800×20×400），原点保持局部。
+
 ### 新增（Stage E：行为闭环与编排）
 
 - 运行期功能测试（E1 收口，**真机验证通过 2026-06-13**）：`ue_editor` 新增 `run_functional_test(
