@@ -33,15 +33,27 @@
 - **验收**：对一个会触发蓝图运行期错误的关卡，agent 跑 pie_smoke → 读到 Error → 修复 → 复跑零 Error；报告含 PIE 证据。
 - **依赖**：编辑器在线 + 插件 C++（同 A1/C2，需重编译）。
 
-## E2 子代理体系（上下文隔离 + 按角色配模型）
+## E2 子代理体系（上下文隔离 + 按角色配模型）✅（2026-06-13）
 
 - **目标**：把"探索/审查/规划"等子任务交给隔离上下文的子代理，各自可配专长模型，主循环只收摘要。
 - **任务**：
-  1. `agent/subagent.py`：SubAgent = 独立 history + 独立 system + 受限工具面（复用 ScopedRegistry）+ 角色级模型（复用 LiteLLMClient role 路由）；跑完只回结构化摘要给主 runner（呼应 B4 上下文工程：主上下文不被子任务细节淹没）。
-  2. 主 runner 暴露 `spawn_subagent(role, task, allowed_tools)` 作为一种步内能力（或 PlanStep 类型）；子代理产物登记 Artifact。
-  3. 角色解耦收益：vision/judge 可换专长模型——vision 已是 Kimi，judge 可独立配；planner/coder 仍 DeepSeek。配置在 config/models.yaml roles 扩展。
-- **验收**：单测：子代理上下文与主上下文隔离、工具面受限、模型按角色路由、只回摘要；e2e：用 explorer 子代理读多个蓝图后回主代理汇总（token 较单上下文显著下降）。
-- **依赖**：无硬真机依赖（可先用沙盒 + 替身单测）；与 E1/E3 并行。
+  1. ✅ `agent/subagent.py`：spawn_subagent = 独立 history + 独立只读 system + 受限工具面
+     （复用 ScopedRegistry）+ 角色级模型（复用 LiteLLMClient role 路由，未配角色回退 planner）；
+     跑完只回结构化摘要、全文落 `Artifact(kind="subagent_summary")`（呼应 B4：主上下文不被
+     子任务细节淹没）。
+  2. ✅ 以 `spawn_subagent(task, role, allowed_tools)` 工具形态（READ 级）暴露为步内能力——
+     步内 loop 可直接调；cli 在构造 runner 前注册（闭包指向当次 writer，chat 复用 registry
+     故 replace=True）。未做成独立 PlanStep 类型（YAGNI：工具形态已够，不动状态机）。
+  3. ✅ 角色解耦：models.yaml roles 可独立配 explorer/judge 等角色（vision 已是 Kimi）；
+     models.example.yaml 加了 explorer/judge 注释示例与 provider params 示例。
+- **验收**：✅ 单测（tests/test_subagent.py，10 例）：上下文隔离（独立 system、看不到主任务措辞）、
+  工具面受限（只读、剔除写工具与 spawn_subagent 自身）、模型按角色路由、只回摘要、与主循环
+  集成（主循环只见摘要不见子代理工具原始输出）、错误降级（无只读工具/异常/预算耗尽/空摘要/
+  空任务均转 [error] 不上抛）。**真机 token 下降量化对照留待接 UE 在线 eval（E3）时测。**
+- **依赖**：无硬真机依赖（沙盒 + 替身单测已覆盖）；与 E1/E3 并行。
+- **范围取舍**：子代理工具面硬限只读（写操作必须留主循环——checkpoint/回滚/验收机器都在那里）；
+  嵌套深度 1（恒排除 spawn_subagent 自身防递归失控）；子代理工具的 facts 不进主步骤证据通道
+  （验证类工具应在主步骤跑）；预算 8 轮/180s 小于主步骤（子任务跑不完该拆小，不吞主任务墙钟）。
 
 ## E3 完整评测基准与 UE 在线 eval（含 C3）
 

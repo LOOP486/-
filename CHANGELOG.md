@@ -4,6 +4,20 @@
 
 ## [未发布]
 
+### 新增（Stage E：行为闭环与编排）
+
+- 子代理体系（E2 离线先行）：新增 `agent/subagent.py`，以 `spawn_subagent` 工具
+  （READ 级）形态把探索性子任务交给上下文隔离的子代理执行——独立 history + 独立
+  只读 system + 受限工具面（复用 ScopedRegistry）+ 角色级模型路由（复用 LiteLLM
+  role 路由，未配角色回退 planner），跑完只回结构化摘要、全文落
+  `Artifact(kind="subagent_summary")`，主上下文不被子任务工具细节淹没（呼应 B4）。
+  右尺寸边界：子代理工具面硬限只读（写操作留在主循环——checkpoint/回滚/验收都在
+  那里），恒排除 spawn_subagent 自身（嵌套深度 1 防递归），预算小于主步骤
+  （8 轮 / 180s）；子代理故障/预算耗尽/空摘要均转 `[error]` 文本回主循环不上抛。
+  cli 在构造 runner 前注册（闭包指向当次 writer，chat 复用 registry 故 replace）。
+  models.yaml roles 可独立配 explorer/judge 等角色解耦专长模型（vision 已是 Kimi）。
+  `ToolRegistry.register` 增 `replace` 形参（同名覆盖，子代理工具按任务重注册用）。
+
 ### 新增（Stage A：白盒可信闭环）
 
 - `ue_editor` 新增三个关卡验证工具（UnrealMCP 插件同步新增 C++ 命令，UE5.7 实测通过）：

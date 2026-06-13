@@ -1,12 +1,12 @@
 # 工作日志（对话交接用）
 
-> 最后更新：2026-06-12（晚，按里程碑拆分提交收口）。新对话接手前先读本页 + [development-plan.md](development-plan.md)。
+> 最后更新：2026-06-13（E2 子代理体系离线完成）。新对话接手前先读本页 + [development-plan.md](development-plan.md)。
 > 架构权威版：[architecture/design.md](architecture/design.md) + ADR 0001–0006。
-> ✅ 最新结论：**Stage A（含 A4 视觉迭代）、Stage B（B1–B4）、C1、C2（差一个插件命令）、
-> Stage D 离线项全部完成（2026-06-12）**——Phase 2 终验「三房间死斗」全链路真机 e2e 通过
-> （搭建→截图→Kimi 视觉审查→wb_validate→navmesh→path_test 三对房间可达，全程无人值守）。
-> 265 单测全绿，mypy 零错误，eval 两档满分持平基线。Stage E（Phase 3）细案已就绪
-> （[stage-e-plan.md](stage-e-plan.md)），剩余工作集中在"UE 在线 + 插件 C++"一个批次。
+> ✅ 最新结论：**Stage A–D 收口 + E2 子代理离线完成（2026-06-13）**——E2：agent/subagent.py
+> spawn_subagent 工具（独立上下文 + 只读 ScopedRegistry 工具面 + 角色级模型 + 只回摘要、
+> 全文落 artifact），10 例单测覆盖隔离/工具面/角色/错误降级/主循环集成。
+> 275 单测全绿，mypy 零错误。剩余 Stage E：E1（PIE/Functional，真机）、E3（完整基准+UE
+> 在线 eval，真机）；与 C2 收尾/D1.1 服务端同属一次插件 C++ 批次。
 
 ## 项目一句话
 
@@ -24,14 +24,14 @@ ue5agent：UE5 游戏开发 agent——C++ 实现功能、蓝图只读理解、�
 | Phase 2 白盒（Stage A 全部） | ✅ **完成并真机终验**：manifest + DSL 编译器 + wb_build/wb_clear + wb_validate 校验器 + 证据信封 + A4 视觉迭代闭环（截图→Kimi 审查→问题区域回灌重生成）。「三房间死斗」全链路 e2e 通过 |
 | Stage B（kernel 体系化） | ✅ B1 契约 v2 / B2 工具效果声明 / B3 错误分类与恢复策略表 / B4 上下文工程（工程摘要注入 + progress.md + 工具结果摘要器）全部完成 |
 | Stage D（安全与工程化） | ✅ 离线项全部完成：secret 掩码、注入围栏、桥鉴权客户端侧（protocol+token）、运行锁、runs prune、CI（ruff+format+mypy+pytest）。仅 D1.1 服务端待插件 C++ |
-| Stage E（Phase 3） | ⬜ 细案就绪（stage-e-plan.md）：E1 PIE/Functional Test（真机）、E2 子代理（可离线先行）、E3 完整基准+UE 在线 eval |
+| Stage E（Phase 3） | 🔶 E2 子代理 ✅ 离线完成（agent/subagent.py spawn_subagent）；E1 PIE/Functional Test ⬜（真机）、E3 完整基准+UE 在线 eval ⬜（真机） |
 
 ## 环境清单
 
 - 引擎 `C:/Program Files/Epic Games/UE_5.7`；VS2026 Community；测试工程 `C:/Users/chengpeixin/Documents/Unreal Projects/agent_test`（git 管理，含 UnrealMCP 插件）
 - 仓库内：config/models.yaml + agent.yaml + .env（均不入库，已配好；vision=moonshot/kimi-k2.6，provider params 注入 temperature=1）；5 个 MCP server：ue_build / repo_tools / ue_editor / ue_whitebox / ue_lifecycle
 - 用户入口：双击 ue5agent-chat.bat 或 `uv run ue5agent run "任务" --yes`；trace 回放 `uv run ue5agent trace`；清理旧运行 `uv run ue5agent runs prune`
-- 265 个单测全绿；评测 `uv run ue5agent eval`（basic+hard 双档基线满分，evals/baselines/）
+- 275 个单测全绿；评测 `uv run ue5agent eval`（basic+hard 双档基线满分，evals/baselines/）
 
 ## 踩坑史（同类问题先查这里）
 
@@ -56,14 +56,15 @@ ue5agent：UE5 游戏开发 agent——C++ 实现功能、蓝图只读理解、�
 
 ## 下一步（按序）
 
-Stage A–D 已收口（仅剩真机项），**以 [stage-e-plan.md](stage-e-plan.md) 为准**：
+Stage A–D 收口、E2 离线完成，**以 [stage-e-plan.md](stage-e-plan.md) 为准**：
 
 1. **下次 UE 在线会话一次性推进（同属一次插件 C++ 改动 + 重编译，合并省循环）**：
    - C2 收尾：插件新增 find_blueprint_references（AssetRegistry 引用查找）→ bp_find_usages 生效；
    - D1.1 服务端：插件启动生成 token 写 `Saved/ue5agent_bridge_token.txt` + 握手校验 token/protocol
      （客户端侧已就绪：bridge.py PROTOCOL_VERSION / UE_MCP_TOKEN[_FILE]）；
    - E1：pie_smoke / run_functional_test / output_log_tail 三命令 + 证据/恢复接入。
-2. **E2 子代理体系**：可离线先行（独立 history + ScopedRegistry + 角色级模型，只回摘要）。
+2. ~~E2 子代理体系~~ ✅ 已完成（agent/subagent.py，2026-06-13）。真机 token 下降量化对照
+   留待 E3 接 UE 在线 eval 时测。
 3. **E3 = C3 + 完整基准**：eval 框架支持 MCP+编辑器在线执行路径，`ue5agent eval --suite ue` 出基线。
 
 历史备忘：白盒三房间端到端核验已通过（run `20260611-222536`，3 次 wb_build 含"清旧建新"必崩场景全程无 Fatal/无 10061、verify=pass）。回归保护：tests/test_whitebox_spawn.py + 该 run 基线。若日后又崩，立刻读 `agent_test/Saved/Crashes/` 最新日志末尾的 Fatal 栈（别只看 trace 的 10061 拒连，那是次生现象）。体验项备忘：输出风格规范（列表类先汇总后明细）、evals 输出完整性断言档。

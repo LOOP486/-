@@ -40,7 +40,7 @@
 > 细案见 [stage-e-plan.md](stage-e-plan.md)（E1 PIE/Automation、E2 子代理、E3 基准+UE eval）。下列项多需 UE 在线 + 插件 C++。
 
 - [ ] 自动化测试闭环（Functional Test 生成与运行）（E1，细案就绪，待真机）
-- [ ] 子代理体系（上下文隔离 + 按角色配模型）（E2，细案就绪，可离线先行）
+- [x] 子代理体系（上下文隔离 + 按角色配模型）（E2，2026-06-13：agent/subagent.py spawn_subagent 工具——独立 history/system + 只读 ScopedRegistry 工具面 + 角色级模型路由 + 只回摘要、全文落 artifact；离线单测覆盖隔离/工具面/角色/错误降级，与主循环集成）
 - [ ] 完整评测基准工程与跑分（一次通过率/迭代次数/人工干预次数）（E3=含 C3，细案就绪，待真机）
 - [x] CI（GitHub Actions：ruff + pytest）（D2.3，2026-06-12：.github/workflows/ci.yml = uv sync + ruff check/format + mypy + pytest 离线）
 
