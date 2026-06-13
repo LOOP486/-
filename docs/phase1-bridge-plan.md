@@ -45,8 +45,10 @@ agent 能回答「这个蓝图做了什么、谁在用它」，并具备资产�
 | `viewport_screenshot` | viewport_screenshot | read | 视口截图存 PNG |
 | `navmesh_rebuild` | navmesh_rebuild | **write_project** | 重建 NavMesh（改关卡） |
 | `path_test` | path_test | read | 两点导航可达性 |
+| `output_log_tail` | output_log_tail | read | 读 Output Log 尾部（按级别） |
+| `pie_smoke` | pie_start + pie_stop | **write_project** | PIE 跑 N 秒读运行期 Error/Warning |
 
-唯一写级工具是 `navmesh_rebuild`（write_project，触发自动 checkpoint 语义）；其余全部 read。
+写级工具：`navmesh_rebuild` 与 `pie_smoke`（write_project，触发自动 checkpoint 语义）；其余全部 read。
 蓝图相关一律只读（ADR-0003），不提供任何蓝图编辑/编译/连线命令。
 
 ### P1.3 蓝图只读导出四件套（自研重点）= Stage C2
@@ -61,15 +63,16 @@ agent 能回答「这个蓝图做了什么、谁在用它」，并具备资产�
   无连接信息时退回结构化摘要。
 - [x] `bp_graph(path, func)`：节点级 JSON —— = 现有 `bp_analyze`（转发 analyze_blueprint_graph，
   参数已修正为 graph_name）。
-- [x] `bp_find_usages(symbol)`：跨蓝图引用查找（AssetRegistry）—— Python 侧就绪（format_usages +
-  工具注册）；**插件无引用查找命令**（find_blueprint_references 等均 Unknown command），
-  命令落地前该工具返回错误文本。
-- 验收：对 BP_ThirdPersonCharacter 输出可读概览/伪代码 ✅；标准答案进 eval case → 移交 C3。
+- [x] `bp_find_usages(symbol)`：跨蓝图引用查找（AssetRegistry）—— ✅ 2026-06-13：插件新增
+  `find_blueprint_references`（GetReferencers + 过滤引擎/自身），真机验证
+  BP_ThirdPersonCharacter → BP_ThirdPersonGameMode。
+- 验收：对 BP_ThirdPersonCharacter 输出可读概览/伪代码 ✅、谁在用它 ✅；标准答案进 eval case → 移交 C3。
 
-#### 待真机的插件侧 C++ 增强（C2 收尾 + D1.1）
+#### 待真机的插件侧 C++ 增强（C2 收尾 + D1.1）—— ✅ 已完成（2026-06-13，commit agent_test 4d280a5）
 1. ~~analyze_blueprint_graph 补 pin 连接端点 / 按函数图返回~~——已确认插件本就支持，
    经 graph_name 参数修正后无需插件改动（2026-06-12 二次修订）。
-2. 新增 AssetRegistry 引用查找命令（find_blueprint_references），支撑 bp_find_usages。
+2. ✅ 新增 AssetRegistry 引用查找命令（find_blueprint_references），支撑 bp_find_usages。
+3. ✅ D1.1 服务端：插件生成 token 写 Saved/ + 握手校验 protocol/token（详见 stage-e-plan.md E1 批次）。
 3. （D1.1）插件启动生成 token 写 Saved/，bridge 握手出示 + 协议版本握手。
    **客户端侧已就绪（2026-06-12）**：bridge.py 每条命令握手带 `protocol`（PROTOCOL_VERSION=1），
    并在配了 `UE_MCP_TOKEN` 或 `UE_MCP_TOKEN_FILE`（指向插件写的 token 文件）时附 `token` 字段；

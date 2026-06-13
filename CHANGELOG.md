@@ -6,6 +6,24 @@
 
 ### 新增（Stage E：行为闭环与编排）
 
+- 运行期验证闭环（E1，真机验证通过）：`ue_editor` 新增两个工具（UnrealMCP 插件同步
+  新增 C++ 命令）——
+  - `pie_smoke(seconds)`：在编辑器里启动 PIE 跑若干秒，结束后返回期间**新增**的
+    Error/Warning 计数与错误行（窗口精确，不混入历史错误）；验证"改完能跑起来不报错"。
+    实现为插件 `pie_start`/`pie_stop` 两命令 + Python 侧编排等待（PIE 在编辑器主线程
+    tick，不能在单条命令里阻塞 GameThread）。落 `pie` 事实（ok=error_count==0）。
+  - `output_log_tail(lines, severity)`：按严重度读 Output Log 尾部，供编译/PIE 后查错。
+    落 `output_log` 事实（总错误/警告计数）。
+  - 插件侧新增 `MCPLogCapture`（注册到 GLog 的线程安全环形日志捕获，单调序号支持
+    pie 窗口精确查询，过滤 SetColor 控制消息与 Verbose 噪声）。
+- 蓝图引用查找落地（C2 收尾，真机验证通过）：插件新增 `find_blueprint_references`
+  命令（AssetRegistry GetReferencers，过滤引擎/自身）→ `bp_find_usages` 工具实际可用
+  （此前仅 Python 侧就绪、命令缺失）。真机验证 BP_ThirdPersonCharacter →
+  BP_ThirdPersonGameMode。
+- 桥鉴权服务端落地（D1.1 收尾，真机验证通过）：插件启动生成随机 token 写
+  `Saved/ue5agent_bridge_token.txt`，握手校验 protocol 版本 + token，不符拒绝执行
+  （写 token 失败则失败开放不自锁）。配 `UE_MCP_TOKEN_FILE` 后客户端自动出示。
+  真机验证：无 token 被拒、带 token 放行、protocol 不符报错。
 - 子代理体系（E2 离线先行）：新增 `agent/subagent.py`，以 `spawn_subagent` 工具
   （READ 级）形态把探索性子任务交给上下文隔离的子代理执行——独立 history + 独立
   只读 system + 受限工具面（复用 ScopedRegistry）+ 角色级模型路由（复用 LiteLLM

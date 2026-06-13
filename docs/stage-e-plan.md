@@ -19,19 +19,26 @@
 
 ---
 
-## E1 运行期验证闭环（PIE / Functional Test）
+## E1 运行期验证闭环（PIE / Output Log）🔶（2026-06-13：pie_smoke + output_log_tail 完成；Functional Test 留后续）
 
-- **目标**：agent 改完蓝图/关卡后，能启动 PIE 或运行 Functional Test，读 Output Log 与测试结果作为运行期证据。
+- **目标**：agent 改完蓝图/关卡后，能启动 PIE、读 Output Log 作为运行期证据。
 - **任务**：
-  1. 插件（agent_test，C++）新增只读/受控命令（全部 GameThread 化 + 超时熔断）：
-     - `pie_smoke(map, seconds)`：启动 PIE 跑 N 秒，捕获 Output Log 的 Error/Warning 计数与致命错误，结束 PIE，返回结构化结果。
-     - `run_functional_test(test_name|map)`：触发 UE Automation/Functional Test，返回 pass/fail + 失败用例 + 日志摘要。
-     - `output_log_tail(lines, severity)`：读 Output Log 尾部（按级别过滤），供编译/PIE 后查错。
-  2. `ue_editor` 注册三工具：pie_smoke/run_functional_test 标 write_project（会进 PIE/改状态），output_log_tail 标 read。
-  3. A3 证据信封：三者产出 facts（kind=pie/functional_test/output_log，ok 由 error_count==0 / 测试全过驱动），接 verifier 确定性通道。
-  4. B3 错误分类：PIE 崩溃/超时 → 新类别 `pie_crash`（差异化恢复：读 Crash 日志而非空转重试，呼应踩坑史第 8 条）。
-- **验收**：对一个会触发蓝图运行期错误的关卡，agent 跑 pie_smoke → 读到 Error → 修复 → 复跑零 Error；报告含 PIE 证据。
-- **依赖**：编辑器在线 + 插件 C++（同 A1/C2，需重编译）。
+  1. ✅ 插件（agent_test，C++）新增命令：
+     - `pie_start` / `pie_stop`：启动/结束 PIE，pie_stop 返回本窗口新增 Error/Warning 计数与错误行。
+       拆成两命令是因为 ExecuteCommand 同步占用 GameThread——单命令里跑 N 秒会让 PIE 无法 tick；
+       由 Python 侧 `pie_smoke` 工具编排 start→等待→stop。当前播放当前关卡（map 参数留后续）。
+     - `output_log_tail(lines, severity)`：读 Output Log 尾部（按级别过滤）。
+     - 新增 `MCPLogCapture`（GLog 环形捕获，线程安全 + 单调序号窗口精确 + 滤控制消息/Verbose）。
+     - ⬜ `run_functional_test`：UE Automation/Functional Test——留后续（同样需 PIE 异步会话，
+       benefit from pie 会话管线先跑稳；最重最不确定，单独做）。
+  2. ✅ `ue_editor` 注册：pie_smoke 标 write_project（进 PIE/改状态），output_log_tail 标 read。
+  3. ✅ A3 证据信封：pie 落 `pie` 事实（ok=error_count==0）、output_log_tail 落 `output_log` 事实。
+  4. ⬜ B3 `pie_crash` 类别：未单列——PIE 期间编辑器若崩，桥失联自然归 bridge_down（已有恢复），
+     暂不需专类；真遇到崩溃高发再立。
+- **验收**：✅ 真机：pie_start→等待→pie_stop 进出 PIE、error_count 窗口精确归零；output_log_tail
+  按 severity 过滤、无控制消息噪声。"会报错的关卡跑出 Error→修复→复跑零 Error"的完整 agent
+  e2e 留待与 E3 用例一起做。
+- **依赖**：编辑器在线 + 插件 C++（已编译验证，2026-06-13）。
 
 ## E2 子代理体系（上下文隔离 + 按角色配模型）✅（2026-06-13）
 
@@ -74,10 +81,14 @@ E2（子代理，离线可先行，单测 + 沙盒 e2e）                      �
 E3 = C3 + 完整基准（依赖 E1 用例 + C2 标准答案，编辑器在线跑分）← 真机收尾
 ```
 
-## 与其它真机待办的合并建议
+## 与其它真机待办的合并建议（✅ 已于 2026-06-13 一次插件编译完成）
 
-下次 UE 在线会话建议一次性推进（都需编辑器 + 插件重编译）：
-- **C2 收尾**：新增 AssetRegistry 引用查找命令 find_blueprint_references（→bp_find_usages，Python 侧已就绪）。pin 连接端点与函数图选择已确认插件本就支持（graph_name 参数修正后无需插件改动，见 phase1-bridge-plan.md 二次修订）。
-- **D1.1 服务端**：插件启动生成随机 token 写 `Saved/ue5agent_bridge_token.txt`、握手校验 token 与 protocol 版本（客户端侧已就绪，见 bridge.py PROTOCOL_VERSION / UE_MCP_TOKEN[_FILE]）。
-- **E1**：PIE/Functional/Output Log 三命令。
-三者同属一次插件 C++ 改动 + 重编译，建议合并以省一次编译/重启循环。
+下面三项已在一次插件 C++ 改动 + 重编译中全部落地并真机验证（commit agent_test 4d280a5）：
+- **C2 收尾** ✅：find_blueprint_references（→bp_find_usages）。
+- **D1.1 服务端** ✅：token 生成/写盘 + 握手校验 protocol/token。
+- **E1** ✅（pie_smoke + output_log_tail；Functional Test 留后续）。
+
+剩余真机待办（下次 UE 在线会话）：
+- **run_functional_test**：UE Automation/Functional Test（同需 PIE 异步会话，最重，单独做）。
+- **E3 = C3 + 完整基准**：eval 框架支持 MCP+编辑器在线执行路径，`eval --suite ue` 出基线。
+- **pie_smoke 增强**：可选 map 参数（先 OpenLevel 再 PIE）；E1 完整 e2e（会报错的关卡→修复→复跑零 Error）并入 E3 用例。

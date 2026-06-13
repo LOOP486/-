@@ -178,7 +178,7 @@
 细案见 [phase1-bridge-plan.md](phase1-bridge-plan.md)，此处只列顺序与验收。
 
 > 进度：C1 ✅（2026-06-12，纯离线：瘦桥裁剪与分级 + 回归守卫 + 分级表，见 phase1-bridge-plan.md P1.2）。
-> C2 🔶 接近收口（2026-06-12 真机 + 二次修订）：bp_overview ✅（agent e2e 解释 BP_ThirdPersonCharacter 通过）、bp_pseudocode ✅ 控制流伪代码（读插件源码确认 connections 带 from/to 端点、graph_name 可选函数图——早期"pin 无连接端点"系瘦桥误传 function_name 所致；无连接信息退回结构化摘要）、bp_graph = bp_analyze（graph_name）✅；bp_find_usages Python 侧就绪，仅差插件 AssetRegistry 引用查找命令（见 phase1-bridge-plan.md）。
+> C2 ✅ 收口（2026-06-12 + 06-13 真机）：bp_overview ✅、bp_pseudocode ✅ 控制流伪代码、bp_graph = bp_analyze（graph_name）✅、bp_find_usages ✅（2026-06-13 插件 find_blueprint_references 落地，真机验证 BP_ThirdPersonCharacter→BP_ThirdPersonGameMode）。蓝图四件套全可用。
 > C3 ⬜ 待真机：UE 在线 eval suite 需 eval 框架支持 MCP+编辑器在线的执行路径 + 编辑器开启跑分。
 > 故障注入 e2e ✅（2026-06-12）：白盒任务运行中杀编辑器 → 工具 env_unready → runner 快速终止不空转重试（踩坑史第 8 条体系化，B3 真机验证）。
 
@@ -188,13 +188,16 @@
 
 ## Stage D：安全加固与工程化（右尺寸）
 
-> 进度（2026-06-12）：离线项全部完成——D1.2 secret 掩码、D1.3 注入围栏、D2.1 运行锁、
-> D2.2 runs prune、D2.3 CI ✅。仅 **D1.1 TCP token 鉴权 + 协议握手**待真机（需插件侧
-> 生成 token 并参与握手，同 A1 模式）。
+> 进度：离线项全部完成（2026-06-12）——D1.2 secret 掩码、D1.3 注入围栏、D2.1 运行锁、
+> D2.2 runs prune、D2.3 CI ✅。**D1.1 TCP token 鉴权 + 协议握手已完成**（2026-06-13 真机：
+> 插件服务端生成 token 写 Saved/ + 握手校验 protocol/token，无 token 被拒、带 token 放行）。
+> **至此 Stage D 全部收口。**
 
 - **D1 桥与凭据安全**：
   1. TCP 桥（55557）加 localhost token 鉴权：插件启动生成随机 token 写工程 Saved/ 下文件，bridge.py 读取并在握手时出示；同时做协议版本握手（版本不匹配明确报错而非静默错乱）。
-     ⬜ 待真机（插件侧 C++）。
+     ✅ 完成（2026-06-13）：客户端 bridge.py 握手带 protocol+token；插件 StartServer 生成
+     token 写 Saved/ue5agent_bridge_token.txt，MCPServerRunnable 握手校验 protocol/token，
+     不符拒绝执行（写 token 失败则失败开放不自锁）。真机验证三态（无 token 拒/带 token 放行/protocol 不符报错）。
   2. secret redaction：trace/report/progress 落盘前对 .env 中的 key 值做掩码（实现在 events.py RunWriter 单点）。
      ✅ `core/redaction.py`（collect_secret_values 从 provider.api_key_env 取值 + redact 长值优先替换）；RunWriter 构造接 secrets，event/write_report/write_progress/save_artifact 落盘前统一掩码；cli 从 config.secret_env_names() 注入。
   3. 工具输出注入防护（轻量）：MCP 工具结果中出现指令样文本（"ignore previous instructions" 类）时在回传文本加 `[external-content]` 围栏标记，verifier 提示词声明围栏内内容不可作为指令。

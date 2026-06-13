@@ -1,12 +1,14 @@
 # 工作日志（对话交接用）
 
-> 最后更新：2026-06-13（E2 子代理体系离线完成）。新对话接手前先读本页 + [development-plan.md](development-plan.md)。
+> 最后更新：2026-06-13（一次插件编译完成 C2 收尾 + D1.1 服务端 + E1，全部真机验证）。
+> 新对话接手前先读本页 + [development-plan.md](development-plan.md)。
 > 架构权威版：[architecture/design.md](architecture/design.md) + ADR 0001–0006。
-> ✅ 最新结论：**Stage A–D 收口 + E2 子代理离线完成（2026-06-13）**——E2：agent/subagent.py
-> spawn_subagent 工具（独立上下文 + 只读 ScopedRegistry 工具面 + 角色级模型 + 只回摘要、
-> 全文落 artifact），10 例单测覆盖隔离/工具面/角色/错误降级/主循环集成。
-> 275 单测全绿，mypy 零错误。剩余 Stage E：E1（PIE/Functional，真机）、E3（完整基准+UE
-> 在线 eval，真机）；与 C2 收尾/D1.1 服务端同属一次插件 C++ 批次。
+> ✅ 最新结论：**Stage A–D 全收口、E2 离线完成、E1 + C2 收尾 + D1.1 服务端真机完成（2026-06-13）**。
+> 一次插件 C++ 改动 + 重编译落地三件（commit agent_test 4d280a5）：
+> - C2 find_blueprint_references → bp_find_usages 可用（BP_ThirdPersonCharacter→GameMode）；
+> - D1.1 插件 token 生成/写盘 + 握手校验（无 token 拒/带 token 放行/protocol 不符报错）；
+> - E1 pie_smoke（pie_start/stop + MCPLogCapture 窗口精确计数）+ output_log_tail。
+> 279 单测全绿，mypy 零错误。剩余 Stage E：run_functional_test（真机）、E3 完整基准+UE 在线 eval（真机）。
 
 ## 项目一句话
 
@@ -20,18 +22,23 @@ ue5agent：UE5 游戏开发 agent——C++ 实现功能、蓝图只读理解、�
 |---|---|
 | Phase 0（C++ 编译闭环） | ✅ 完成。agent 自主「写 BlueprintFunctionLibrary→编译 7.51s 零错误」验收通过 |
 | Kernel 重构 K0–K5 | ✅ 完成（ADR-0006）。K6 能力注册表可选未做 |
-| Phase 1 编辑器桥 | ✅ P1.1 链路 + C1 裁剪分级 + C2 只读导出（bp_overview/bp_pseudocode 控制流伪代码/bp_graph；bp_find_usages Python 侧就绪，差插件 find_blueprint_references 命令） |
+| Phase 1 编辑器桥 | ✅ **全收口**：P1.1 链路 + C1 裁剪分级 + C2 蓝图四件套（bp_overview/bp_pseudocode/bp_graph/bp_find_usages，2026-06-13 真机验证「谁在用它」） |
 | Phase 2 白盒（Stage A 全部） | ✅ **完成并真机终验**：manifest + DSL 编译器 + wb_build/wb_clear + wb_validate 校验器 + 证据信封 + A4 视觉迭代闭环（截图→Kimi 审查→问题区域回灌重生成）。「三房间死斗」全链路 e2e 通过 |
 | Stage B（kernel 体系化） | ✅ B1 契约 v2 / B2 工具效果声明 / B3 错误分类与恢复策略表 / B4 上下文工程（工程摘要注入 + progress.md + 工具结果摘要器）全部完成 |
-| Stage D（安全与工程化） | ✅ 离线项全部完成：secret 掩码、注入围栏、桥鉴权客户端侧（protocol+token）、运行锁、runs prune、CI（ruff+format+mypy+pytest）。仅 D1.1 服务端待插件 C++ |
-| Stage E（Phase 3） | 🔶 E2 子代理 ✅ 离线完成（agent/subagent.py spawn_subagent）；E1 PIE/Functional Test ⬜（真机）、E3 完整基准+UE 在线 eval ⬜（真机） |
+| Stage D（安全与工程化） | ✅ **全收口**：secret 掩码、注入围栏、桥鉴权（D1.1 客户端+服务端 2026-06-13 真机）、运行锁、runs prune、CI |
+| Stage E（Phase 3） | 🔶 E2 子代理 ✅ 离线；E1 ✅ pie_smoke+output_log_tail 真机；run_functional_test ⬜（真机）、E3 完整基准+UE 在线 eval ⬜（真机） |
 
 ## 环境清单
 
 - 引擎 `C:/Program Files/Epic Games/UE_5.7`；VS2026 Community；测试工程 `C:/Users/chengpeixin/Documents/Unreal Projects/agent_test`（git 管理，含 UnrealMCP 插件）
 - 仓库内：config/models.yaml + agent.yaml + .env（均不入库，已配好；vision=moonshot/kimi-k2.6，provider params 注入 temperature=1）；5 个 MCP server：ue_build / repo_tools / ue_editor / ue_whitebox / ue_lifecycle
+- **D1.1 桥鉴权已启用**：插件启动写 `agent_test/Saved/ue5agent_bridge_token.txt`，.env 配
+  `UE_MCP_TOKEN_FILE` 指向它，客户端握手自动出示；裸 `send_command`（不经 cli load_dotenv）会被拒，
+  调试时需手动带 `UE_MCP_TOKEN_FILE` 环境变量。插件源码在 agent_test 仓库（独立 git）。
 - 用户入口：双击 ue5agent-chat.bat 或 `uv run ue5agent run "任务" --yes`；trace 回放 `uv run ue5agent trace`；清理旧运行 `uv run ue5agent runs prune`
-- 275 个单测全绿；评测 `uv run ue5agent eval`（basic+hard 双档基线满分，evals/baselines/）
+- 279 个单测全绿；评测 `uv run ue5agent eval`（basic+hard 双档基线满分，evals/baselines/）
+- 插件重编译流程：关编辑器（DLL 锁）→ `run_build(engine, uproject, 'agent_testEditor')` → 重启编辑器
+  → 轮询 probe_editor。本会话首编 19.8s、增量 9.5s。
 
 ## 踩坑史（同类问题先查这里）
 
@@ -53,19 +60,19 @@ ue5agent：UE5 游戏开发 agent——C++ 实现功能、蓝图只读理解、�
 10. **白盒前缀纪律：异前缀残留是隐形杀手**（2026-06-12 契约 e2e 确诊）：模型自创 spawn 前缀（S1_）后任务 aborted，残留构件没人清（重建语义只清同前缀；当时回滚也按默认 WB 清）。下一个任务在同一 origin 落 WB_ 布局，**S1_ 旧墙正好横在新门洞上** → navmesh 在门处断开、path_test 全 partial；模型把现象误诊为 agent radius（看起来很合理！）。而 wb_validate 当时只查本前缀构件，对异前缀残留全盲——校验 PASS 但场景实际坏了。已修三处：① 契约自洽（success_checks 要求的验证工具自动并入 allowed_tools，planner._reconcile_contract）；② 回滚按实际前缀清（wb_build facts 带 prefix，runner 回滚读取）；③ wb_validate 宽查询 + 异前缀残留检测（与布局区域重叠的旧批次构件 → violation 并给 wb_clear 指引）。**经验：可达性异常先查场景里有没有别的批次的墙，再怀疑导航参数。**
 11. **本机终端跑 pytest 会 OSError 22 静默失败（exit 1 零输出）**：pytest 的 terminal writer 在某些包装终端（agent 工具调用、重定向）下写 stdout 报 Invalid argument，且错误本身也打不出来——看起来像"测试坏了但没有任何信息"。规避：`uv run python scripts/run_tests.py`（进程内重定向 stdout/stderr 到 runs/pytest_out.txt 再跑 pytest，读文件看结果）。ruff/mypy/uv 不受影响。直接在真终端（Windows Terminal/PowerShell 窗口）跑则正常。
 12. **多模态调用会冻死事件循环**（A4 真机确诊，litellm + moonshot 端点）：litellm 的调用阻塞 asyncio 事件循环且不遵守自身 timeout，整个 run 无限冻结（wall budget 在步边界检查，拦不住步内挂起）。修法成对出现：LLM 调用放工作线程（asyncio.to_thread + 线程内独立事件循环），外层用 asyncio.wait（**不是 wait_for**——await 不可取消的执行器 future 仍会卡死）做硬超时，超时降级。同病防复发：截图送审前降采样到长边 ≤1280 + JPEG 重压，单次最多 3 张。
+13. **桥命令不能在单条调用里阻塞 GameThread 跑长任务**（E1 设计教训）：插件 `ExecuteCommand` 把 handler 丢到 GameThread 并 `Future.Get()` 同步等结果——handler 里 sleep N 秒，PIE/世界就停止 tick（PIE 也跑在 GameThread）。所以"跑 N 秒"的命令必须拆成 `pie_start`（立即返回）+ 客户端等待 + `pie_stop`，等待发生在 MCP 进程而非引擎线程。run_functional_test 同理（Automation 跨帧），后续也走 start/poll。
+14. **GLog 自定义 OutputDevice 会收到控制消息**（E1 真机）：SetColor 等控制消息掩码 `& VerbosityMask` 后落到 NoLogging=0，若只判 `Level > Display` 会漏过、被当 VeryVerbose 混入结果。正确过滤是 `Level < Fatal || Level > Display`（只留 [Fatal,Display] 真实级别）。"某段窗口内新增的错误"要用单调序号快照（环形缓冲裁剪会让下标失效），不能用下标或全量 tail。
 
 ## 下一步（按序）
 
-Stage A–D 收口、E2 离线完成，**以 [stage-e-plan.md](stage-e-plan.md) 为准**：
+Stage A–D 全收口、E2 离线 + E1/C2/D1.1 真机完成，**以 [stage-e-plan.md](stage-e-plan.md) 为准**：
 
-1. **下次 UE 在线会话一次性推进（同属一次插件 C++ 改动 + 重编译，合并省循环）**：
-   - C2 收尾：插件新增 find_blueprint_references（AssetRegistry 引用查找）→ bp_find_usages 生效；
-   - D1.1 服务端：插件启动生成 token 写 `Saved/ue5agent_bridge_token.txt` + 握手校验 token/protocol
-     （客户端侧已就绪：bridge.py PROTOCOL_VERSION / UE_MCP_TOKEN[_FILE]）；
-   - E1：pie_smoke / run_functional_test / output_log_tail 三命令 + 证据/恢复接入。
-2. ~~E2 子代理体系~~ ✅ 已完成（agent/subagent.py，2026-06-13）。真机 token 下降量化对照
-   留待 E3 接 UE 在线 eval 时测。
-3. **E3 = C3 + 完整基准**：eval 框架支持 MCP+编辑器在线执行路径，`ue5agent eval --suite ue` 出基线。
+1. **run_functional_test**（真机，插件 C++）：UE Automation/Functional Test——同需 PIE 异步会话
+   （start/poll，见踩坑史第 13 条），最重最不确定，单独做。
+2. **E3 = C3 + 完整基准**（真机）：eval 框架支持 MCP+编辑器在线执行路径，`ue5agent eval --suite ue`
+   出基线；E1 完整 e2e（会报错的关卡→pie_smoke 读 Error→修复→复跑零 Error）并入 UE suite 用例。
+   E2 真机 token 下降量化对照也在此测。
+3. **pie_smoke 增强**（可选）：map 参数（先 OpenLevel 再 PIE，当前只跑当前关卡）。
 
 历史备忘：白盒三房间端到端核验已通过（run `20260611-222536`，3 次 wb_build 含"清旧建新"必崩场景全程无 Fatal/无 10061、verify=pass）。回归保护：tests/test_whitebox_spawn.py + 该 run 基线。若日后又崩，立刻读 `agent_test/Saved/Crashes/` 最新日志末尾的 Fatal 栈（别只看 trace 的 10061 拒连，那是次生现象）。体验项备忘：输出风格规范（列表类先汇总后明细）、evals 输出完整性断言档。
 

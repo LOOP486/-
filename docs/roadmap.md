@@ -19,8 +19,8 @@
 
 - [x] fork flopperam/unreal-engine-mcp 进 unreal/，跑通最小链路（见 ADR-0005）（P1.1，2026-06-11）
 - [x] 砍蓝图编辑工具，保留场景/资产/截图/日志（P1.2 = Stage C1，2026-06-12：瘦桥只转发审定的只读命令 + 分级表 + 回归守卫）
-- [x] 自研蓝图只读导出：bp_overview / bp_pseudocode / bp_graph / bp_find_usages（C2，2026-06-12：bp_overview 忠实概览、bp_pseudocode 控制流伪代码（exec connections 重建，无连接退回摘要）、bp_graph=bp_analyze（graph_name 选图）；agent e2e 解释蓝图通过）；bp_find_usages Python 侧就绪，待插件 AssetRegistry 命令
-- [ ] 验收：agent 能回答「这个蓝图做了什么」✅、「谁在用它」⬜（待 bp_find_usages 插件命令）
+- [x] 自研蓝图只读导出：bp_overview / bp_pseudocode / bp_graph / bp_find_usages（C2，2026-06-12 + 06-13 收尾：bp_overview 忠实概览、bp_pseudocode 控制流伪代码（exec connections 重建，无连接退回摘要）、bp_graph=bp_analyze（graph_name 选图）、bp_find_usages（插件 find_blueprint_references 已落地，2026-06-13 真机验证）；agent e2e 解释蓝图通过）
+- [x] 验收：agent 能回答「这个蓝图做了什么」✅、「谁在用它」✅（2026-06-13：bp_find_usages 真机验证 BP_ThirdPersonCharacter→BP_ThirdPersonGameMode）
 
 ## Phase 2：白盒搭建子系统
 
@@ -39,7 +39,7 @@
 
 > 细案见 [stage-e-plan.md](stage-e-plan.md)（E1 PIE/Automation、E2 子代理、E3 基准+UE eval）。下列项多需 UE 在线 + 插件 C++。
 
-- [ ] 自动化测试闭环（Functional Test 生成与运行）（E1，细案就绪，待真机）
+- [x] 运行期验证闭环（E1，2026-06-13 真机：pie_smoke 启 PIE 跑 N 秒读运行期 Error/Warning + output_log_tail 读 Output Log，插件 MCPLogCapture/pie_start/pie_stop C++；窗口精确计数）。Functional Test 生成与运行留后续
 - [x] 子代理体系（上下文隔离 + 按角色配模型）（E2，2026-06-13：agent/subagent.py spawn_subagent 工具——独立 history/system + 只读 ScopedRegistry 工具面 + 角色级模型路由 + 只回摘要、全文落 artifact；离线单测覆盖隔离/工具面/角色/错误降级，与主循环集成）
 - [ ] 完整评测基准工程与跑分（一次通过率/迭代次数/人工干预次数）（E3=含 C3，细案就绪，待真机）
 - [x] CI（GitHub Actions：ruff + pytest）（D2.3，2026-06-12：.github/workflows/ci.yml = uv sync + ruff check/format + mypy + pytest 离线）
@@ -67,5 +67,5 @@ agent 开发自身的复杂度清单。共同特征：不动架构，往既有�
   开场探测 editor_status/repo_status/engine_info 拼 ≤500 字摘要注入 system；每步刷新
   progress.md + 提示注入进度行；summarize_tool_result 按 actor 列表/编译日志类型摘要，
   truncate 保留为兜底）
-- [x] 桥与凭据安全：trace secret 掩码 + 外部内容围栏 ✅（D1.2/D1.3，2026-06-12）；TCP token 鉴权客户端侧 ✅（bridge protocol+token 握手）、服务端校验待插件（D1.1）
+- [x] 桥与凭据安全：trace secret 掩码 + 外部内容围栏 ✅（D1.2/D1.3，2026-06-12）；TCP token 鉴权 ✅（D1.1 完成 2026-06-13：客户端 protocol+token 握手 + 插件服务端生成 token/握手校验，真机验证无 token 被拒、带 token 放行）
 - [x] 运行锁与清理：同工程单 runner 文件锁、`runs prune`、CI 离线门禁 ✅（D2，2026-06-12）
