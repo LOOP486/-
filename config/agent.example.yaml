@@ -21,7 +21,10 @@ mcp_servers:
     permission: write_safe # 注意：其中 repo_restore 若要使用，应拆出来按 dangerous 挂载
   ue_editor:
     command: ["uv", "run", "python", "-m", "ue5agent.mcp_servers.ue_editor"]
-    permission: read # 编辑器桥只读工具；前置：UE 编辑器开启（UnrealMCP 插件）
+    permission: read # 编辑器桥默认只读；前置：UE 编辑器开启（UnrealMCP 插件）
+    tool_permissions: # 个别会改状态的工具按 write_project 覆写
+      navmesh_rebuild: write_project # 生成导航体积 + 重建 NavMesh（改关卡）
+      pie_smoke: write_project # 进入 PIE 运行期（改运行状态）
   ue_lifecycle:
     command: ["uv", "run", "python", "-m", "ue5agent.mcp_servers.ue_lifecycle"]
     permission: dangerous # 启动编辑器进程；还需加入下方 allowlist 才会放行

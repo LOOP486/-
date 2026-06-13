@@ -126,6 +126,8 @@ _EXPECTED_TOOLS = {
     "viewport_screenshot",
     "navmesh_rebuild",
     "path_test",
+    "output_log_tail",
+    "pie_smoke",
 }
 
 # 编辑/批量构建类桥命令一律不得在瘦桥源码中出现（防止未来误暴露写能力）。
@@ -170,3 +172,82 @@ def test_blueprint_tools_are_readonly_calls(monkeypatch):
     ed_server.bp_analyze("/Game/BP_X", graph_name="Move")
     commands = [c for c, _ in calls]
     assert commands == ["read_blueprint_content", "analyze_blueprint_graph"]
+
+
+# ---------- E1 运行期验证：output_log_tail / pie_smoke ----------
+
+
+def test_output_log_tail_emits_facts(monkeypatch):
+    """output_log_tail 透传过滤参数并落 output_log 事实（总错误/警告计数）。"""
+    calls = _record_bridge(
+        monkeypatch,
+        response={
+            "status": "success",
+            "result": {
+                "severity": "error",
+                "line_count": 1,
+                "lines": ["[Error] LogX: boom"],
+                "total_errors": 5,
+                "total_warnings": 12,
+            },
+        },
+    )
+    out = ed_server.output_log_tail(lines=50, severity="error")
+    command, params = calls[0]
+    assert command == "output_log_tail"
+    assert params == {"lines": 50, "severity": "error"}
+    facts = json.loads(out.split("[facts]", 1)[1].strip())
+    assert facts["kind"] == "output_log"
+    assert facts["total_errors"] == 5 and facts["total_warnings"] == 12
+
+
+def test_pie_smoke_orchestrates_start_sleep_stop(monkeypatch):
+    """pie_smoke 串起 pie_start→sleep→pie_stop；零错误时 ok=True。"""
+    commands: list[str] = []
+
+    def fake_send(command, params=None, **_kwargs):
+        commands.append(command)
+        if command == "pie_start":
+            return {"status": "success", "result": {"pie_requested": True}}
+        return {
+            "status": "success",
+            "result": {"was_playing": True, "error_count": 0, "warning_count": 1, "errors": []},
+        }
+
+    monkeypatch.setattr(ed_server, "send_command", fake_send)
+    monkeypatch.setattr(ed_server.time, "sleep", lambda _s: None)  # 别真睡
+    out = ed_server.pie_smoke(seconds=2)
+    assert commands == ["pie_start", "pie_stop"]
+    facts = json.loads(out.split("[facts]", 1)[1].strip())
+    assert facts["kind"] == "pie"
+    assert facts["ok"] is True and facts["error_count"] == 0
+
+
+def test_pie_smoke_reports_runtime_errors(monkeypatch):
+    """PIE 期间有 Error → 事实 ok=False，带错误计数。"""
+
+    def fake_send(command, params=None, **_kwargs):
+        if command == "pie_start":
+            return {"status": "success", "result": {}}
+        return {"status": "success", "result": {"error_count": 3, "warning_count": 0}}
+
+    monkeypatch.setattr(ed_server, "send_command", fake_send)
+    monkeypatch.setattr(ed_server.time, "sleep", lambda _s: None)
+    out = ed_server.pie_smoke(seconds=1)
+    facts = json.loads(out.split("[facts]", 1)[1].strip())
+    assert facts["ok"] is False and facts["error_count"] == 3
+
+
+def test_pie_smoke_start_failure_short_circuits(monkeypatch):
+    """pie_start 失败（编辑器未开）直接返回，不再调 pie_stop。"""
+    commands: list[str] = []
+
+    def fake_send(command, params=None, **_kwargs):
+        commands.append(command)
+        raise ConnectionRefusedError("no editor")
+
+    monkeypatch.setattr(ed_server, "send_command", fake_send)
+    monkeypatch.setattr(ed_server.time, "sleep", lambda _s: None)
+    out = ed_server.pie_smoke()
+    assert ed_server.is_env_unready(out)
+    assert commands == ["pie_start"]

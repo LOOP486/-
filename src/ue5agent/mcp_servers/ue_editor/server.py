@@ -216,6 +216,64 @@ def path_test(start: list[float], end: list[float]) -> str:
     return f"{out}\n[facts] {json.dumps(facts, ensure_ascii=False)}"
 
 
+@mcp.tool()
+def output_log_tail(lines: int = 100, severity: str = "all") -> str:
+    """读取 Output Log 尾部（编译/PIE 后查错）。只读。
+
+    Args:
+        lines: 返回最近多少行（1–2000，默认 100）
+        severity: 过滤级别——"error" 仅错误 / "warning" 错误+警告 / "all" 全部（默认）
+    """
+    out = _call("output_log_tail", {"lines": lines, "severity": severity})
+    if out.startswith("[error]") or is_env_unready(out):
+        return out
+    try:
+        result = json.loads(out)
+    except json.JSONDecodeError:
+        return out
+    facts = {
+        "kind": "output_log",
+        "ok": True,
+        "total_errors": int(result.get("total_errors", 0)),
+        "total_warnings": int(result.get("total_warnings", 0)),
+    }
+    return f"{out}\n[facts] {json.dumps(facts, ensure_ascii=False)}"
+
+
+@mcp.tool()
+def pie_smoke(seconds: float = 3.0) -> str:
+    """运行期冒烟（E1）：在编辑器里启动 PIE 跑若干秒，结束后返回期间新增 Error/Warning 计数。
+
+    用于改完蓝图/关卡后验证"能跑起来、运行期不报错"（不止编译/几何/导航）。播放当前关卡，
+    不切换地图。期间编辑器正常 tick PIE（本工具在 MCP 进程里等待，不阻塞编辑器主线程）。
+
+    Args:
+        seconds: PIE 运行秒数（默认 3，自动钳到 [1, 30]）
+    """
+    duration = max(1.0, min(float(seconds), 30.0))
+    started = _call("pie_start", {})
+    if started.startswith("[error]") or is_env_unready(started):
+        return started
+    time.sleep(duration)
+    out = _call("pie_stop", {})
+    if out.startswith("[error]") or is_env_unready(out):
+        return out
+    try:
+        result = json.loads(out)
+    except json.JSONDecodeError:
+        return out
+    errors = int(result.get("error_count", 0))
+    warnings = int(result.get("warning_count", 0))
+    facts = {
+        "kind": "pie",
+        "ok": errors == 0,
+        "error_count": errors,
+        "warning_count": warnings,
+        "seconds": duration,
+    }
+    return f"{out}\n[facts] {json.dumps(facts, ensure_ascii=False)}"
+
+
 def main() -> None:
     mcp.run()
 

@@ -37,8 +37,11 @@ def test_send_command_reassembles_split_json():
     assert response["result"]["actors"][0]["name"] == "Floor"
 
 
-def test_handshake_includes_protocol_version():
+def test_handshake_includes_protocol_version(monkeypatch):
     """D1.1：每条命令握手都带协议版本（插件可据此做版本不匹配报错）。"""
+    # 清掉环境里可能存在的 token（uv run 会加载 .env，本机 .env 配了 UE_MCP_TOKEN_FILE）
+    monkeypatch.delenv("UE_MCP_TOKEN", raising=False)
+    monkeypatch.delenv("UE_MCP_TOKEN_FILE", raising=False)
     captured: list = []
     port = fake_plugin_server({"status": "success", "result": {}}, captured=captured)
     send_command("ping", port=port, timeout=5)
