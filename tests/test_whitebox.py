@@ -81,6 +81,47 @@ class TestGeometry:
         ]
         # 门洞把共享墙切成上下两段，去重后该边总段数应 <= 2（而非 a、b 各 2 = 4 段）
         assert len(shared) <= 2, f"共享墙未去重，仍有 {len(shared)} 段：{[p.name for p in shared]}"
+        assert {round(p.location[0]) for p in shared} == {400}
+
+    def test_shared_wall_axis_stays_centered_across_adjacent_room_pairs(self):
+        """同一条共享墙轴线的不同段不能一段留在南侧、一段留在北侧。"""
+        spec = LayoutSpec(
+            name="t",
+            rooms=[
+                Room(
+                    name="A",
+                    rect=(0, 0, 4, 4),
+                    doors=[Door(wall="north", at=1, width=1)],
+                ),
+                Room(
+                    name="B",
+                    rect=(0, 4, 4, 4),
+                    doors=[Door(wall="south", at=1, width=1), Door(wall="east", at=1, width=1)],
+                ),
+                Room(
+                    name="C",
+                    rect=(4, 4, 4, 4),
+                    doors=[Door(wall="south", at=1, width=1), Door(wall="west", at=1, width=1)],
+                ),
+                Room(
+                    name="D",
+                    rect=(4, 0, 4, 4),
+                    doors=[Door(wall="north", at=1, width=1)],
+                ),
+            ],
+        )
+
+        internal_y_walls = [
+            p
+            for p in compile_layout(spec, MANIFEST)
+            if p.kind == "wall"
+            and p.target_size
+            and p.target_size[0] > p.target_size[1]
+            and 360 <= p.location[1] <= 440
+        ]
+
+        assert internal_y_walls
+        assert {round(p.location[1]) for p in internal_y_walls} == {400}
 
 
 class TestValidation:
@@ -108,6 +149,23 @@ class TestValidation:
             rooms=[Room(name="a", rect=(0, 0, 4, 4)), Room(name="b", rect=(4, 0, 4, 4))],
         )
         with pytest.raises(LayoutError, match="不连通"):
+            compile_layout(spec, MANIFEST)
+
+    def test_windows_on_shared_walls_are_rejected(self):
+        spec = LayoutSpec(
+            name="t",
+            rooms=[
+                Room(
+                    name="a",
+                    rect=(0, 0, 4, 4),
+                    doors=[Door(wall="east", at=2, width=1)],
+                    windows=[Door(wall="east", at=0, width=1)],
+                ),
+                Room(name="b", rect=(4, 0, 4, 4), doors=[Door(wall="west", at=2, width=1)]),
+            ],
+        )
+
+        with pytest.raises(LayoutError, match=r"窗.*外墙"):
             compile_layout(spec, MANIFEST)
 
     def test_misaligned_doors_rejected(self):
@@ -141,6 +199,28 @@ class TestValidation:
 
         with pytest.raises(LayoutError, match="不合法"):
             layout_from_dict({"rooms": [{"name": "a"}]})
+
+    def test_layout_from_dict_parses_realistic_scale_profile(self):
+        from ue5agent.whitebox.compiler import layout_from_dict
+
+        spec = layout_from_dict(
+            {
+                "name": "scale",
+                "scale_profile": "realistic",
+                "rooms": [{"name": "a", "rect": [0, 0, 4, 4]}],
+            }
+        )
+
+        assert spec.scale_profile == "realistic"
+
+        with pytest.raises(LayoutError, match="scale_profile"):
+            layout_from_dict(
+                {
+                    "name": "bad-scale",
+                    "scale_profile": "combat",
+                    "rooms": [{"name": "a", "rect": [0, 0, 4, 4]}],
+                }
+            )
 
     def test_door_out_of_range_rejected(self):
         spec = LayoutSpec(

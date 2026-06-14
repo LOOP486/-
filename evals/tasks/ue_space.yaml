@@ -1,0 +1,101 @@
+# 白盒空间黑盒评测：固定模型 + 完整 TaskRunner + 真实 UE 工具。
+# 目标是评测 agent 自己把空间需求转成布局 DSL 的能力；不要手写布局 JSON 做补救。
+# 跑法示例：
+#   uv run ue5agent eval --suite ue --tasks evals/tasks/ue_space.yaml --model deepseek/deepseek-v4-pro --out evals/baselines/ue/space-deepseek-v4-pro-2026-06-14.json
+
+- name: slab_branching_training_space
+  prompt: >
+    请自己设计并搭建一个默认 slab 白盒空间，真实尺度，单层：一个有中心厅、入口、
+    两条转角走廊、两个侧室和一个尽端房间的训练场。多房间必须连通；内部共享墙只开门，
+    不在内部共享墙开窗；外墙可以开窗。调用 wb_build 时请使用 prefix="SPC1"，
+    layout_json 顶层写 origin=[5000, 0, 0]，以便和其它测试并排比较；使用默认
+    MI_PrototypeGrid_Gray 白盒材质。只测试空间结构，不要生成 gameplay；不要生成
+    props、cover、spawn_points、routes；不要调用 viewport_screenshot。使用 wb_build 落地后，必须用 wb_validate 校验，
+    再用 navmesh_rebuild 和 path_test 验证入口到最远房间导航可达。不要使用 modular
+    结构模式。最终简短报告验证结果。
+  max_iterations: 40
+  checks:
+    - { type: run_succeeded }
+    - { type: no_unrecovered_tool_errors }
+    - { type: tool_called, tool: wb_build }
+    - { type: tool_called, tool: wb_validate }
+    - { type: tool_called, tool: navmesh_rebuild }
+    - { type: tool_called, tool: path_test }
+    - { type: tool_not_called, tool: viewport_screenshot }
+    - { type: fact_equals, kind: wb_validate, path: ok, equals: true }
+    - { type: fact_equals, kind: wb_validate, path: metrics.structure_mode, equals: slab }
+    - { type: fact_lte, kind: wb_validate, path: metrics.scale_warning_count, value: 0 }
+    - { type: fact_lte, kind: wb_validate, path: metrics.prop_count, value: 0 }
+    - { type: fact_lte, kind: wb_validate, path: metrics.spawn_count, value: 0 }
+    - { type: fact_lte, kind: wb_validate, path: metrics.route_count, value: 0 }
+    - { type: fact_lte, kind: wb_validate, path: metrics.wall_fragmentation_score, value: 1.5 }
+    - type: fact_any
+      kind: path_test
+      where:
+        - { path: reachable, equals: true }
+        - { path: path_length, gte: 1500 }
+
+- name: slab_loop_gallery_space
+  prompt: >
+    请自己设计并搭建一个默认 slab 白盒空间，真实尺度，单层：一个环形/回游动线的小型展厅，
+    至少 6 个空间节点，包括前厅、长廊、转角展廊、背厅、侧厅和出口厅；需要有一条主回游路线，
+    同时保留一个短捷径门洞。内部共享墙只允许门洞，不允许窗；窗只放外墙。调用 wb_build
+    时请使用 prefix="SPC2"，layout_json 顶层写 origin=[10000, 0, 0]，以便和其它测试
+    并排比较；使用默认 MI_PrototypeGrid_Gray 白盒材质。只测试空间结构，不要生成
+    gameplay；不要生成 props、cover、spawn_points、routes；不要调用 viewport_screenshot。使用 wb_build 落地后，
+    必须用 wb_validate 校验，再用 navmesh_rebuild 和 path_test 验证前厅到出口厅可达。
+    不要使用 modular 结构模式。最终简短报告验证结果。
+  max_iterations: 40
+  checks:
+    - { type: run_succeeded }
+    - { type: no_unrecovered_tool_errors }
+    - { type: tool_called, tool: wb_build }
+    - { type: tool_called, tool: wb_validate }
+    - { type: tool_called, tool: navmesh_rebuild }
+    - { type: tool_called, tool: path_test }
+    - { type: tool_not_called, tool: viewport_screenshot }
+    - { type: fact_equals, kind: wb_validate, path: ok, equals: true }
+    - { type: fact_equals, kind: wb_validate, path: metrics.structure_mode, equals: slab }
+    - { type: fact_lte, kind: wb_validate, path: metrics.scale_warning_count, value: 0 }
+    - { type: fact_lte, kind: wb_validate, path: metrics.prop_count, value: 0 }
+    - { type: fact_lte, kind: wb_validate, path: metrics.spawn_count, value: 0 }
+    - { type: fact_lte, kind: wb_validate, path: metrics.route_count, value: 0 }
+    - { type: fact_lte, kind: wb_validate, path: metrics.wall_fragmentation_score, value: 1.8 }
+    - type: fact_any
+      kind: path_test
+      where:
+        - { path: reachable, equals: true }
+        - { path: path_length, gte: 400 }
+
+- name: slab_single_level_stairwell_space
+  prompt: >
+    请自己设计并搭建一个默认 slab 白盒空间，真实尺度，单层：一个大厅连接储藏间和小办公室，
+    大厅里放一段从 level 0 到 level 1 的楼梯以及楼梯间护墙，但不要创建任何二层 room。
+    多房间必须连通；窗只放外墙。调用 wb_build 时请使用 prefix="SPC3"，
+    layout_json 顶层写 origin=[15000, 0, 0]，以便和其它测试并排比较；使用默认
+    MI_PrototypeGrid_Gray 白盒材质。只测试空间结构，不要生成 gameplay；不要生成
+    props、cover、spawn_points、routes；不要调用 viewport_screenshot。使用 wb_build 落地后，必须用 wb_validate 校验，
+    再用 navmesh_rebuild 和 path_test 验证大厅到办公室导航可达。不要使用 modular
+    结构模式。最终简短报告验证结果。
+  max_iterations: 40
+  checks:
+    - { type: run_succeeded }
+    - { type: no_unrecovered_tool_errors }
+    - { type: tool_called, tool: wb_build }
+    - { type: tool_called, tool: wb_validate }
+    - { type: tool_called, tool: navmesh_rebuild }
+    - { type: tool_called, tool: path_test }
+    - { type: tool_not_called, tool: viewport_screenshot }
+    - { type: fact_equals, kind: wb_validate, path: ok, equals: true }
+    - { type: fact_equals, kind: wb_validate, path: metrics.structure_mode, equals: slab }
+    - { type: fact_lte, kind: wb_validate, path: metrics.scale_warning_count, value: 0 }
+    - { type: fact_lte, kind: wb_validate, path: metrics.prop_count, value: 0 }
+    - { type: fact_lte, kind: wb_validate, path: metrics.spawn_count, value: 0 }
+    - { type: fact_lte, kind: wb_validate, path: metrics.route_count, value: 0 }
+    - { type: fact_gte, kind: wb_validate, path: metrics.stair_count, value: 1 }
+    - { type: fact_gte, kind: wb_validate, path: metrics.stairwell_count, value: 1 }
+    - type: fact_any
+      kind: path_test
+      where:
+        - { path: reachable, equals: true }
+        - { path: path_length, gte: 500 }

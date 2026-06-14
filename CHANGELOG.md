@@ -4,6 +4,53 @@
 
 ## [未发布]
 
+### 新增（关卡尺度 metrics）
+
+- 新增 `config/whitebox/level_metrics.yaml` 与 `scale_profile="realistic"`：第一版按真实室内空间
+  控制尺度，视觉/LLM 只负责理解空间结构，米制尺寸由 metrics 表收敛。
+- `wb_validate` metrics 新增 `scale_profile`、`scale_grid_m`、`min_room_area_m2`、
+  `min_room_dimension_m`、`min_door_width_m`、`wall_height_m`、`scale_warning_count` 与
+  `scale_warnings`。第一版尺度问题只作为 warning，不改变几何 PASS/FAIL。
+
+### 新增（空间黑盒评测）
+
+- 新增 `evals/tasks/ue_space.yaml`：用真实 UE 工具评测 agent 自主设计默认 slab 空间的能力，
+  固定 `SPC1/SPC2/SPC3` 前缀与并排 origin，明确禁止 hand-written 布局补救、gameplay/props/
+  cover/spawn/routes 与 `viewport_screenshot`，只观察 `wb_build -> wb_validate ->
+  navmesh_rebuild -> path_test` trace。
+- UE eval 支持 `no_unrecovered_tool_errors` 检查：允许 agent 自行修复中途工具错误，但最终失败时仍
+  把未恢复错误纳入报告；runner 对执行期模型不可用/超时会写入确定性失败并快速终止。
+- 工具说明补充空间 eval 约束：允许显式 `prefix`/`origin` 做并排对比，纯空间任务不要生成玩法件；
+  stair 示例与 footprint 提示改为更贴近默认 slab 测试。
+
+### 新增（升级版资产扫描：UE 真值重建 manifest）
+
+- `ue_whitebox` 新增 `wb_asset_scan(content_path, apply, out_path)`（write_project）：以 UE 导入后
+  StaticMesh bounds 为真值反推 `size`/`pivot`/`footprint`/`local_bounds`（直接 `calibrated`），
+  重建 manifest v2，消除“重导资产后手工回填 path、尺寸漂移”。默认 `apply=False` 仅预览 diff，
+  确认后 `apply=True` 才写盘；重扫会保留用户手调的 `roles` 与人工 `desc`。
+- 新建纯逻辑模块 `whitebox/scanner.py`：名称前缀 + **几何先验**混合归类——命名兜不住时按包围盒
+  长宽高比把件从 `unknown` 收敛到 wall/floor/pillar/cover 等大类，并一律标 `needs_review`
+  （几何分不清墙/窗/门“同形不同义”）；命名命中但几何明显矛盾的件也提示复核。
+- `wb_asset_scan` 优先调桥命令 `scan_assets` 枚举整个内容目录（含新导入但清单未登记的件）；
+  旧插件未实现该命令时，回退用 `get_mesh_bounds` 逐件刷新存量清单（发现不了新件，会在结果中提示）。
+- UnrealMCP 插件新增只读 `scan_assets` 命令（AssetRegistry 枚举 + `ScanPathsSynchronous` 防漏 +
+  逐件 bounds）；**需重新编译插件后该路径才可用**。
+- `scripts/fbx_probe.py` 改为复用 `scanner.classify_by_name`，命名归类规则收敛为单一事实源。
+- ③视觉识别 `scripts/asset_vision_scan.py`：对命名不规范/几何同形难辨的件（柜子/箱子/掩体等
+  填充物）渲 3/4 白模缩略图 → 喂 vision 角色（多模态）→ 输出 `semantic`/`usage`/`category`，
+  合并进 manifest 的 `desc`/`tags`/`category`（高置信可清 `needs_review`）。零新增 C++：渲染复用
+  `spawn_actor`(临时点)+`viewport_screenshot`(定相机)+`delete_actor`，识别复用 `LiteLLMClient`。
+  分工：①②几何给"对齐抓手"（精确尺寸/pivot），③视觉给"这是什么、怎么用"（结构件 vs 填充物）。
+- UnrealMCP 插件 bridge 路由白名单补登 `scan_assets`（之前漏登记导致命令被判 Unknown）。
+- `asset_vision_scan` 支持三种取数：默认调 VLM、`--render-only` 只渲图、`--labels` 用外部标签
+  合并（VLM 慢时可两段式：先 `--render-only` 渲图，人工/离线识别后 `--labels … --apply` 合并）；
+  spawn 用运行唯一名（复用同名会触发 UE `Cannot generate unique name` Fatal，见 `wb_build`）。
+- `scanner.build_manifest_dict` 的 roles 合并改为"保留仍有效的手调映射 + 丢弃指向已删除资产的项 +
+  缺失标准角色用 best-guess 补齐"，避免重扫后 roles 指向不存在的旧资产。
+- 编译器/loader 单测改用冻结的 `tests/data/kit_archkit_sample.yaml`，与随用户重扫而变的
+  `config/whitebox/kit.yaml` 解耦（`config/whitebox/kit.yaml` 现按真实导入资产由扫描生成）。
+
 ### 变更（白盒 slab-first 默认策略）
 
 - 布局 JSON 新增顶层 `structure_mode`：缺省为 `"slab"`，显式 `"modular"` 才走旧 ArchKit
@@ -18,6 +65,8 @@
   清单改为关注主空间、开合、遮挡、转角、比例与无意义孤立墙，并明确不因缺少门框/窗框扣分。
 - 白盒落地时会按 `Placement.metadata["room"]` 写入 World Outliner 文件夹：房间构件进入
   `<prefix>/Rooms/<room>`，方便手动整理与检查默认 slab 测试场景。
+- 共享墙去重会把保留墙段合并到共享边中心轴线，避免相邻段落一段在左/下侧、一段在右/上侧；
+  `windows` 现在只允许开在外墙，内部共享墙开窗会报可读 `LayoutError`。
 
 ### 新增（白盒可靠性底座）
 

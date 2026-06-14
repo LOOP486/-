@@ -19,6 +19,7 @@ from ue5agent.config import (
     build_runtime_env,
     load_agent_settings,
     load_models_config,
+    with_model_for_roles,
 )
 
 app = typer.Typer(help="UE5 游戏开发 agent", no_args_is_help=True)
@@ -145,6 +146,11 @@ def eval_command(
     models: Path = DEFAULT_MODELS,
     agent: Path = DEFAULT_AGENT,
     role: str = "planner",
+    model_override: str | None = typer.Option(
+        None,
+        "--model",
+        help="临时覆写评测角色使用的模型，如 deepseek/deepseek-v4-pro；不改 models.yaml",
+    ),
     suite: str = typer.Option(
         "sandbox", "--suite", help="评测档：sandbox（离线沙盒，CI 门禁）或 ue（真机，需编辑器在线）"
     ),
@@ -153,6 +159,12 @@ def eval_command(
     """跑评测集：sandbox 档在干净沙盒中度量工具调用能力（离线）；ue 档用完整 TaskRunner
     + 真实 MCP 工具面跑端到端任务（需编辑器在线），度量一次通过率/迭代次数/人工干预次数。"""
     config = _require_models(models)
+    if model_override:
+        config = with_model_for_roles(
+            config,
+            sorted({role, "planner", "coder", "judge", "explorer"}),
+            model_override,
+        )
     if suite == "ue":
         settings = load_agent_settings(agent) if agent.exists() else AgentSettings()
         tasks_path = tasks or Path("evals/tasks/ue.yaml")
@@ -216,8 +228,13 @@ async def _run_ue_eval(
     from ue5agent.agent.state import TaskSession
     from ue5agent.core.redaction import collect_secret_values
     from ue5agent.core.runlock import RunLockError, run_lock
-    from ue5agent.evals.ue_suite import UeEvalTask, UeRunRecord, load_ue_tasks, run_ue_suite
-    from ue5agent.llm.client import LiteLLMClient
+    from ue5agent.evals.ue_suite import (
+        UeEvalTask,
+        UeRunRecord,
+        load_ue_tasks,
+        run_ue_suite,
+        summarize_trace,
+    )
     from ue5agent.mcp_servers.ue_editor.bridge import probe_editor
     from ue5agent.tools.mcp_client import McpManager
     from ue5agent.tools.registry import ToolRegistry
@@ -234,7 +251,7 @@ async def _run_ue_eval(
 
     task_list = load_ue_tasks(tasks_path)
     secrets = collect_secret_values(config.secret_env_names())
-    llm = LiteLLMClient(config)
+    llm = _build_ue_eval_llm(config)
     model_ref = llm.model_for(role)
 
     try:
@@ -254,14 +271,29 @@ async def _run_ue_eval(
                     try:
                         outcome = await runner.run(task.prompt)
                     except Exception as exc:  # 单任务异常记为失败，不中断整批
-                        return UeRunRecord(success=False, error=f"{type(exc).__name__}: {exc}")
+                        summary = summarize_trace(writer.trace_path)
+                        return UeRunRecord(
+                            success=False,
+                            error=f"{type(exc).__name__}: {exc}",
+                            trace_path=str(writer.trace_path),
+                            run_dir=str(writer.dir),
+                            tool_calls=summary["tool_calls"],
+                            facts=summary["facts"],
+                            tool_errors=summary["tool_errors"],
+                        )
                     plan = writer.session.plan
+                    summary = summarize_trace(writer.trace_path)
                     return UeRunRecord(
                         success=outcome.success,
                         final_answer=outcome.final_answer or outcome.report,
                         iteration_count=sum(s.attempts for s in plan),
                         max_step_attempts=max((s.attempts for s in plan), default=0),
                         human_intervention=0,  # 无人值守 eval 不触发确认器
+                        trace_path=str(writer.trace_path),
+                        run_dir=str(writer.dir),
+                        tool_calls=summary["tool_calls"],
+                        facts=summary["facts"],
+                        tool_errors=summary["tool_errors"],
                     )
 
                 report = await run_ue_suite(task_list, run_one)
@@ -298,6 +330,13 @@ async def _run_ue_eval(
         console.print(f"[dim]报告已存 {out}[/dim]")
     if report.pass_rate < 1.0:
         raise typer.Exit(1)
+
+
+def _build_ue_eval_llm(config: ModelsConfig) -> Any:
+    """UE 在线评测用 fail-fast LLM：一次请求超时即让该任务失败，避免静默长重试。"""
+    from ue5agent.llm.client import LiteLLMClient
+
+    return LiteLLMClient(config, max_retries=1, request_timeout_seconds=120.0)
 
 
 def _dump_ue_report(out: Path, model_ref: str, role: str, report: Any) -> None:

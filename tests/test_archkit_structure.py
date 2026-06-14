@@ -19,7 +19,9 @@ from ue5agent.whitebox.manifest import load_manifest
 from ue5agent.whitebox.validator import ActorView, validate_layout
 
 _CONFIG = Path(__file__).parent.parent / "config" / "whitebox"
-KIT = load_manifest(_CONFIG / "kit.yaml")
+# 编译器单测用冻结的 ArchKit 样例清单，与随用户重扫而变的 config/whitebox/kit.yaml 解耦。
+_KIT_FIXTURE = Path(__file__).parent / "data" / "kit_archkit_sample.yaml"
+KIT = load_manifest(_KIT_FIXTURE)
 ENGINE_CUBE = "/Engine/BasicShapes/Cube.Cube"
 
 
@@ -35,6 +37,8 @@ def test_wb_apply_manifest_material_updates_all_archkit_assets(monkeypatch):
         return {"status": "success", "result": {"saved": True}}
 
     monkeypatch.setattr(wb_server, "send_command", fake_send)
+    # 让工具读取与 KIT 同一份冻结清单，断言"覆盖全部资产"才稳定
+    monkeypatch.setattr(wb_server, "_MANIFEST", _KIT_FIXTURE)
 
     out = wb_server.wb_apply_manifest_material()
 
@@ -148,6 +152,71 @@ def test_slab_structure_placements_carry_room_metadata_for_outliner_folders():
 
     assert structure
     assert all(p.metadata.get("room") in {"Alpha", "Beta"} for p in structure)
+
+
+def test_slab_shared_partial_wall_runs_are_centered_and_merged():
+    spec = layout_from_dict(
+        {
+            "name": "partial-shared-wall",
+            "rooms": [
+                {
+                    "name": "Main",
+                    "rect": [0, 0, 6, 4],
+                    "doors": [{"wall": "east", "at": 1, "width": 1}],
+                },
+                {
+                    "name": "Side",
+                    "rect": [6, 1, 3, 2],
+                    "doors": [{"wall": "west", "at": 0, "width": 1}],
+                },
+            ],
+        }
+    )
+
+    placements = compile_layout(spec, KIT)
+    walls = [p for p in placements if p.kind == "wall"]
+    shared_axis_walls = [
+        p
+        for p in walls
+        if p.target_min is not None
+        and p.target_size is not None
+        and p.target_min[0] == 590.0
+        and p.target_size[0] == 20.0
+    ]
+
+    assert any(
+        p.target_min == (590.0, 200.0, 0.0) and p.target_size == (20.0, 200.0, 400.0)
+        for p in shared_axis_walls
+    )
+    assert not any(
+        p.target_min == (600.0, 200.0, 0.0) and p.target_size == (20.0, 100.0, 400.0) for p in walls
+    )
+
+
+def test_slab_rejects_one_sided_internal_door_openings():
+    spec = layout_from_dict(
+        {
+            "name": "one-sided-door",
+            "rooms": [
+                {
+                    "name": "Main",
+                    "rect": [0, 0, 6, 4],
+                    "doors": [
+                        {"wall": "east", "at": 1, "width": 1},
+                        {"wall": "east", "at": 3, "width": 1},
+                    ],
+                },
+                {
+                    "name": "Side",
+                    "rect": [6, 0, 3, 4],
+                    "doors": [{"wall": "west", "at": 1, "width": 1}],
+                },
+            ],
+        }
+    )
+
+    with pytest.raises(LayoutError, match=r"内部共享墙.*门洞.*两侧对齐"):
+        compile_layout(spec, KIT)
 
 
 def test_modular_compiler_uses_real_floor_wall_door_and_window_modules_without_corners():

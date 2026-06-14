@@ -10,7 +10,7 @@ v1 范围：矩形房间 + 四向墙 + 门洞。墙体/地板全部用 cube 缩�
 from __future__ import annotations
 
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from itertools import pairwise, product
 from typing import Any
 
@@ -45,6 +45,7 @@ _ROUTE_CORRIDOR_HALF_WIDTH = 45.0
 _FLOOR_THICKNESS = 20.0
 """地板板厚（uu）：顶面贴 z=0，向下 20uu。cube 基准 100uu 时即旧逻辑的 scale.z=0.2。"""
 _STRUCTURE_MODES = {"slab", "modular"}
+_SCALE_PROFILES = {"realistic"}
 _ENGINE_SLAB_ASSET = AssetDef(
     key="_engine_slab",
     path="/Engine/BasicShapes/Cube.Cube",
@@ -110,6 +111,7 @@ class LayoutSpec:
     name: str
     rooms: list[Room]
     structure_mode: str = "slab"
+    scale_profile: str = "realistic"
     wall_height: float = 300.0
     level_height: float = 0.0
     wall_thickness: float = 20.0
@@ -122,6 +124,10 @@ class LayoutSpec:
         if self.structure_mode not in _STRUCTURE_MODES:
             modes = "、".join(sorted(_STRUCTURE_MODES))
             raise LayoutError(f"structure_mode 只支持 {modes}，收到：{self.structure_mode}")
+        self.scale_profile = self.scale_profile.strip().lower()
+        if self.scale_profile not in _SCALE_PROFILES:
+            profiles = "、".join(sorted(_SCALE_PROFILES))
+            raise LayoutError(f"scale_profile 只支持 {profiles}，收到：{self.scale_profile}")
         if self.level_height <= 0:
             self.level_height = self.wall_height
 
@@ -152,6 +158,10 @@ def layout_from_dict(data: dict) -> LayoutSpec:
         if structure_mode not in _STRUCTURE_MODES:
             modes = "、".join(sorted(_STRUCTURE_MODES))
             raise LayoutError(f"structure_mode 只支持 {modes}，收到：{structure_mode}")
+        scale_profile = str(data.get("scale_profile", "realistic")).strip().lower()
+        if scale_profile not in _SCALE_PROFILES:
+            profiles = "、".join(sorted(_SCALE_PROFILES))
+            raise LayoutError(f"scale_profile 只支持 {profiles}，收到：{scale_profile}")
         rooms = []
         for raw in data["rooms"]:
             rect = tuple(int(v) for v in raw["rect"])
@@ -210,6 +220,7 @@ def layout_from_dict(data: dict) -> LayoutSpec:
             name=str(data.get("name", "layout")),
             rooms=rooms,
             structure_mode=structure_mode,
+            scale_profile=scale_profile,
             wall_height=float(data.get("wall_height", 400)),
             level_height=float(data.get("level_height", data.get("wall_height", 400))),
             wall_thickness=float(data.get("wall_thickness", 20)),
@@ -248,7 +259,14 @@ def _compile_layout_slab(spec: LayoutSpec, manifest: Manifest) -> list[Placement
     g = manifest.grid
     placements: list[Placement] = []
     for room in spec.rooms:
-        placements += _compile_room(room, spec, _ENGINE_SLAB_ASSET, _ENGINE_SLAB_ASSET, g)
+        placements += _compile_room(
+            room,
+            spec,
+            _ENGINE_SLAB_ASSET,
+            _ENGINE_SLAB_ASSET,
+            g,
+            center_walls=True,
+        )
     placements = _dedupe_shared_walls(placements)
     placements += _compile_native_layers(spec, manifest)
     return placements
@@ -1627,28 +1645,194 @@ def _dedupe_shared_walls(placements: list[Placement]) -> list[Placement]:
 
     相邻房间各自生成自己的墙，共享边上会出现两面几乎重合的薄墙（仅差墙厚 20uu），
     视觉上像"多放了一块板"。此处按墙的 (location, scale) 近似重合判定，
-    重复的只保留第一面、丢弃其余——门洞段因位置/长度不同不会被误删。
+    重复段合并到共享边中心轴线，只保留一面墙、丢弃其余——门洞段因位置/长度不同不会被误删。
     """
+    placements = _merge_overlapping_centerline_slab_walls(placements)
     kept: list[Placement] = []
-    seen: list[tuple[float, float, float, float, float, float, float]] = []
+    seen: list[tuple[tuple[float, float, float, float, float, float, float], int]] = []
     for p in placements:
         if p.kind != "wall":  # 只有结构墙/门窗参与共享墙去重
             kept.append(p)
             continue
-        key = (
-            round(p.location[0], 1),
-            round(p.location[1], 1),
-            round(p.location[2], 1),
-            round(p.scale[0], 2),
-            round(p.scale[1], 2),
-            round(p.scale[2], 2),
-            round(p.rotation[1] % 360, 1),
+        key = _wall_dedupe_key(p)
+        match = next(
+            (
+                (index, kept_index)
+                for index, (old_key, kept_index) in enumerate(seen)
+                if _walls_coincide(key, old_key)
+            ),
+            None,
         )
-        if any(_walls_coincide(key, s) for s in seen):
+        if match is not None:
+            seen_index, kept_index = match
+            kept[kept_index] = _merge_shared_wall_to_axis(kept[kept_index], p)
+            seen[seen_index] = (_wall_dedupe_key(kept[kept_index]), kept_index)
             continue  # 与已保留的某面墙重合 → 这是共享墙的另一面，丢弃
-        seen.append(key)
+        seen.append((key, len(kept)))
         kept.append(p)
     return kept
+
+
+def _merge_overlapping_centerline_slab_walls(placements: list[Placement]) -> list[Placement]:
+    """合并 slab 中心线上的部分重合墙段，避免 T 字/短边房间产生双墙。"""
+    groups: dict[tuple[int, float, float, float, float, float, str], list[Placement]] = {}
+    for placement in placements:
+        key = _centerline_slab_wall_key(placement)
+        if key is None:
+            continue
+        groups.setdefault(key, []).append(placement)
+    if not groups:
+        return placements
+
+    emitted: set[tuple[int, float, float, float, float, float, str]] = set()
+    out: list[Placement] = []
+    for placement in placements:
+        key = _centerline_slab_wall_key(placement)
+        if key is None:
+            out.append(placement)
+            continue
+        if key in emitted:
+            continue
+        emitted.add(key)
+        out.extend(_merge_centerline_wall_group(groups[key], thin_axis=key[0]))
+    return out
+
+
+def _centerline_slab_wall_key(
+    placement: Placement,
+) -> tuple[int, float, float, float, float, float, str] | None:
+    if placement.kind != "wall" or placement.asset_key != _ENGINE_SLAB_ASSET.key:
+        return None
+    if placement.target_min is None or placement.target_size is None:
+        return None
+    if abs(placement.rotation[1] % 360) > 0.1:
+        return None
+    thin_axis = 0 if placement.target_size[0] <= placement.target_size[1] else 1
+    center = placement.target_min[thin_axis] + placement.target_size[thin_axis] / 2
+    return (
+        thin_axis,
+        round(center, 3),
+        round(placement.target_min[2], 3),
+        round(placement.target_size[2], 3),
+        round(placement.target_size[thin_axis], 3),
+        round(placement.rotation[1] % 360, 3),
+        placement.asset_path,
+    )
+
+
+def _merge_centerline_wall_group(placements: list[Placement], *, thin_axis: int) -> list[Placement]:
+    if len(placements) <= 1:
+        return placements
+    long_axis = 1 - thin_axis
+    intervals = sorted(
+        (
+            (
+                placement.target_min[long_axis],
+                placement.target_min[long_axis] + placement.target_size[long_axis],
+                placement,
+            )
+            for placement in placements
+            if placement.target_min is not None and placement.target_size is not None
+        ),
+        key=lambda item: (item[0], item[1], item[2].name),
+    )
+    merged: list[tuple[float, float, Placement]] = []
+    for start, end, placement in intervals:
+        if not merged or start > merged[-1][1] + 1e-6:
+            merged.append((start, end, placement))
+            continue
+        old_start, old_end, old_placement = merged[-1]
+        merged[-1] = (old_start, max(old_end, end), old_placement)
+    return [
+        _resize_centerline_wall_interval(placement, thin_axis, start, end)
+        for start, end, placement in merged
+    ]
+
+
+def _resize_centerline_wall_interval(
+    placement: Placement, thin_axis: int, start: float, end: float
+) -> Placement:
+    if placement.target_min is None or placement.target_size is None:
+        return placement
+    long_axis = 1 - thin_axis
+    target_min = list(placement.target_min)
+    target_size = list(placement.target_size)
+    target_min[long_axis] = start
+    target_size[long_axis] = end - start
+    location: tuple[float, float, float] = (
+        _clean_float(target_min[0] + target_size[0] / 2),
+        _clean_float(target_min[1] + target_size[1] / 2),
+        _clean_float(target_min[2] + target_size[2] / 2),
+    )
+    scale: tuple[float, float, float] = (
+        _clean_float(target_size[0] / 100.0),
+        _clean_float(target_size[1] / 100.0),
+        _clean_float(target_size[2] / 100.0),
+    )
+    target_min_tuple: tuple[float, float, float] = (
+        _clean_float(target_min[0]),
+        _clean_float(target_min[1]),
+        _clean_float(target_min[2]),
+    )
+    target_size_tuple: tuple[float, float, float] = (
+        _clean_float(target_size[0]),
+        _clean_float(target_size[1]),
+        _clean_float(target_size[2]),
+    )
+    return replace(
+        placement,
+        location=location,
+        scale=scale,
+        target_min=target_min_tuple,
+        target_size=target_size_tuple,
+        visual_min=target_min_tuple if placement.visual_min is not None else None,
+        visual_size=target_size_tuple if placement.visual_size is not None else None,
+    )
+
+
+def _wall_dedupe_key(p: Placement) -> tuple[float, float, float, float, float, float, float]:
+    return (
+        round(p.location[0], 1),
+        round(p.location[1], 1),
+        round(p.location[2], 1),
+        round(p.scale[0], 2),
+        round(p.scale[1], 2),
+        round(p.scale[2], 2),
+        round(p.rotation[1] % 360, 1),
+    )
+
+
+def _merge_shared_wall_to_axis(kept: Placement, duplicate: Placement) -> Placement:
+    """共享墙两侧墙段合并为同一中心轴线，避免相邻段一左一右产生 20uu 跳轴。"""
+    if kept.target_min is None or kept.target_size is None:
+        return kept
+    if duplicate.target_min is None or duplicate.target_size is None:
+        return kept
+    if kept.target_size[:2] != duplicate.target_size[:2]:
+        return kept
+
+    thin_axis = 0 if kept.target_size[0] <= kept.target_size[1] else 1
+    kept_center = kept.target_min[thin_axis] + kept.target_size[thin_axis] / 2
+    duplicate_center = duplicate.target_min[thin_axis] + duplicate.target_size[thin_axis] / 2
+    delta = (kept_center + duplicate_center) / 2 - kept_center
+    if abs(delta) < 1e-6:
+        return kept
+    return replace(
+        kept,
+        location=_offset_axis(kept.location, thin_axis, delta),
+        target_min=_offset_axis(kept.target_min, thin_axis, delta),
+        visual_min=(
+            _offset_axis(kept.visual_min, thin_axis, delta) if kept.visual_min is not None else None
+        ),
+    )
+
+
+def _offset_axis(
+    values: tuple[float, float, float], axis: int, delta: float
+) -> tuple[float, float, float]:
+    out = list(values)
+    out[axis] += delta
+    return (out[0], out[1], out[2])
 
 
 def _walls_coincide(
@@ -1711,6 +1895,8 @@ def _validate(spec: LayoutSpec, manifest: Manifest) -> None:
                     word = "门洞" if labels == {"门"} else "开口"
                     raise LayoutError(f"房间 {room.name} 的 {wall} 墙{word}重叠")
                 cursor = end
+    _validate_windows_are_exterior(spec)
+    _validate_internal_doors_are_paired(spec)
     _validate_stairs(spec, manifest)
     for i, a in enumerate(spec.rooms):
         for b in spec.rooms[i + 1 :]:
@@ -1745,6 +1931,70 @@ def _validate_stairs(spec: LayoutSpec, manifest: Manifest) -> None:
             raise LayoutError(f"房间 {room.name} 的楼梯 {asset.key} 穿墙")
         if spec.structure_mode == "modular" and _stair_target_room(spec, stair) is None:
             raise LayoutError(f"楼梯 {room.name} 的上端没有可衔接房间")
+
+
+def _validate_windows_are_exterior(spec: LayoutSpec) -> None:
+    """窗只允许开在外墙；共享墙开窗会造成一侧切洞、一侧留墙的双墙/错轴。"""
+    for room in spec.rooms:
+        for window in room.windows:
+            axis, coord, lo, hi = _door_world_segment(room, window)
+            for other in spec.rooms:
+                if other.name == room.name or other.level != room.level:
+                    continue
+                for wall in WALLS:
+                    other_axis, other_coord, other_lo, other_hi = _wall_world_segment(other, wall)
+                    if axis != other_axis or coord != other_coord:
+                        continue
+                    if min(hi, other_hi) - max(lo, other_lo) <= 0:
+                        continue
+                    raise LayoutError(
+                        f"房间 {room.name} 的窗只能开在外墙：{window.wall} 墙与房间 "
+                        f"{other.name} 相邻"
+                    )
+
+
+def _validate_internal_doors_are_paired(spec: LayoutSpec) -> None:
+    """内部共享墙门洞必须两侧同轴同宽，避免一侧切洞一侧留墙。"""
+    for room in spec.rooms:
+        for door in room.doors:
+            axis, coord, lo, hi = _door_world_segment(room, door)
+            adjacent_room: Room | None = None
+            paired = False
+            for other in spec.rooms:
+                if other.name == room.name or other.level != room.level:
+                    continue
+                for wall in WALLS:
+                    other_axis, other_coord, other_lo, other_hi = _wall_world_segment(other, wall)
+                    if axis != other_axis or coord != other_coord:
+                        continue
+                    if min(hi, other_hi) - max(lo, other_lo) <= 0:
+                        continue
+                    adjacent_room = other
+                    paired = any(
+                        _door_world_segment(other, other_door) == (axis, coord, lo, hi)
+                        for other_door in other.doors
+                    )
+                    if paired:
+                        break
+                if paired:
+                    break
+            if adjacent_room is None or paired:
+                continue
+            raise LayoutError(
+                f"房间 {room.name} 的内部共享墙门洞必须两侧对齐："
+                f"{door.wall} at={door.at} width={door.width} 与房间 {adjacent_room.name} 相邻"
+            )
+
+
+def _wall_world_segment(room: Room, wall: str) -> tuple[str, int, int, int]:
+    x, y, w, d = room.rect
+    if wall == "south":
+        return ("y", y, x, x + w)
+    if wall == "north":
+        return ("y", y + d, x, x + w)
+    if wall == "west":
+        return ("x", x, y, y + d)
+    return ("x", x + w, y, y + d)
 
 
 def _validate_props(spec: LayoutSpec, manifest: Manifest) -> None:
@@ -1849,7 +2099,13 @@ def _interiors_overlap(a: tuple[int, int, int, int], b: tuple[int, int, int, int
 
 
 def _compile_room(
-    room: Room, spec: LayoutSpec, floor_asset: AssetDef, wall_asset: AssetDef, g: float
+    room: Room,
+    spec: LayoutSpec,
+    floor_asset: AssetDef,
+    wall_asset: AssetDef,
+    g: float,
+    *,
+    center_walls: bool = False,
 ) -> list[Placement]:
     x, y, w, d = room.rect
     h, t = spec.wall_height, spec.wall_thickness
@@ -1875,16 +2131,20 @@ def _compile_room(
         for index, (s, e) in enumerate(_segments(length, openings_by_wall[wall], room.name, wall)):
             run = (e - s) * g
             if wall == "south":
-                tmin = (ox + (x + s) * g, oy + y * g, base_z)
+                wall_y = oy + y * g - t / 2 if center_walls else oy + y * g
+                tmin = (ox + (x + s) * g, wall_y, base_z)
                 tsize = (run, t, h)
             elif wall == "north":
-                tmin = (ox + (x + s) * g, oy + (y + d) * g - t, base_z)
+                wall_y = oy + (y + d) * g - t / 2 if center_walls else oy + (y + d) * g - t
+                tmin = (ox + (x + s) * g, wall_y, base_z)
                 tsize = (run, t, h)
             elif wall == "west":
-                tmin = (ox + x * g, oy + (y + s) * g, base_z)
+                wall_x = ox + x * g - t / 2 if center_walls else ox + x * g
+                tmin = (wall_x, oy + (y + s) * g, base_z)
                 tsize = (t, run, h)
             else:  # east
-                tmin = (ox + (x + w) * g - t, oy + (y + s) * g, base_z)
+                wall_x = ox + (x + w) * g - t / 2 if center_walls else ox + (x + w) * g - t
+                tmin = (wall_x, oy + (y + s) * g, base_z)
                 tsize = (t, run, h)
             out.append(
                 _fit_placement(

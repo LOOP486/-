@@ -16,6 +16,10 @@ import sys
 import zlib
 from dataclasses import dataclass, field
 
+# 命名前缀归类规则的单一事实源（见 src/ue5agent/whitebox/scanner.py）；
+# 经 `uv run` 时 ue5agent 已 editable 安装，可直接 import。
+from ue5agent.whitebox.scanner import classify_by_name as classify
+
 # ---------------------------------------------------------------------------
 # FBX binary 解析（够用版：拿 Vertices / UnitScaleFactor / Lcl Translation）
 # ---------------------------------------------------------------------------
@@ -195,56 +199,6 @@ JUNK_STEMS = {
     "vert_037",
     "pasted__pasted__pcube7",
 }
-
-
-# 类别词表（语义槽）：structure 类参与拼接，prop/cover 类作点缀。
-# (匹配规则按顺序，先到先得；ambiguous=True 的会被标 _needs_review)
-def classify(stem: str):
-    """返回 (category, tags, ambiguous, note)。"""
-    s = stem.lower()
-    rules = [
-        ("cornerwall", "corner", ["structure", "vertical"], False, ""),
-        ("doorframe", "wall_door", ["structure", "vertical", "opening"], False, "门洞框"),
-        ("wall", "wall", ["structure", "vertical"], False, ""),
-        ("w_gls_frm", "glass_wall", ["structure", "vertical", "window"], False, "玻璃幕墙"),
-        ("window", "window", ["structure", "vertical", "window"], False, ""),
-        ("flooroutdoor", "floor", ["structure", "ground"], False, "室外地板"),
-        ("floor", "floor", ["structure", "ground"], False, ""),
-        ("pillar", "pillar", ["structure", "vertical"], False, ""),
-        ("stair", "stair", ["structure", "vertical", "traversal"], False, ""),
-        ("ramp", "ramp", ["structure", "traversal"], False, ""),
-        ("gridbeamroof", "roof", ["structure", "ceiling"], False, ""),
-        ("tri_beamroof", "roof", ["structure", "ceiling"], False, ""),
-        ("roofoverhang", "roof", ["structure", "ceiling"], False, ""),
-        ("fence", "fence", ["cover", "barrier"], False, ""),
-        ("shippingcontainer", "cover", ["cover", "prop", "large"], False, "集装箱(大掩体)"),
-        ("smallwoodencrate", "cover", ["cover", "prop"], False, "木箱"),
-        ("woodplank", "prop", ["prop"], False, "木板"),
-        ("pipeline", "prop", ["prop"], False, "管道"),
-        ("table", "prop", ["prop"], False, "桌子"),
-        ("tallcabinet", "prop", ["prop"], False, "高柜"),
-        ("littlecabinet", "prop", ["prop"], False, "小柜"),
-        ("truck", "prop", ["prop", "large"], False, "卡车"),
-        (
-            "doorlock",
-            "prop",
-            ["prop", "attachment"],
-            True,
-            "门锁挂件，建议作 Doorframe 的附件而非独立件",
-        ),
-        (
-            "irongrilledoor",
-            "wall_door",
-            ["structure", "opening"],
-            True,
-            "铁栅门，确认是门扇还是门洞",
-        ),
-        ("collection", "prop", ["prop", "combined"], True, "组合件，内容未知需确认语义/footprint"),
-    ]
-    for prefix, cat, tags, amb, note in rules:
-        if s.startswith(prefix):
-            return cat, tags, amb, note
-    return "unknown", ["unknown"], True, "命名未匹配任何规则，请人工归类"
 
 
 def _round_uu(v):

@@ -1,0 +1,15 @@
+version: 1
+
+profiles:
+  realistic:
+    room:
+      # 真实室内通用下限；第一版仅作为 wb_validate warning，不作为硬失败。
+      min_area_m2: 6.0
+      min_dimension_m: 2.0
+      max_area_m2: 240.0
+    opening:
+      min_door_width_m: 0.9
+      min_window_width_m: 0.6
+    vertical:
+      min_clear_height_m: 2.4
+      max_room_height_m: 4.5

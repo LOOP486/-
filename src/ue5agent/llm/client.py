@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import asyncio
 import os
+import queue
+import threading
 from typing import Any
 
 import litellm
@@ -19,6 +21,7 @@ from ue5agent.config import ModelsConfig
 from ue5agent.llm.types import AssistantTurn, ToolCall, Usage
 
 RETRYABLE_ERRORS = (
+    asyncio.TimeoutError,
     litellm_errors.RateLimitError,
     litellm_errors.APIConnectionError,
     litellm_errors.InternalServerError,
@@ -83,12 +86,45 @@ class LiteLLMClient:
     ) -> AssistantTurn:
         for attempt in range(self._max_retries):
             try:
-                return await self._call_model(model_ref, messages, tools)
+                return await self._call_model_hard_timeout(model_ref, messages, tools)
             except RETRYABLE_ERRORS:
                 if attempt + 1 == self._max_retries:
                     raise
                 await self._sleep(self._backoff_base * 2**attempt)
         raise AssertionError("unreachable")
+
+    async def _call_model_hard_timeout(
+        self,
+        model_ref: str,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None,
+    ) -> AssistantTurn:
+        """隔离真实 LLM 调用：即使 provider SDK 阻塞事件循环，也能按时放弃。"""
+        results: queue.Queue[tuple[str, AssistantTurn | BaseException]] = queue.Queue(maxsize=1)
+
+        def _blocking_call() -> None:
+            try:
+                results.put(("ok", asyncio.run(self._call_model(model_ref, messages, tools))))
+            except BaseException as exc:  # 线程边界必须把异常带回主 loop
+                results.put(("error", exc))
+
+        thread = threading.Thread(target=_blocking_call, name=f"llm-{model_ref}", daemon=True)
+        thread.start()
+        deadline = asyncio.get_running_loop().time() + self._request_timeout
+        while True:
+            try:
+                status, value = results.get_nowait()
+            except queue.Empty:
+                remaining = deadline - asyncio.get_running_loop().time()
+                if remaining <= 0:
+                    raise TimeoutError from None
+                await asyncio.sleep(min(0.05, remaining))
+                continue
+            if status == "error":
+                assert isinstance(value, BaseException)
+                raise value
+            assert isinstance(value, AssistantTurn)
+            return value
 
     async def _call_model(
         self,

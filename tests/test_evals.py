@@ -138,10 +138,27 @@ class TestRunner:
 
 
 UE_TASKS = Path(__file__).parent.parent / "evals" / "tasks" / "ue.yaml"
+UE_SPACE_TASKS = Path(__file__).parent.parent / "evals" / "tasks" / "ue_space.yaml"
 
 
 class TestUeSuite:
     """E3/C3 UE 在线档：编排/指标/检查器离线单测（用替身 run_one，不碰真编辑器）。"""
+
+    def test_ue_eval_llm_client_is_fail_fast(self):
+        from ue5agent.cli import _build_ue_eval_llm
+        from ue5agent.config import ModelsConfig
+
+        config = ModelsConfig.model_validate(
+            {
+                "providers": {"deepseek": {"api_key_env": "DEEPSEEK_API_KEY"}},
+                "roles": {"planner": "deepseek/deepseek-v4-pro"},
+            }
+        )
+
+        client = _build_ue_eval_llm(config)
+
+        assert client._max_retries == 1
+        assert client._request_timeout == 120.0
 
     def test_ue_yaml_loads(self):
         from ue5agent.evals.ue_suite import load_ue_tasks
@@ -149,6 +166,53 @@ class TestUeSuite:
         tasks = load_ue_tasks(UE_TASKS)
         assert tasks and all(task.checks for task in tasks)
         assert any(t.name == "read_blueprint_and_explain" for t in tasks)
+
+    def test_ue_space_yaml_loads(self):
+        from ue5agent.evals.ue_suite import load_ue_tasks
+
+        tasks = load_ue_tasks(UE_SPACE_TASKS)
+        assert len(tasks) == 3
+        assert all("wb_build" in task.prompt for task in tasks)
+        assert all(
+            any(check.get("type") == "fact_equals" for check in task.checks) for task in tasks
+        )
+        expected_prefixes = {
+            "slab_branching_training_space": ("SPC1", "[5000,0,0]"),
+            "slab_loop_gallery_space": ("SPC2", "[10000,0,0]"),
+            "slab_single_level_stairwell_space": ("SPC3", "[15000,0,0]"),
+        }
+        for task in tasks:
+            prefix, origin = expected_prefixes[task.name]
+            prompt_compact = task.prompt.replace(" ", "")
+            assert f'prefix="{prefix}"' in task.prompt
+            assert f"origin={origin}" in prompt_compact
+            assert "不要生成 gameplay" in task.prompt
+            assert "props" in task.prompt
+            assert "cover" in task.prompt
+            assert "spawn_points" in task.prompt
+            assert "routes" in task.prompt
+            assert "不要调用 viewport_screenshot" in task.prompt
+            zero_metric_paths = {
+                check.get("path")
+                for check in task.checks
+                if check.get("type") == "fact_lte"
+                and check.get("kind") == "wb_validate"
+                and check.get("value") == 0
+            }
+            assert {
+                "metrics.prop_count",
+                "metrics.spawn_count",
+                "metrics.route_count",
+            } <= zero_metric_paths
+        loop_task = next(task for task in tasks if task.name == "slab_loop_gallery_space")
+        loop_path_lengths = [
+            condition.get("gte")
+            for check in loop_task.checks
+            if check.get("type") == "fact_any" and check.get("kind") == "path_test"
+            for condition in check.get("where", [])
+            if condition.get("path") == "path_length"
+        ]
+        assert loop_path_lengths and max(loop_path_lengths) <= 600
 
     def test_checks_cover_success_and_text(self):
         from ue5agent.evals.ue_suite import UeRunRecord, evaluate_ue_check
@@ -176,6 +240,168 @@ class TestUeSuite:
         assert evaluate_ue_check({"type": "max_iterations", "value": 12}, rec) is None
         assert evaluate_ue_check({"type": "max_iterations", "value": 5}, rec) is not None
         assert evaluate_ue_check({"type": "typo"}, rec) is not None
+
+    def test_trace_level_checks_use_tools_and_facts(self):
+        from ue5agent.evals.ue_suite import UeRunRecord, evaluate_ue_check
+
+        rec = UeRunRecord(
+            success=True,
+            tool_calls=[
+                "ue_whitebox__wb_build",
+                "ue_whitebox__wb_validate",
+                "ue_editor__navmesh_rebuild",
+                "ue_editor__path_test",
+            ],
+            facts=[
+                {
+                    "kind": "wb_validate",
+                    "ok": True,
+                    "metrics": {
+                        "structure_mode": "slab",
+                        "scale_warning_count": 0,
+                        "wall_fragmentation_score": 0.71,
+                    },
+                },
+                {"kind": "path_test", "ok": True, "reachable": True},
+            ],
+        )
+
+        assert evaluate_ue_check({"type": "tool_called", "tool": "wb_build"}, rec) is None
+        assert (
+            evaluate_ue_check(
+                {
+                    "type": "fact_equals",
+                    "kind": "wb_validate",
+                    "path": "metrics.structure_mode",
+                    "equals": "slab",
+                },
+                rec,
+            )
+            is None
+        )
+        assert (
+            evaluate_ue_check(
+                {
+                    "type": "fact_lte",
+                    "kind": "wb_validate",
+                    "path": "metrics.scale_warning_count",
+                    "value": 0,
+                },
+                rec,
+            )
+            is None
+        )
+        assert (
+            evaluate_ue_check(
+                {
+                    "type": "fact_lte",
+                    "kind": "wb_validate",
+                    "path": "metrics.wall_fragmentation_score",
+                    "value": 1.0,
+                },
+                rec,
+            )
+            is None
+        )
+        assert evaluate_ue_check({"type": "tool_called", "tool": "viewport_screenshot"}, rec)
+
+    def test_no_tool_errors_check_reads_trace_summary(self):
+        from ue5agent.evals.ue_suite import UeRunRecord, evaluate_ue_check
+
+        clean = UeRunRecord(success=True, tool_errors=[])
+        dirty = UeRunRecord(success=True, tool_errors=["ue_whitebox__wb_build: [error] bad"])
+
+        assert evaluate_ue_check({"type": "no_tool_errors"}, clean) is None
+        assert "工具错误" in evaluate_ue_check({"type": "no_tool_errors"}, dirty)
+
+    def test_no_unrecovered_tool_errors_allows_successful_recovery(self):
+        from ue5agent.evals.ue_suite import UeRunRecord, evaluate_ue_check
+
+        recovered = UeRunRecord(
+            success=True,
+            tool_errors=["ue_whitebox__wb_build: [error] 布局校验未通过"],
+        )
+        failed = UeRunRecord(
+            success=False,
+            tool_errors=["ue_whitebox__wb_build: [error] 布局校验未通过"],
+        )
+
+        check = {"type": "no_unrecovered_tool_errors"}
+
+        assert evaluate_ue_check(check, recovered) is None
+        assert "未恢复工具错误" in evaluate_ue_check(check, failed)
+
+    def test_fact_any_requires_one_fact_to_satisfy_all_conditions(self):
+        from ue5agent.evals.ue_suite import UeRunRecord, evaluate_ue_check
+
+        rec = UeRunRecord(
+            success=True,
+            facts=[
+                {"kind": "path_test", "reachable": False, "path_length": 2600.0},
+                {"kind": "path_test", "reachable": True, "path_length": 344.0},
+                {"kind": "path_test", "reachable": True, "path_length": 1800.0},
+            ],
+        )
+        check = {
+            "type": "fact_any",
+            "kind": "path_test",
+            "where": [
+                {"path": "reachable", "equals": True},
+                {"path": "path_length", "gte": 1500},
+            ],
+        }
+        assert evaluate_ue_check(check, rec) is None
+
+        too_short = UeRunRecord(
+            success=True,
+            facts=[
+                {"kind": "path_test", "reachable": False, "path_length": 2600.0},
+                {"kind": "path_test", "reachable": True, "path_length": 344.0},
+            ],
+        )
+        assert evaluate_ue_check(check, too_short)
+
+    def test_trace_summary_extracts_calls_errors_and_facts(self, tmp_path):
+        import json
+
+        from ue5agent.evals.ue_suite import summarize_trace
+
+        trace = tmp_path / "trace.jsonl"
+        events = [
+            {
+                "event": "tool_call",
+                "tool": "ue_whitebox__wb_build",
+                "result_preview": "ok",
+                "facts": {"kind": "wb_build", "ok": True},
+            },
+            {
+                "event": "tool_call",
+                "tool": "ue_whitebox__wb_validate",
+                "result_preview": "[error] 布局校验未通过",
+            },
+            {
+                "event": "tool_call",
+                "tool": "ue_whitebox__wb_build",
+                "result_preview": "Error executing tool wb_build: manifest 中没有资产",
+            },
+        ]
+        trace.write_text(
+            "\n".join(json.dumps(e, ensure_ascii=False) for e in events),
+            encoding="utf-8",
+        )
+
+        summary = summarize_trace(trace)
+
+        assert summary["tool_calls"] == [
+            "ue_whitebox__wb_build",
+            "ue_whitebox__wb_validate",
+            "ue_whitebox__wb_build",
+        ]
+        assert summary["facts"] == [{"kind": "wb_build", "ok": True}]
+        assert summary["tool_errors"] == [
+            "ue_whitebox__wb_validate: [error] 布局校验未通过",
+            "ue_whitebox__wb_build: Error executing tool wb_build: manifest 中没有资产",
+        ]
 
     async def test_run_ue_suite_aggregates_metrics(self):
         from ue5agent.evals.ue_suite import UeEvalTask, UeRunRecord, run_ue_suite

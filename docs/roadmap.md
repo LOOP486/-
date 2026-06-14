@@ -62,6 +62,21 @@
   在默认模式下直接报错，旧 ArchKit 模块化与多层 room 行为仅在显式 `structure_mode="modular"`
   保留。`wb_validate` 增加 `structure_mode` 与 `wall_fragmentation_score` 指标，视觉审查改为评价
   blockout 空间组织，不因缺少门框/窗框扣分。
+- [x] B4. 升级版资产扫描（①Registry 扫描 + ②几何先验）：`wb_asset_scan` 以 UE 导入后 bounds 为
+  真值重建 manifest v2（size/pivot/footprint/local_bounds 直接 calibrated），消除重导后手工回填
+  path/尺寸漂移；归类为名称前缀 + 几何先验混合，把 `unknown` 收敛到大类并标 needs_review；
+  默认 apply=False 预览 diff、保留手调 roles/desc；纯逻辑在 `whitebox/scanner.py` 单测，UE 侧
+  新增只读 `scan_assets`（AssetRegistry 枚举 + bounds，需重编插件）。
+  剩余 ③VLM 缩略图识别（专攻命名不规范/歧义件语义）待接现有 vision 链路。
+- [x] B5. 关卡尺度 metrics v0：新增 `scale_profile="realistic"` 与
+  `config/whitebox/level_metrics.yaml`，先按真实室内空间控制尺度；视觉/LLM 负责理解平面图的空间
+  结构，米制尺寸由 metrics 表收敛。`wb_validate` 输出 `scale_warnings`、最小房间面积/尺寸、
+  最小门洞宽、墙高等诊断；第一版只 warning，不作为硬失败。
+- [x] B6. 空间黑盒 agent eval：新增 `evals/tasks/ue_space.yaml`，用默认 slab、真实尺度、固定
+  `SPC1/SPC2/SPC3` 前缀与并排 origin 评测 agent 自主空间布局能力；评测只旁观 trace，不手写
+  layout、不手动补救 UE 场景，要求 `wb_build -> wb_validate -> navmesh_rebuild -> path_test`。
+  本轮暴露并修复共享墙重叠/轴线不齐、内部共享墙门窗误用、模型超时快速失败与可恢复工具错误
+  判定问题。后续需把 `path_test` 的指定起终点语义收紧，并把楼梯间阻断主通路提升为硬约束。
 - [ ] C. 平面图输入：从手绘/平面图/草图识别房间、门窗与连通关系，生成布局 DSL；透视图仅作风格/
   语义参考。（剩余的"图→布局 DSL 结构化识别"尚未做。）
 

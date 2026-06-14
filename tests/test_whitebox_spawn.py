@@ -183,6 +183,43 @@ def test_spawn_passes_room_folder_to_spawn_actor(monkeypatch):
     assert spawn["folder"] == "WB/Rooms/Room"
 
 
+def test_spawn_static_mesh_uses_prototype_grid_material(monkeypatch):
+    """白盒 StaticMeshActor 默认套 MI_PrototypeGrid_Gray，保证 slab cube 也是统一灰网格材质。"""
+    import ue5agent.whitebox.spawner as sp
+    from ue5agent.whitebox.compiler import Placement
+
+    calls: list[tuple[str, dict]] = []
+
+    def fake_send(command, params=None, **_kwargs):
+        params = params or {}
+        calls.append((command, params))
+        return {"status": "success", "result": {"name": params.get("name")}}
+
+    monkeypatch.setattr(sp, "send_command", fake_send)
+    p = Placement(
+        name="Room_floor",
+        asset_path="/Engine/BasicShapes/Cube.Cube",
+        location=(0, 0, 0),
+        scale=(1, 1, 1),
+        actor_type="StaticMeshActor",
+    )
+
+    sp.spawn_layout([p], prefix="WB")
+
+    spawn = next(params for command, params in calls if command == "spawn_actor")
+    assert spawn["material"] == "/Game/LevelPrototyping/Materials/MI_PrototypeGrid_Gray"
+
+
+def test_wb_build_tool_doc_allows_eval_prefix_and_discourages_gameplay_for_space_eval():
+    """工具说明要支持并排评测前缀，并约束纯空间测试不要默认生成玩法层。"""
+    doc = wb_server.wb_build.__doc__ or ""
+    assert "评测/并排比较" in doc
+    assert "纯空间结构" in doc
+    assert "不要提供 gameplay" in doc
+    assert '"key": "stair_2_001"' in doc
+    assert "stair_2_001 footprint=3x6" in doc
+
+
 def test_spawn_names_differ_across_batches(monkeypatch):
     """两次 build 的 spawn 名必须不同批次标记，确保跨批不撞名。"""
     import time

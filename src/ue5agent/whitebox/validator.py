@@ -20,6 +20,7 @@ from itertools import pairwise
 from typing import Any
 
 from ue5agent.whitebox.compiler import LayoutSpec, Placement, compile_layout
+from ue5agent.whitebox.level_metrics import LevelMetrics, audit_layout_scale
 from ue5agent.whitebox.manifest import Manifest
 
 _LOCATION_TOL = 1.0
@@ -79,6 +80,7 @@ def validate_layout(
     actors: list[ActorView],
     *,
     prefix: str = "WB",
+    level_metrics: LevelMetrics | None = None,
 ) -> ValidationReport:
     """对照期望放置与实测构件，返回 violations + metrics。"""
     expected = compile_layout(spec, manifest)
@@ -90,7 +92,7 @@ def validate_layout(
     _check_overlaps(expected, actors, prefix, report)
     _check_route_blockers(expected, actors, prefix, report)
     _check_foreign_residue(expected, actors, prefix, report)
-    _fill_metrics(spec, expected, actors, prefix, report)
+    _fill_metrics(spec, expected, actors, prefix, manifest.grid, report, level_metrics)
     report.metrics["matched_count"] = matched
     return report
 
@@ -470,7 +472,9 @@ def _fill_metrics(
     expected: list[Placement],
     actors: list[ActorView],
     prefix: str,
+    grid: float,
     report: ValidationReport,
+    level_metrics: LevelMetrics | None,
 ) -> None:
     wb_actors = [a for a in actors if strip_batch_name(a.name, prefix)]
     floors = [p for p in expected if _is_visual_floor(p)]
@@ -512,6 +516,7 @@ def _fill_metrics(
             "bbox_center_xy": (round((min(xs) + max(xs)) / 2), round((min(ys) + max(ys)) / 2)),
         }
     )
+    report.metrics.update(audit_layout_scale(spec, grid=grid, metrics=level_metrics).metrics)
 
 
 def _is_visual_floor(placement: Placement) -> bool:

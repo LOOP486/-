@@ -406,50 +406,65 @@ class TaskRunner:
                 if precondition_hint:
                     prompt += f"\n[前置条件未满足] {precondition_hint}——请先恢复环境再做本步骤。"
                 loop = self._build_step_loop(step, tee)
+                execution_verdict: VerifyResult | None = None
                 try:
                     result = await loop.run(prompt, role="coder", history=history)
                     summaries[step.id] = result.final_text
                 except BudgetExhausted as exc:
                     summaries[step.id] = f"[步内预算耗尽] {exc}"
+                    execution_verdict = VerifyResult("fail", f"步内预算耗尽：{exc}")
                 except Exception as exc:  # LLM/工具底层故障：记为步骤失败，不炸整个会话
-                    summaries[step.id] = f"[步骤异常] {type(exc).__name__}: {exc}"
+                    reason = f"步骤执行异常：{type(exc).__name__}: {exc}"
+                    summaries[step.id] = f"[{reason}]"
+                    execution_verdict = VerifyResult("fail", reason)
                 self._writer.event("phase_exit", phase="execute", step_id=step.id)
 
                 # A4：对本步截图做视觉审查，结果并入 tee.facts（驱动下方确定性验收）
-                vision_result = await self._run_vision_review(step, goal, tee)
+                vision_result = None
+                if execution_verdict is None:
+                    vision_result = await self._run_vision_review(step, goal, tee)
 
                 # 验收优先级：硬证据门禁 → 步骤契约 success_checks（B1）
                 # → 通用确定性规则（A3）→ LLM judge
-                mode = "judge"
-                det = evaluate_required_evidence(step.required_evidence, tee.facts)
-                if det is not None:
-                    mode = "required_evidence"
-                contract = (
-                    evaluate_success_checks(step.success_checks, tee.facts)
-                    if step.success_checks
-                    else None
-                )
-                if det is None and contract is not None:
-                    det = contract
-                    mode = "contract"
-                if det is None:
-                    det = deterministic_verdict(tee.facts)
-                    if det is not None:
-                        mode = "deterministic"
-                if det is not None:
-                    verdict = det
+                if execution_verdict is not None:
+                    mode = "execution"
+                    verdict = execution_verdict
                 else:
-                    try:
-                        verdict = await verify_step(
-                            self._llm,
-                            goal=goal,
-                            intent=step.intent,
-                            acceptance=step.acceptance,
-                            evidence=tee.evidence(),
-                            summary=summaries.get(step.id, ""),
-                        )
-                    except Exception as exc:  # judge 不可用时按失败处理，走重试/放弃
-                        verdict = VerifyResult("fail", f"验收过程异常：{type(exc).__name__}: {exc}")
+                    mode = "judge"
+                    det = evaluate_required_evidence(step.required_evidence, tee.facts)
+                    if det is not None:
+                        mode = "required_evidence"
+                    contract = (
+                        evaluate_success_checks(step.success_checks, tee.facts)
+                        if step.success_checks
+                        else None
+                    )
+                    decisive = deterministic_verdict(tee.facts)
+                    if det is None and decisive is not None and decisive.verdict == "fail":
+                        det = decisive
+                        mode = "deterministic"
+                    if det is None and contract is not None:
+                        det = contract
+                        mode = "contract"
+                    if det is None and decisive is not None:
+                        det = decisive
+                        mode = "deterministic"
+                    if det is not None:
+                        verdict = det
+                    else:
+                        try:
+                            verdict = await verify_step(
+                                self._llm,
+                                goal=goal,
+                                intent=step.intent,
+                                acceptance=step.acceptance,
+                                evidence=tee.evidence(),
+                                summary=summaries.get(step.id, ""),
+                            )
+                        except Exception as exc:  # judge 不可用时按失败处理，走重试/放弃
+                            verdict = VerifyResult(
+                                "fail", f"验收过程异常：{type(exc).__name__}: {exc}"
+                            )
                 self._writer.event(
                     "verify_result",
                     step_id=step.id,
@@ -459,6 +474,13 @@ class TaskRunner:
                 )
                 if verdict.verdict == "pass":
                     step.status = "done"
+                    break
+                if mode == "execution":
+                    step.status = "failed"
+                    aborted = True
+                    self._writer.event(
+                        "recover_action", step_id=step.id, action="abort", reason=verdict.reason
+                    )
                     break
                 # B3 恢复策略表：按主导错误类别差异化处理（默认=正常重试）
                 category = tee.dominant_error_category()

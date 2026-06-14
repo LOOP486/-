@@ -73,11 +73,18 @@ async def make_plan(
     ]
     for step in steps:
         _reconcile_contract(step)
+    _reconcile_split_whitebox_build_steps(steps)
+    _reconcile_combined_whitebox_build_validation_tools(steps)
+    _reconcile_split_whitebox_repair_tools(steps)
+    for step in steps:
+        _reconcile_contract(step)
+    _strip_unrequested_whitebox_visual_gate(goal, steps)
     _reconcile_whitebox_visual_gate(goal, steps)
     return task_class, steps
 
 
 _CHECK_TOOL_HINTS = {
+    "wb_build": "wb_build",
     "wb_validate": "wb_validate",
     "path_test": "path_test",
     "compile": "ubt_compile",
@@ -98,6 +105,79 @@ def _reconcile_contract(step: PlanStep) -> None:
             tool == hint or tool.endswith(f"__{hint}") for tool in step.allowed_tools
         ):
             step.allowed_tools.append(hint)
+
+
+def _reconcile_split_whitebox_build_steps(steps: list[PlanStep]) -> None:
+    """白盒 build 与 validate 拆步时，build 步用 wb_build fact 收口，避免卡在 judge。"""
+    for index, step in enumerate(steps):
+        if step.success_checks or not _looks_like_whitebox_build(step.intent):
+            continue
+        if not _step_allows_tool(step, "wb_build"):
+            continue
+        if not any(_looks_like_whitebox_validation(later) for later in steps[index + 1 :]):
+            continue
+        _ensure_allowed_tool(step, "wb_clear")
+        _ensure_allowed_tool(step, "wb_validate")
+        step.success_checks.append({"kind": "wb_build", "field": "ok", "equals": True})
+
+
+def _reconcile_split_whitebox_repair_tools(steps: list[PlanStep]) -> None:
+    """白盒导航验证拆步时，验证步保留重建工具，允许 agent 自我修复布局。"""
+    seen_whitebox_build = False
+    for step in steps:
+        if _looks_like_whitebox_build(step.intent) and _step_allows_tool(step, "wb_build"):
+            seen_whitebox_build = True
+            continue
+        if not seen_whitebox_build or not _looks_like_whitebox_validation(step):
+            continue
+        for tool in ("wb_clear", "wb_build", "wb_validate", "navmesh_rebuild", "path_test"):
+            _ensure_allowed_tool(step, tool)
+
+
+def _reconcile_combined_whitebox_build_validation_tools(steps: list[PlanStep]) -> None:
+    """同一步 build+validate 时保留清理工具，允许失败后整批重搭。"""
+    for step in steps:
+        if not _looks_like_whitebox_build(step.intent) or not _looks_like_whitebox_validation(step):
+            continue
+        if not _step_allows_tool(step, "wb_build"):
+            continue
+        for tool in ("wb_clear", "wb_build", "wb_validate"):
+            _ensure_allowed_tool(step, tool)
+
+
+def _step_allows_tool(step: PlanStep, tool_name: str) -> bool:
+    if not step.allowed_tools:
+        return True
+    return any(tool == tool_name or tool.endswith(f"__{tool_name}") for tool in step.allowed_tools)
+
+
+def _ensure_allowed_tool(step: PlanStep, tool_name: str) -> None:
+    if not step.allowed_tools:
+        return
+    if not _step_allows_tool(step, tool_name):
+        step.allowed_tools.append(tool_name)
+
+
+def _looks_like_whitebox_validation(step: PlanStep) -> bool:
+    text = " ".join(
+        [
+            step.intent,
+            step.acceptance,
+            *(str(check.get("kind", "")) for check in step.success_checks),
+        ]
+    ).lower()
+    return "wb_validate" in text or "path_test" in text or "navmesh" in text
+
+
+def _looks_like_whitebox_nav_validation(step: PlanStep) -> bool:
+    text = " ".join(
+        [
+            step.intent,
+            step.acceptance,
+            *(str(check.get("kind", "")) for check in step.success_checks),
+        ]
+    ).lower()
+    return any(token in text for token in ("path_test", "navmesh", "导航", "可达"))
 
 
 def _reconcile_whitebox_visual_gate(goal: str, steps: list[PlanStep]) -> None:
@@ -124,13 +204,56 @@ def _reconcile_whitebox_visual_gate(goal: str, steps: list[PlanStep]) -> None:
 
 
 def _needs_whitebox_visual_gate(goal: str, steps: list[PlanStep]) -> bool:
-    text = " ".join([goal, *(step.intent for step in steps)]).lower()
+    text = goal.lower()
     wants_whitebox = any(token in text for token in ("白盒", "whitebox", "wb_build"))
-    wants_visual = any(
+    wants_visual = _goal_requests_visual_gate(goal)
+    return wants_whitebox and wants_visual
+
+
+def _strip_unrequested_whitebox_visual_gate(goal: str, steps: list[PlanStep]) -> None:
+    """用户未明确要求截图/视觉时，撤掉 planner 幻觉出的视觉硬门禁。"""
+    if _goal_requests_visual_gate(goal):
+        return
+    visual_evidence = {"screenshot", "vision_review"}
+    visual_tools = {"viewport_screenshot"}
+    for step in steps:
+        step.required_evidence = [
+            evidence for evidence in step.required_evidence if evidence not in visual_evidence
+        ]
+        step.allowed_tools = [
+            tool
+            for tool in step.allowed_tools
+            if not any(tool == name or tool.endswith(f"__{name}") for name in visual_tools)
+        ]
+
+
+def _goal_requests_visual_gate(goal: str) -> bool:
+    text = goal.lower()
+    negative_tokens = (
+        "不做截图",
+        "不要截图",
+        "无需截图",
+        "不要调用截图",
+        "不要调用 viewport_screenshot",
+        "不要使用 viewport_screenshot",
+        "不调用 viewport_screenshot",
+        "禁用 viewport_screenshot",
+        "不做视觉",
+        "不要视觉",
+        "无需视觉",
+        "no screenshot",
+        "do not call viewport_screenshot",
+        "do not use viewport_screenshot",
+        "no vision",
+        "without screenshot",
+        "without vision",
+    )
+    if any(token in text for token in negative_tokens):
+        return False
+    return any(
         token in text
         for token in ("截图", "视觉", "vision_review", "viewport_screenshot", "screenshot")
     )
-    return wants_whitebox and wants_visual
 
 
 def _looks_like_whitebox_build(intent: str) -> bool:

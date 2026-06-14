@@ -1,5 +1,8 @@
 """LiteLLMClient：重试退避、降级链、错误分类。"""
 
+import asyncio
+import time
+
 import pytest
 from litellm import exceptions as litellm_errors
 
@@ -96,6 +99,42 @@ async def test_non_transient_error_propagates():
     config = make_config(fallbacks={"planner": ["deepseek/deepseek-chat"]})
     client = ScriptedClient(config, [bad_request])
     with pytest.raises(litellm_errors.BadRequestError):
+        await client.acomplete("planner", [])
+    assert client.calls == ["anthropic/claude-x"]
+
+
+async def test_model_call_has_hard_timeout():
+    class HangingClient(LiteLLMClient):
+        def __init__(self):
+            super().__init__(make_config(), max_retries=1, request_timeout_seconds=0.01)
+            self.calls: list[str] = []
+
+        async def _call_model(self, model_ref, messages, tools):
+            self.calls.append(model_ref)
+            await asyncio.sleep(0.05)
+            return OK
+
+    client = HangingClient()
+
+    with pytest.raises(LLMUnavailable, match="TimeoutError"):
+        await client.acomplete("planner", [])
+    assert client.calls == ["anthropic/claude-x"]
+
+
+async def test_blocking_model_call_does_not_freeze_event_loop():
+    class BlockingClient(LiteLLMClient):
+        def __init__(self):
+            super().__init__(make_config(), max_retries=1, request_timeout_seconds=0.01)
+            self.calls: list[str] = []
+
+        async def _call_model(self, model_ref, messages, tools):
+            self.calls.append(model_ref)
+            time.sleep(0.05)
+            return OK
+
+    client = BlockingClient()
+
+    with pytest.raises(LLMUnavailable, match="TimeoutError"):
         await client.acomplete("planner", [])
     assert client.calls == ["anthropic/claude-x"]
 

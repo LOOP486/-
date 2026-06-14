@@ -136,6 +136,23 @@ def load_models_config(path: Path) -> ModelsConfig:
     return ModelsConfig.model_validate(_load_yaml(path))
 
 
+def with_role_model(config: ModelsConfig, role: str, model_ref: str) -> ModelsConfig:
+    """返回角色模型被临时覆写的新配置；用于评测固定模型，不改本地 models.yaml。"""
+    roles = dict(config.roles)
+    roles[role] = model_ref
+    return ModelsConfig.model_validate(
+        {"providers": config.providers, "roles": roles, "fallbacks": config.fallbacks}
+    )
+
+
+def with_model_for_roles(config: ModelsConfig, roles: list[str], model_ref: str) -> ModelsConfig:
+    """返回多个角色被同一模型临时覆写的新配置；用于黑盒评测固定文本模型。"""
+    updated = config
+    for role in roles:
+        updated = with_role_model(updated, role, model_ref)
+    return updated
+
+
 def load_agent_settings(path: Path) -> AgentSettings:
     return AgentSettings.model_validate(_load_yaml(path))
 

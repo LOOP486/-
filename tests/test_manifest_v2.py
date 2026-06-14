@@ -9,7 +9,8 @@ from ue5agent.whitebox.manifest import AssetDef, Manifest, load_manifest
 
 _CONFIG = Path(__file__).parent.parent / "config" / "whitebox"
 V1 = load_manifest(_CONFIG / "levelprototyping.yaml")  # 老清单（cube 兜底，无 roles）
-KIT = load_manifest(_CONFIG / "kit.yaml")  # 由 fbx_probe 生成的 v2 清单
+# 编译器/loader 单测用冻结的 ArchKit 样例清单，而非随用户重扫而变的 config/whitebox/kit.yaml。
+KIT = load_manifest(Path(__file__).parent / "data" / "kit_archkit_sample.yaml")
 
 
 def by_name(placements, name):

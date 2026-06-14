@@ -9,6 +9,8 @@ from ue5agent.config import (
     build_runtime_env,
     load_agent_settings,
     load_models_config,
+    with_model_for_roles,
+    with_role_model,
 )
 
 VALID_MODELS = """\
@@ -80,6 +82,48 @@ roles:
     assert config.has_vision is True
     # 默认无 params
     assert load_models_config(_write(tmp_path, VALID_MODELS)).providers["deepseek"].params == {}
+
+
+def test_with_role_model_overrides_without_mutating_original(tmp_path):
+    config = load_models_config(_write(tmp_path, VALID_MODELS))
+
+    overridden = with_role_model(config, "planner", "deepseek/deepseek-v4-pro")
+
+    assert overridden.roles["planner"] == "deepseek/deepseek-v4-pro"
+    assert config.roles["planner"] == "deepseek/deepseek-chat"
+
+
+def test_with_role_model_rejects_unknown_provider(tmp_path):
+    config = load_models_config(_write(tmp_path, VALID_MODELS))
+
+    with pytest.raises(ValueError, match="openai"):
+        with_role_model(config, "planner", "openai/gpt-4o")
+
+
+def test_with_model_for_roles_overrides_multiple_roles(tmp_path):
+    path = tmp_path / "models.yaml"
+    path.write_text(
+        """\
+providers:
+  deepseek: {api_key_env: DEEPSEEK_API_KEY}
+roles:
+  planner: deepseek/deepseek-chat
+  coder: deepseek/deepseek-chat
+  judge: deepseek/deepseek-chat
+""",
+        encoding="utf-8",
+    )
+    config = load_models_config(path)
+
+    overridden = with_model_for_roles(
+        config, ["planner", "coder", "judge"], "deepseek/deepseek-v4-pro"
+    )
+
+    assert overridden.roles == {
+        "planner": "deepseek/deepseek-v4-pro",
+        "coder": "deepseek/deepseek-v4-pro",
+        "judge": "deepseek/deepseek-v4-pro",
+    }
 
 
 def _write(tmp_path, text):

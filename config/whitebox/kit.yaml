@@ -1,759 +1,871 @@
-# 白盒资产清单 v2（由 scripts/fbx_probe.py 从 FBX 离线生成，请人工复核）
-# 来源：E:/BaiduSyncdisk/LEVEL DESIGN/assets/Architecture Model/UE_Exports/fbx
-# 单位：size 为缩放=1 的包围盒(uu)，由 FBX 米制 ×100 得到（UE 导入 1m→100uu）。
-# pivot：归一化原点位置(未 clamp)，[0.5,0.5,0]=底面中心；编译器据此补偿落地。
-# 待办：① [已完成] path 已回填为真实导入路径 /Game/LevelPrototyping/Meshes/ArchKit/<类别>/<名字>
-#         （2026-06-13 经 import_fbx 把 80 件 FBX 导入 agent_test，默认材质）；
-#       ② 审带 needs_review 的件；③ 确认下方 roles 角色映射。
-#       当前 v1 loader 会忽略 v2 扩展字段，不影响加载。
+# 白盒资产清单 v2（由 wb_asset_scan 从 UE 导入后 StaticMesh bounds 扫描生成）
+# 几何为真值(calibrated)：size/pivot/local_bounds 来自 UE，path 即真实 /Game 路径。
+# 复核要点：审带 needs_review 的件（几何先验归类/命名歧义/pivot 越界），并确认 roles。
 version: 2
 grid: 100
 
-# 结构角色 → 资产 key 的默认映射（best-guess，请确认/替换）
+# 结构角色 → 资产 key 的映射（重扫会保留你手调过的映射）
 roles:
-  floor: floor_n
-  wall: wall1_4
   wall_door: doorframe1_2_1
+  floor: flooroutdoor
+# 注：墙体与基本空间由白盒 slab 模式用引擎 cube 拉伸生成，故不映射 wall 角色
+# （原 wall1_1/wall1_4 模块已在 UE 删除）。
 
 assets:
-  # ---- floor (5) ----
-  floor2_2:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/floor/Floor2_2
-    source_fbx: objects/Floor2_2.fbx
-    size: [200, 200, 100]
-    category: floor
-    pivot: [0.0, 0.0, 0.0]
-    local_bounds_min: [0, 0, 0]
-    local_bounds_max: [200, 200, 100]
-    calibrated: true
-    footprint: [2, 2]
-    tags: [structure, ground]
-  floor4_4:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/floor/Floor4_4
-    source_fbx: objects/Floor4_4.fbx
-    size: [400, 400, 100]
-    category: floor
-    pivot: [0.0, 0.0, 0.0]
-    local_bounds_min: [0, 0, 0]
-    local_bounds_max: [400, 400, 100]
-    calibrated: true
-    footprint: [4, 4]
-    tags: [structure, ground]
-  floor_n:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/floor/Floor_n
-    source_fbx: objects/Floor_n.fbx
-    size: [100, 100, 20]
-    category: floor
-    pivot: [0.0, 0.0, 0.0]
-    local_bounds_min: [0, 0, 0]
-    local_bounds_max: [100, 100, 20]
-    calibrated: true
-    footprint: [1, 1]
-    tags: [structure, ground]
+  # ---- floor (1) ----
   flooroutdoor:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/floor/Flooroutdoor
-    source_fbx: objects/Flooroutdoor.fbx
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Flooroutdoor
     size: [200, 200, 45]
     category: floor
-    pivot: [0.5, 0.5, 0.333]
-    footprint: [2, 2]
-    tags: [structure, ground]
-    desc: "室外地板"
-  flooroutdoor_001:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/floor/Flooroutdoor_001
-    source_fbx: objects/Flooroutdoor_001.fbx
-    size: [200, 200, 45]
-    category: floor
-    pivot: [0.5, 0.5, 0.5]
-    footprint: [2, 2]
-    tags: [structure, ground]
-    desc: "室外地板"
-
-  # ---- wall (10) ----
-  wall1_1:   # _needs_review: 原点在几何外(pivot 越界)，落地前建议归零或人工核对
-    path: /Game/LevelPrototyping/Meshes/ArchKit/wall/Wall1_1
-    source_fbx: objects/Wall1_1.fbx
-    size: [100, 20, 100]
-    category: wall
-    pivot: [0.0, 1.0, 2.0]
-    footprint: [1, 1]
-    tags: [structure, vertical]
-    needs_review: true
-    review: "原点在几何外(pivot 越界)，落地前建议归零或人工核对"
-  wall1_2:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/wall/Wall1_2
-    source_fbx: objects/Wall1_2.fbx
-    size: [100, 20, 200]
-    category: wall
-    pivot: [0.0, 1.0, 1.0]
-    footprint: [1, 1]
-    tags: [structure, vertical]
-  wall1_4:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/wall/Wall1_4
-    source_fbx: objects/Wall1_4.fbx
-    size: [100, 20, 400]
-    category: wall
-    pivot: [0.0, 0.0, 0.0]
-    local_bounds_min: [0, 0, 0]
-    local_bounds_max: [100, 20, 400]
+    pivot: [0.5, 0.713, 0.49]
+    local_bounds_min: [-100, -143, -22]
+    local_bounds_max: [100, 57, 23]
     calibrated: true
-    footprint: [1, 1]
-    tags: [structure, vertical]
-  wall2_1:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/wall/Wall2_1
-    source_fbx: objects/Wall2_1.fbx
-    size: [200, 20, 100]
-    category: wall
-    pivot: [0.0, 1.0, 0.0]
-    footprint: [2, 1]
-    tags: [structure, vertical]
-  wall2_2:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/wall/Wall2_2
-    source_fbx: objects/Wall2_2.fbx
-    size: [200, 20, 200]
-    category: wall
-    pivot: [0.0, 1.0, 0.0]
-    footprint: [2, 1]
-    tags: [structure, vertical]
-  wall2_4:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/wall/Wall2_4
-    source_fbx: objects/Wall2_4.fbx
-    size: [200, 20, 400]
-    category: wall
-    pivot: [0.0, 1.0, 0.0]
-    footprint: [2, 1]
-    tags: [structure, vertical]
-  wall4_1:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/wall/Wall4_1
-    source_fbx: objects/Wall4_1.fbx
-    size: [400, 20, 100]
-    category: wall
-    pivot: [0.0, 1.0, 0.0]
-    footprint: [4, 1]
-    tags: [structure, vertical]
-  wall4_2:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/wall/Wall4_2
-    source_fbx: objects/Wall4_2.fbx
-    size: [400, 20, 200]
-    category: wall
-    pivot: [0.0, 1.0, 0.0]
-    footprint: [4, 1]
-    tags: [structure, vertical]
-  wall4_4:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/wall/Wall4_4
-    source_fbx: objects/Wall4_4.fbx
-    size: [400, 20, 400]
-    category: wall
-    pivot: [0.0, 1.0, 0.0]
-    footprint: [4, 1]
-    tags: [structure, vertical]
-  wall8_4:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/wall/Wall8_4
-    source_fbx: objects/Wall8_4.fbx
-    size: [800, 20, 400]
-    category: wall
-    pivot: [0.0, 1.0, 0.0]
-    footprint: [8, 1]
-    tags: [structure, vertical]
+    footprint: [2, 2]
+    tags: [structure, ground]
+    desc: "室外地板"
 
-  # ---- corner (2) ----
-  cornerwall1_3:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/corner/CornerWall1_3
-    source_fbx: objects/CornerWall1_3.fbx
-    size: [100, 100, 300]
-    category: corner
-    pivot: [0.4, 0.6, 0.5]
-    footprint: [1, 1]
-    tags: [structure, vertical]
-  cornerwall1_3_001:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/corner/CornerWall1_3_001
-    source_fbx: objects/CornerWall1_3_001.fbx
-    size: [80, 80, 300]
-    category: corner
-    pivot: [0.583, 0.417, 0.5]
-    footprint: [1, 1]
-    tags: [structure, vertical]
-
-  # ---- wall_door (6) ----
+  # ---- wall_door (8) ----
+  cube_405:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Cube_405
+    size: [460, 70, 243]
+    category: wall_door
+    pivot: [0.446, 0.6, 0.388]
+    local_bounds_min: [-205, -42, -94]
+    local_bounds_max: [255, 28, 149]
+    calibrated: true
+    footprint: [5, 1]
+    tags: [structure]
+    desc: "门洞墙体"
+  cube_405_001:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Cube_405_001
+    size: [460, 70, 243]
+    category: wall_door
+    pivot: [0.446, 0.6, 0.388]
+    local_bounds_min: [-205, -42, -94]
+    local_bounds_max: [255, 28, 149]
+    calibrated: true
+    footprint: [5, 1]
+    tags: [structure]
+    desc: "门洞墙/带框开口墙"
   doorframe1_2_1:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/wall_door/Doorframe1_2_1
-    source_fbx: objects/Doorframe1_2_1.fbx
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Doorframe1_2_1
     size: [210, 56, 400]
     category: wall_door
-    pivot: [0.143, 0.5, 0.025]
-    snap_box: [[0.0, 0.3214285714, 0.0], [1.0, 0.6785714286, 1.0]]
+    pivot: [0.5, 0.5, 0.589]
+    local_bounds_min: [-105, -28, -236]
+    local_bounds_max: [105, 28, 164]
+    calibrated: true
     footprint: [2, 1]
     tags: [structure, vertical, opening]
     desc: "门洞框"
   doorframe2_2_4:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/wall_door/Doorframe2_2_4
-    source_fbx: objects/Doorframe2_2_4.fbx
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Doorframe2_2_4
     size: [280, 56, 400]
     category: wall_door
-    pivot: [0.107, 0.5, 0.025]
-    snap_box: [[0.0, 0.3214285714, 0.0], [1.0, 0.6785714286, 1.0]]
+    pivot: [0.5, 0.5, 0.589]
+    local_bounds_min: [-140, -28, -236]
+    local_bounds_max: [140, 28, 164]
+    calibrated: true
     footprint: [3, 1]
     tags: [structure, vertical, opening]
     desc: "门洞框"
   doorframe3_2_4:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/wall_door/Doorframe3_2_4
-    source_fbx: objects/Doorframe3_2_4.fbx
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Doorframe3_2_4
     size: [380, 56, 400]
     category: wall_door
-    pivot: [0.079, 0.5, 0.025]
-    snap_box: [[0.0, 0.3214285714, 0.0], [1.0, 0.6785714286, 1.0]]
+    pivot: [0.5, 0.5, 0.589]
+    local_bounds_min: [-190, -28, -236]
+    local_bounds_max: [190, 28, 164]
+    calibrated: true
     footprint: [4, 1]
     tags: [structure, vertical, opening]
     desc: "门洞框"
   doorframe4_3:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/wall_door/Doorframe4_3
-    source_fbx: objects/Doorframe4_3.fbx
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Doorframe4_3
     size: [480, 66, 400]
     category: wall_door
-    pivot: [0.062, 0.5, 0.025]
-    snap_box: [[0.0, 0.3484848485, 0.0], [1.0, 0.6515151515, 1.0]]
+    pivot: [0.5, 0.5, 0.568]
+    local_bounds_min: [-240, -33, -227]
+    local_bounds_max: [240, 33, 173]
+    calibrated: true
     footprint: [5, 1]
     tags: [structure, vertical, opening]
     desc: "门洞框"
   doorframe5_2_4:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/wall_door/Doorframe5_2_4
-    source_fbx: objects/Doorframe5_2_4.fbx
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Doorframe5_2_4
     size: [580, 56, 400]
     category: wall_door
-    pivot: [0.052, 0.5, 0.025]
-    snap_box: [[0.0, 0.3214285714, 0.0], [1.0, 0.6785714286, 1.0]]
+    pivot: [0.5, 0.5, 0.589]
+    local_bounds_min: [-290, -28, -236]
+    local_bounds_max: [290, 28, 164]
+    calibrated: true
     footprint: [6, 1]
     tags: [structure, vertical, opening]
     desc: "门洞框"
-  irongrilledoor:   # _needs_review: 铁栅门，确认是门扇还是门洞
-    path: /Game/LevelPrototyping/Meshes/ArchKit/wall_door/irongrilledoor
-    source_fbx: objects/irongrilledoor.fbx
+  irongrilledoor:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/irongrilledoor
     size: [203, 5, 303]
     category: wall_door
-    pivot: [0.08, 0.445, 0.417]
+    pivot: [0.507, 0.5, 0.5]
+    local_bounds_min: [-103, -2, -152]
+    local_bounds_max: [100, 2, 152]
+    calibrated: true
     footprint: [2, 1]
     tags: [structure, opening]
-    needs_review: true
-    review: "铁栅门，确认是门扇还是门洞"
+    desc: "铁栅门"
 
-  # ---- window (9) ----
+  # ---- window (10) ----
   window1_4:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/window/Window1_4
-    source_fbx: objects/Window1_4.fbx
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Window1_4
     size: [100, 52, 400]
     category: window
-    pivot: [0.0, 0.691, 0.0]
-    snap_box: [[0.0, 0.3076923077, 0.0], [1.0, 0.6923076923, 1.0]]
+    pivot: [0.5, 0.5, 0.595]
+    local_bounds_min: [-50, -26, -238]
+    local_bounds_max: [50, 26, 162]
+    calibrated: true
+    footprint: [1, 1]
+    tags: [structure, vertical, window]
+  window1_4_001:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Window1_4_001
+    size: [100, 52, 400]
+    category: window
+    pivot: [0.5, 0.5, 0.595]
+    local_bounds_min: [-50, -26, -238]
+    local_bounds_max: [50, 26, 162]
+    calibrated: true
     footprint: [1, 1]
     tags: [structure, vertical, window]
   window1_4_high:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/window/Window1_4_high
-    source_fbx: objects/Window1_4_high.fbx
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Window1_4_high
     size: [100, 52, 400]
     category: window
-    pivot: [0.0, 0.691, 0.0]
-    snap_box: [[0.0, 0.3076923077, 0.0], [1.0, 0.6923076923, 1.0]]
+    pivot: [0.5, 0.5, 0.841]
+    local_bounds_min: [-50, -26, -336]
+    local_bounds_max: [50, 26, 64]
+    calibrated: true
     footprint: [1, 1]
     tags: [structure, vertical, window]
   window1_4_low:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/window/Window1_4_low
-    source_fbx: objects/Window1_4_low.fbx
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Window1_4_low
     size: [100, 52, 400]
     category: window
-    pivot: [0.0, 0.691, 0.125]
-    snap_box: [[0.0, 0.3076923077, 0.0], [1.0, 0.6923076923, 1.0]]
+    pivot: [0.5, 0.5, 0.504]
+    local_bounds_min: [-50, -26, -202]
+    local_bounds_max: [50, 26, 198]
+    calibrated: true
     footprint: [1, 1]
     tags: [structure, vertical, window]
   window2_4:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/window/Window2_4
-    source_fbx: objects/Window2_4.fbx
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Window2_4
     size: [200, 52, 400]
     category: window
-    pivot: [0.0, 0.693, 0.0]
-    snap_box: [[0.0, 0.3076923077, 0.0], [1.0, 0.6923076923, 1.0]]
+    pivot: [0.5, 0.5, 0.562]
+    local_bounds_min: [-100, -26, -225]
+    local_bounds_max: [100, 26, 175]
+    calibrated: true
     footprint: [2, 1]
     tags: [structure, vertical, window]
   window2_4_high:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/window/Window2_4_high
-    source_fbx: objects/Window2_4_high.fbx
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Window2_4_high
     size: [200, 52, 400]
     category: window
-    pivot: [0.0, 0.693, 0.0]
-    snap_box: [[0.0, 0.3076923077, 0.0], [1.0, 0.6923076923, 1.0]]
+    pivot: [0.5, 0.5, 0.823]
+    local_bounds_min: [-100, -26, -329]
+    local_bounds_max: [100, 26, 71]
+    calibrated: true
     footprint: [2, 1]
     tags: [structure, vertical, window]
   window2_4_low:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/window/Window2_4_low
-    source_fbx: objects/Window2_4_low.fbx
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Window2_4_low
     size: [200, 52, 400]
     category: window
-    pivot: [0.0, 0.691, 0.125]
-    snap_box: [[0.0, 0.3076923077, 0.0], [1.0, 0.6923076923, 1.0]]
+    pivot: [0.5, 0.5, 0.504]
+    local_bounds_min: [-100, -26, -202]
+    local_bounds_max: [100, 26, 198]
+    calibrated: true
     footprint: [2, 1]
     tags: [structure, vertical, window]
   window4_4:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/window/Window4_4
-    source_fbx: objects/Window4_4.fbx
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Window4_4
     size: [400, 52, 400]
     category: window
-    pivot: [0.0, 0.693, 0.0]
-    snap_box: [[0.0, 0.3076923077, 0.0], [1.0, 0.6923076923, 1.0]]
+    pivot: [0.49, 0.489, 0.546]
+    local_bounds_min: [-196, -26, -218]
+    local_bounds_max: [204, 27, 182]
+    calibrated: true
     footprint: [4, 1]
     tags: [structure, vertical, window]
   window4_4_high:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/window/Window4_4_high
-    source_fbx: objects/Window4_4_high.fbx
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Window4_4_high
     size: [400, 52, 400]
     category: window
-    pivot: [0.0, 0.693, 0.0]
-    snap_box: [[0.0, 0.3076923077, 0.0], [1.0, 0.6923076923, 1.0]]
+    pivot: [0.492, 0.5, 0.809]
+    local_bounds_min: [-197, -26, -323]
+    local_bounds_max: [203, 26, 77]
+    calibrated: true
     footprint: [4, 1]
     tags: [structure, vertical, window]
   window4_4_low:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/window/Window4_4_low
-    source_fbx: objects/Window4_4_low.fbx
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Window4_4_low
     size: [400, 52, 400]
     category: window
-    pivot: [0.0, 0.691, 0.125]
-    snap_box: [[0.0, 0.3076923077, 0.0], [1.0, 0.6923076923, 1.0]]
+    pivot: [0.485, 0.5, 0.504]
+    local_bounds_min: [-194, -26, -201]
+    local_bounds_max: [206, 26, 199]
+    calibrated: true
     footprint: [4, 1]
     tags: [structure, vertical, window]
-
-  # ---- glass_wall (5) ----
-  w_gls_frm_2_3:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/glass_wall/W_GLS_FRM_2_3
-    source_fbx: objects/W_GLS_FRM_2_3.fbx
-    size: [200, 20, 300]
-    category: glass_wall
-    pivot: [0.0, 1.0, -0.0]
-    footprint: [2, 1]
-    tags: [structure, vertical, window]
-    desc: "玻璃幕墙"
-  w_gls_frm_4_3:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/glass_wall/W_GLS_FRM_4_3
-    source_fbx: objects/W_GLS_FRM_4_3.fbx
-    size: [400, 20, 300]
-    category: glass_wall
-    pivot: [-0.0, 1.0, 0.0]
-    footprint: [4, 1]
-    tags: [structure, vertical, window]
-    desc: "玻璃幕墙"
-  w_gls_frm_6_3:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/glass_wall/W_GLS_FRM_6_3
-    source_fbx: objects/W_GLS_FRM_6_3.fbx
-    size: [600, 20, 300]
-    category: glass_wall
-    pivot: [-0.0, 1.0, -0.0]
-    footprint: [6, 1]
-    tags: [structure, vertical, window]
-    desc: "玻璃幕墙"
-  w_gls_frm_8_3:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/glass_wall/W_GLS_FRM_8_3
-    source_fbx: objects/W_GLS_FRM_8_3.fbx
-    size: [800, 20, 300]
-    category: glass_wall
-    pivot: [-0.0, 1.0, 0.0]
-    footprint: [8, 1]
-    tags: [structure, vertical, window]
-    desc: "玻璃幕墙"
-  w_gls_frm_n_3:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/glass_wall/W_GLS_FRM_n_3
-    source_fbx: objects/W_GLS_FRM_n_3.fbx
-    size: [300, 20, 300]
-    category: glass_wall
-    pivot: [0.0, 1.0, -0.0]
-    footprint: [3, 1]
-    tags: [structure, vertical, window]
-    desc: "玻璃幕墙"
 
   # ---- pillar (2) ----
   pillar:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/pillar/Pillar
-    source_fbx: objects/Pillar.fbx
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Pillar
     size: [40, 40, 400]
     category: pillar
-    pivot: [0.5, 0.5, 0.0]
+    pivot: [0.5, 0.5, 0.5]
+    local_bounds_min: [-20, -20, -200]
+    local_bounds_max: [20, 20, 200]
+    calibrated: true
     footprint: [1, 1]
     tags: [structure, vertical]
   pillar_circle:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/pillar/Pillar_Circle
-    source_fbx: objects/Pillar_Circle.fbx
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Pillar_Circle
     size: [60, 60, 400]
     category: pillar
-    pivot: [0.5, 0.5, 0.0]
+    pivot: [0.5, 0.5, 0.5]
+    local_bounds_min: [-30, -30, -200]
+    local_bounds_max: [30, 30, 200]
+    calibrated: true
     footprint: [1, 1]
     tags: [structure, vertical]
 
-  # ---- stair (4) ----
-  stair_1:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/stair/Stair_1
-    source_fbx: objects/Stair_1.fbx
-    size: [100, 200, 100]
-    category: stair
-    pivot: [0.0, 0.0, 0.0]
-    footprint: [1, 2]
-    tags: [structure, vertical, traversal]
+  # ---- stair (2) ----
   stair_1_001:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/stair/Stair_1_001
-    source_fbx: objects/Stair_1_001.fbx
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Stair_1_001
     size: [100, 200, 100]
     category: stair
-    pivot: [0.0, 0.0, 0.0]
+    pivot: [0.5, 0.5, 0.5]
+    local_bounds_min: [-50, -100, -50]
+    local_bounds_max: [50, 100, 50]
+    calibrated: true
     footprint: [1, 2]
     tags: [structure, vertical, traversal]
-  stair_2:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/stair/Stair_2
-    source_fbx: objects/Stair_2.fbx
+  stair_2_001:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Stair_2_001
     size: [300, 550, 400]
     category: stair
-    pivot: [0.0, 1.0, 0.0]
-    local_bounds_min: [0, -550, 0]
-    local_bounds_max: [300, 0, 400]
+    pivot: [0.498, 0.624, 0.5]
+    local_bounds_min: [-150, -343, -200]
+    local_bounds_max: [150, 207, 200]
     calibrated: true
     footprint: [3, 6]
     tags: [structure, vertical, traversal]
-  stair_2_001:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/stair/Stair_2_001
-    source_fbx: objects/Stair_2_001.fbx
-    size: [300, 550, 400]
-    category: stair
-    pivot: [0.0, 0.0, 0.0]
-    footprint: [3, 6]
-    tags: [structure, vertical, traversal]
 
-  # ---- roof (3) ----
-  gridbeamroof2_1:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/roof/GridBeamRoof2_1
-    source_fbx: objects/GridBeamRoof2_1.fbx
-    size: [400, 400, 100]
-    category: roof
-    pivot: [-0.0, 1.0, 0.0]
-    footprint: [4, 4]
-    tags: [structure, ceiling]
+  # ---- roof (1) ----
   roofoverhang:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/roof/RoofOverhang
-    source_fbx: objects/RoofOverhang.fbx
-    size: [279, 100, 300]
+    path: /Game/LevelPrototyping/Meshes/ArchKit/RoofOverhang
+    size: [100, 279, 300]
     category: roof
-    pivot: [0.0, -0.0, 0.0]
-    footprint: [3, 1]
-    tags: [structure, ceiling]
-  tri_beamroof:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/roof/Tri_BeamRoof
-    source_fbx: objects/Tri_BeamRoof.fbx
-    size: [50, 352, 108]
-    category: roof
-    pivot: [0.0, 0.875, -0.0]
-    footprint: [1, 4]
+    pivot: [0.5, 0.289, 0.239]
+    local_bounds_min: [-50, -80, -72]
+    local_bounds_max: [50, 198, 228]
+    calibrated: true
+    footprint: [1, 3]
     tags: [structure, ceiling]
 
   # ---- fence (8) ----
-  fence_0_8_1:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/fence/Fence_0_8_1
-    source_fbx: objects/Fence_0_8_1.fbx
-    size: [103, 3, 81]
-    category: fence
-    pivot: [0.5, 0.5, 0.757]
-    footprint: [1, 1]
-    tags: [cover, barrier]
   fence_0_8_1_001:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/fence/Fence_0_8_1_001
-    source_fbx: objects/Fence_0_8_1_001.fbx
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Fence_0_8_1_001
     size: [159, 6, 84]
     category: fence
     pivot: [0.5, 0.5, 0.74]
+    local_bounds_min: [-80, -3, -62]
+    local_bounds_max: [79, 3, 22]
+    calibrated: true
     footprint: [2, 1]
     tags: [cover, barrier]
   fence_0_8_1_002:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/fence/Fence_0_8_1_002
-    source_fbx: objects/Fence_0_8_1_002.fbx
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Fence_0_8_1_002
     size: [109, 6, 84]
     category: fence
     pivot: [0.5, 0.5, 0.74]
+    local_bounds_min: [-55, -3, -62]
+    local_bounds_max: [54, 3, 22]
+    calibrated: true
     footprint: [1, 1]
     tags: [cover, barrier]
   fence_0_8_1_008:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/fence/Fence_0_8_1_008
-    source_fbx: objects/Fence_0_8_1_008.fbx
-    size: [569, 300, 462]
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Fence_0_8_1_008
+    size: [300, 569, 462]
     category: fence
-    pivot: [0.837, 0.975, 0.585]
-    footprint: [6, 3]
+    pivot: [0.499, 0.579, 0.546]
+    local_bounds_min: [-150, -329, -252]
+    local_bounds_max: [150, 240, 210]
+    calibrated: true
+    footprint: [3, 6]
     tags: [cover, barrier]
   fence_0_8_1_011:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/fence/Fence_0_8_1_011
-    source_fbx: objects/Fence_0_8_1_011.fbx
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Fence_0_8_1_011
     size: [100, 233, 165]
     category: fence
-    pivot: [0.504, 0.43, 0.612]
+    pivot: [0.504, 0.57, 0.612]
+    local_bounds_min: [-51, -133, -101]
+    local_bounds_max: [50, 100, 64]
+    calibrated: true
     footprint: [1, 2]
     tags: [cover, barrier]
-  fence_0_8_1_5:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/fence/Fence_0_8_1_5
-    source_fbx: objects/Fence_0_8_1_5.fbx
-    size: [153, 3, 81]
-    category: fence
-    pivot: [0.5, 0.5, 0.757]
-    footprint: [2, 1]
-    tags: [cover, barrier]
-  fence_0_8_2:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/fence/Fence_0_8_2
-    source_fbx: objects/Fence_0_8_2.fbx
-    size: [203, 3, 81]
-    category: fence
-    pivot: [0.5, 0.5, 0.757]
-    footprint: [2, 1]
-    tags: [cover, barrier]
   fence_0_8_2_001:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/fence/Fence_0_8_2_001
-    source_fbx: objects/Fence_0_8_2_001.fbx
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Fence_0_8_2_001
     size: [209, 6, 84]
     category: fence
     pivot: [0.5, 0.5, 0.74]
+    local_bounds_min: [-104, -3, -62]
+    local_bounds_max: [104, 3, 22]
+    calibrated: true
     footprint: [2, 1]
     tags: [cover, barrier]
+  line007:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Line007
+    size: [247, 14, 235]
+    category: fence
+    pivot: [0.5, 0.512, 0.525]
+    local_bounds_min: [-124, -7, -123]
+    local_bounds_max: [124, 7, 111]
+    calibrated: true
+    footprint: [2, 1]
+    tags: [structure, vertical, cover]
+    desc: "铁丝网围栏片"
+  铁丝网:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/铁丝网
+    size: [253, 86, 413]
+    category: fence
+    pivot: [0.499, 0.123, 0.926]
+    local_bounds_min: [-126, -11, -382]
+    local_bounds_max: [127, 76, 31]
+    calibrated: true
+    footprint: [3, 1]
+    tags: [cover]
+    desc: "带刺铁丝网围栏"
+  铁蒺藜:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/铁蒺藜
+    size: [252, 68, 69]
+    category: fence
+    pivot: [0.527, 0.474, 0.499]
+    local_bounds_min: [-133, -32, -34]
+    local_bounds_max: [119, 36, 34]
+    calibrated: true
+    footprint: [3, 1]
+    tags: [cover, prop, decoration]
+    desc: "刺铁丝/铁蒺藜"
 
-  # ---- cover (4) ----
+  # ---- cover (16) ----
+  car:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/car
+    size: [192, 376, 93]
+    category: cover
+    pivot: [0.482, 0.602, 0.447]
+    local_bounds_min: [-92, -226, -41]
+    local_bounds_max: [99, 150, 51]
+    calibrated: true
+    footprint: [2, 4]
+    tags: [cover]
+    desc: "轿车"
+  cube:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Cube
+    size: [200, 70, 80]
+    category: cover
+    pivot: [0.5, 0.5, 0.5]
+    local_bounds_min: [-100, -35, -40]
+    local_bounds_max: [100, 35, 40]
+    calibrated: true
+    footprint: [2, 1]
+    tags: [cover, prop]
+    desc: "长条箱"
+  cube_003:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Cube_003
+    size: [142, 144, 175]
+    category: cover
+    pivot: [0.383, 0.509, 0.595]
+    local_bounds_min: [-54, -73, -104]
+    local_bounds_max: [88, 71, 71]
+    calibrated: true
+    footprint: [1, 1]
+    tags: [cover, prop]
+    desc: "带缺口方箱/机柜"
+  cube_005:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Cube_005
+    size: [200, 200, 321]
+    category: cover
+    pivot: [0.5, 0.424, 0.436]
+    local_bounds_min: [-100, -85, -140]
+    local_bounds_max: [100, 115, 181]
+    calibrated: true
+    footprint: [2, 2]
+    tags: [cover]
+    desc: "带斜面的结构块/矮台"
+  cube_408_001:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Cube_408_001
+    size: [254, 472, 80]
+    category: cover
+    pivot: [0.354, 0.404, 0.736]
+    local_bounds_min: [-90, -191, -59]
+    local_bounds_max: [164, 281, 21]
+    calibrated: true
+    footprint: [3, 5]
+    tags: [cover]
+    desc: "三箱组合杂物"
+  cube_420:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Cube_420
+    size: [377, 201, 80]
+    category: cover
+    pivot: [0.359, 0.54, 0.707]
+    local_bounds_min: [-135, -109, -57]
+    local_bounds_max: [242, 93, 23]
+    calibrated: true
+    footprint: [4, 2]
+    tags: [cover]
+    desc: "双箱组合杂物"
+  cylinder007:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Cylinder007
+    size: [1095, 256, 308]
+    category: cover
+    pivot: [0.517, 0.498, 0.151]
+    local_bounds_min: [-566, -128, -47]
+    local_bounds_max: [528, 129, 262]
+    calibrated: true
+    footprint: [11, 3]
+    tags: [cover]
+    desc: "管道束"
+  cylinder_002:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Cylinder_002
+    size: [200, 200, 371]
+    category: cover
+    pivot: [0.5, 0.5, 0.786]
+    local_bounds_min: [-100, -100, -291]
+    local_bounds_max: [100, 100, 79]
+    calibrated: true
+    footprint: [2, 2]
+    tags: [cover]
+    desc: "储气罐/油罐"
+  plane_030:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Plane_030
+    size: [464, 464, 199]
+    category: cover
+    pivot: [0.494, 0.495, 0.486]
+    local_bounds_min: [-229, -230, -97]
+    local_bounds_max: [235, 234, 102]
+    calibrated: true
+    footprint: [5, 5]
+    tags: [cover]
+    desc: "管材堆/管道垛"
   shippingcontainer:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/cover/ShippingContainer
-    source_fbx: objects/ShippingContainer.fbx
+    path: /Game/LevelPrototyping/Meshes/ArchKit/ShippingContainer
     size: [606, 267, 282]
     category: cover
-    pivot: [0.0, 0.044, 0.041]
+    pivot: [0.5, 0.5, 0.5]
+    local_bounds_min: [-303, -134, -141]
+    local_bounds_max: [303, 134, 141]
+    calibrated: true
     footprint: [6, 3]
     tags: [cover, prop, large]
     desc: "集装箱(大掩体)"
   smallwoodencrate_001:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/cover/SmallWoodenCrate_001
-    source_fbx: objects/SmallWoodenCrate_001.fbx
-    size: [113, 73, 80]
+    path: /Game/LevelPrototyping/Meshes/ArchKit/SmallWoodenCrate_001
+    size: [113, 139, 80]
     category: cover
-    pivot: [0.013, 0.431, 0.0]
+    pivot: [0.5, 0.5, 0.79]
+    local_bounds_min: [-56, -69, -63]
+    local_bounds_max: [56, 69, 17]
+    calibrated: true
     footprint: [1, 1]
     tags: [cover, prop]
     desc: "木箱"
   smallwoodencrate_002:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/cover/SmallWoodenCrate_002
-    source_fbx: objects/SmallWoodenCrate_002.fbx
-    size: [113, 73, 49]
+    path: /Game/LevelPrototyping/Meshes/ArchKit/SmallWoodenCrate_002
+    size: [156, 105, 80]
     category: cover
-    pivot: [0.013, 0.431, 0.0]
-    footprint: [1, 1]
+    pivot: [0.5, 0.5, 0.784]
+    local_bounds_min: [-78, -53, -63]
+    local_bounds_max: [78, 53, 17]
+    calibrated: true
+    footprint: [2, 1]
     tags: [cover, prop]
     desc: "木箱"
   smallwoodencrate_003:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/cover/SmallWoodenCrate_003
-    source_fbx: objects/SmallWoodenCrate_003.fbx
-    size: [63, 43, 49]
+    path: /Game/LevelPrototyping/Meshes/ArchKit/SmallWoodenCrate_003
+    size: [88, 76, 80]
     category: cover
-    pivot: [0.023, 0.033, 0.0]
+    pivot: [0.5, 0.5, 0.784]
+    local_bounds_min: [-44, -38, -63]
+    local_bounds_max: [44, 38, 17]
+    calibrated: true
     footprint: [1, 1]
     tags: [cover, prop]
     desc: "木箱"
+  smallwoodencrate_187:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/SmallWoodenCrate_187
+    size: [420, 308, 160]
+    category: cover
+    pivot: [0.489, 0.466, 0.643]
+    local_bounds_min: [-205, -144, -103]
+    local_bounds_max: [215, 164, 57]
+    calibrated: true
+    footprint: [4, 3]
+    tags: [cover, prop]
+    desc: "木箱"
+  wood_plank_001:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Wood_Plank_001
+    size: [419, 163, 62]
+    category: cover
+    pivot: [0.501, 0.495, 0.5]
+    local_bounds_min: [-210, -81, -31]
+    local_bounds_max: [209, 82, 31]
+    calibrated: true
+    footprint: [4, 2]
+    tags: [cover]
+    desc: "平铺木板垛"
+  wood_plank_077:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Wood_Plank_077
+    size: [419, 163, 62]
+    category: cover
+    pivot: [0.501, 0.495, 0.5]
+    local_bounds_min: [-210, -81, -31]
+    local_bounds_max: [209, 82, 31]
+    calibrated: true
+    footprint: [4, 2]
+    tags: [cover]
+    desc: "平铺木板垛"
 
-  # ---- prop (22) ----
-  collection10:   # _needs_review: 组合件，内容未知需确认语义/footprint
-    path: /Game/LevelPrototyping/Meshes/ArchKit/prop/Collection10
-    source_fbx: collections/Collection10.fbx
-    size: [211, 213, 180]
+  # ---- prop (30) ----
+  cube_001:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Cube_001
+    size: [167, 49, 243]
     category: prop
-    pivot: [0.473, 0.47, 0.556]
-    footprint: [2, 2]
-    tags: [prop, combined]
-    needs_review: true
-    review: "组合件，内容未知需确认语义/footprint"
-  collection6:   # _needs_review: 组合件，内容未知需确认语义/footprint
-    path: /Game/LevelPrototyping/Meshes/ArchKit/prop/Collection6
-    source_fbx: collections/Collection6.fbx
-    size: [211, 213, 149]
+    pivot: [0.5, 0.5, 0.5]
+    local_bounds_min: [-84, -24, -122]
+    local_bounds_max: [84, 24, 122]
+    calibrated: true
+    footprint: [2, 1]
+    tags: [structure, vertical, filler]
+    desc: "隔断/储物柜"
+  cube_002:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Cube_002
+    size: [93, 49, 243]
     category: prop
-    pivot: [0.473, 0.47, 0.672]
-    footprint: [2, 2]
-    tags: [prop, combined]
-    needs_review: true
-    review: "组合件，内容未知需确认语义/footprint"
-  collection7:   # _needs_review: 组合件，内容未知需确认语义/footprint；原点在几何外(pivot 越界)，落地前建议归零或人工核对
-    path: /Game/LevelPrototyping/Meshes/ArchKit/prop/Collection7
-    source_fbx: collections/Collection7.fbx
-    size: [200, 213, 243]
-    category: prop
-    pivot: [0.5, 0.47, 1.082]
-    footprint: [2, 2]
-    tags: [prop, combined]
-    needs_review: true
-    review: "组合件，内容未知需确认语义/footprint；原点在几何外(pivot 越界)，落地前建议归零或人工核对"
-  collection8:   # _needs_review: 组合件，内容未知需确认语义/footprint
-    path: /Game/LevelPrototyping/Meshes/ArchKit/prop/Collection8
-    source_fbx: collections/Collection8.fbx
-    size: [113, 73, 80]
-    category: prop
-    pivot: [0.013, 0.431, 0.0]
+    pivot: [0.5, 0.5, 0.5]
+    local_bounds_min: [-47, -24, -122]
+    local_bounds_max: [47, 24, 122]
+    calibrated: true
     footprint: [1, 1]
-    tags: [prop, combined]
-    needs_review: true
-    review: "组合件，内容未知需确认语义/footprint"
-  collection9:   # _needs_review: 组合件，内容未知需确认语义/footprint
-    path: /Game/LevelPrototyping/Meshes/ArchKit/prop/Collection9
-    source_fbx: collections/Collection9.fbx
-    size: [741, 1187, 200]
+    tags: [filler]
+    desc: "储物柜"
+  cube_004:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Cube_004
+    size: [538, 144, 175]
     category: prop
-    pivot: [0.865, 0.916, 0.5]
-    footprint: [7, 12]
-    tags: [prop, combined]
-    needs_review: true
-    review: "组合件，内容未知需确认语义/footprint"
-  doorlock:   # _needs_review: 门锁挂件，建议作 Doorframe 的附件而非独立件
-    path: /Game/LevelPrototyping/Meshes/ArchKit/prop/doorlock
-    source_fbx: objects/doorlock.fbx
+    pivot: [0.425, 0.456, 0.548]
+    local_bounds_min: [-229, -66, -96]
+    local_bounds_max: [309, 79, 79]
+    calibrated: true
+    footprint: [5, 1]
+    tags: [filler]
+    desc: "长柜台"
+  cylinder_0021:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Cylinder_0021
+    size: [169, 463, 284]
+    category: prop
+    pivot: [0.521, 0.513, 0.455]
+    local_bounds_min: [-88, -237, -129]
+    local_bounds_max: [81, 225, 155]
+    calibrated: true
+    footprint: [2, 5]
+    tags: [cover]
+    desc: "叉车"
+  doorlock:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/doorlock
     size: [73, 14, 36]
     category: prop
-    pivot: [0.25, 0.5, 0.5]
+    pivot: [0.5, 0.5, 0.506]
+    local_bounds_min: [-36, -7, -18]
+    local_bounds_max: [36, 7, 18]
+    calibrated: true
     footprint: [1, 1]
-    tags: [prop, attachment]
-    needs_review: true
-    review: "门锁挂件，建议作 Doorframe 的附件而非独立件"
-  littlecabinet:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/prop/littleCabinet
-    source_fbx: collections/littleCabinet.fbx
-    size: [61, 51, 87]
+    tags: [prop, attachment, decoration]
+    desc: "门锁挂件"
+  doorlock_001:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/doorlock_001
+    size: [73, 14, 36]
     category: prop
-    pivot: [0.5, 0.392, 0.525]
+    pivot: [0.5, 0.5, 0.506]
+    local_bounds_min: [-36, -7, -18]
+    local_bounds_max: [36, 7, 18]
+    calibrated: true
     footprint: [1, 1]
-    tags: [prop]
-    desc: "小柜"
+    tags: [prop, attachment, decoration]
+    desc: "门锁挂件"
+  pasted__pasted__pcube7:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/pasted__pasted__pCube7
+    size: [271, 419, 368]
+    category: prop
+    pivot: [0.554, 0.602, 0.524]
+    local_bounds_min: [-150, -252, -193]
+    local_bounds_max: [121, 167, 175]
+    calibrated: true
+    footprint: [3, 4]
+    tags: [filler]
+    desc: "工业机械臂"
   pipeline:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/prop/Pipeline
-    source_fbx: objects/Pipeline.fbx
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Pipeline
     size: [100, 60, 60]
     category: prop
-    pivot: [0.0, 0.5, 0.5]
+    pivot: [0.494, 0.5, 0.5]
+    local_bounds_min: [-49, -30, -30]
+    local_bounds_max: [51, 30, 30]
+    calibrated: true
     footprint: [1, 1]
     tags: [prop]
     desc: "管道"
   pipeline_001:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/prop/Pipeline_001
-    source_fbx: objects/Pipeline_001.fbx
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Pipeline_001
     size: [133, 60, 119]
     category: prop
-    pivot: [1.0, 0.5, 0.25]
+    pivot: [0.458, 0.5, 0.464]
+    local_bounds_min: [-61, -30, -55]
+    local_bounds_max: [72, 30, 64]
+    calibrated: true
     footprint: [1, 1]
     tags: [prop]
     desc: "管道"
   pipeline_002:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/prop/Pipeline_002
-    source_fbx: objects/Pipeline_002.fbx
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Pipeline_002
     size: [133, 60, 119]
     category: prop
-    pivot: [-0.0, 0.5, 0.75]
+    pivot: [0.542, 0.5, 0.536]
+    local_bounds_min: [-72, -30, -64]
+    local_bounds_max: [61, 30, 55]
+    calibrated: true
     footprint: [1, 1]
     tags: [prop]
     desc: "管道"
   table_1_2_0_6_0_001:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/prop/Table_1_2_0_6_0_001
-    source_fbx: objects/Table_1_2_0_6_0_001.fbx
-    size: [90, 98, 187]
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Table_1_2_0_6_0_001
+    size: [45, 49, 93]
     category: prop
-    pivot: [0.648, 0.481, 0.234]
+    pivot: [0.491, 0.546, 0.361]
+    local_bounds_min: [-22, -27, -34]
+    local_bounds_max: [23, 22, 59]
+    calibrated: true
     footprint: [1, 1]
     tags: [prop]
     desc: "桌子"
   table_1_2_0_6_0_002:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/prop/Table_1_2_0_6_0_002
-    source_fbx: objects/Table_1_2_0_6_0_002.fbx
-    size: [331, 98, 187]
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Table_1_2_0_6_0_002
+    size: [165, 49, 93]
     category: prop
-    pivot: [0.177, 0.481, 0.234]
-    footprint: [3, 1]
+    pivot: [0.498, 0.546, 0.361]
+    local_bounds_min: [-82, -27, -34]
+    local_bounds_max: [83, 22, 59]
+    calibrated: true
+    footprint: [2, 1]
     tags: [prop]
     desc: "桌子"
   table_1_2_0_6_0_75:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/prop/Table_1_2_0_6_0_75
-    source_fbx: objects/Table_1_2_0_6_0_75.fbx
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Table_1_2_0_6_0_75
     size: [120, 60, 80]
     category: prop
-    pivot: [0.498, 0.496, 0.569]
+    pivot: [0.498, 0.504, 0.562]
+    local_bounds_min: [-60, -30, -45]
+    local_bounds_max: [60, 30, 35]
+    calibrated: true
     footprint: [1, 1]
     tags: [prop]
     desc: "桌子"
   table_1_4_0_7_0_75:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/prop/Table_1_4_0_7_0_75
-    source_fbx: objects/Table_1_4_0_7_0_75.fbx
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Table_1_4_0_7_0_75
     size: [140, 70, 80]
     category: prop
-    pivot: [0.427, 0.568, 0.569]
+    pivot: [0.5, 0.48, 0.562]
+    local_bounds_min: [-70, -34, -45]
+    local_bounds_max: [70, 36, 35]
+    calibrated: true
     footprint: [1, 1]
     tags: [prop]
     desc: "桌子"
   table_1_8_0_8_0_001:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/prop/Table_1_8_0_8_0_001
-    source_fbx: objects/Table_1_8_0_8_0_001.fbx
-    size: [180, 80, 80]
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Table_1_8_0_8_0_001
+    size: [288, 128, 80]
     category: prop
-    pivot: [0.332, 0.622, 0.569]
-    footprint: [2, 1]
+    pivot: [0.498, 0.507, 0.562]
+    local_bounds_min: [-143, -65, -45]
+    local_bounds_max: [145, 63, 35]
+    calibrated: true
+    footprint: [3, 1]
     tags: [prop]
     desc: "桌子"
   table_1_8_0_8_0_75:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/prop/Table_1_8_0_8_0_75
-    source_fbx: objects/Table_1_8_0_8_0_75.fbx
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Table_1_8_0_8_0_75
     size: [180, 80, 80]
     category: prop
-    pivot: [0.332, 0.622, 0.569]
+    pivot: [0.498, 0.507, 0.562]
+    local_bounds_min: [-90, -41, -45]
+    local_bounds_max: [90, 39, 35]
+    calibrated: true
     footprint: [2, 1]
     tags: [prop]
     desc: "桌子"
   tallcabinet:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/prop/TallCabinet
-    source_fbx: objects/TallCabinet.fbx
+    path: /Game/LevelPrototyping/Meshes/ArchKit/TallCabinet
     size: [140, 45, 200]
     category: prop
-    pivot: [0.0, 0.0, 0.0]
+    pivot: [0.5, 0.506, 0.49]
+    local_bounds_min: [-70, -23, -98]
+    local_bounds_max: [70, 22, 102]
+    calibrated: true
     footprint: [1, 1]
     tags: [prop]
     desc: "高柜"
   truck2low:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/prop/Truck2Low
-    source_fbx: objects/Truck2Low.fbx
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Truck2Low
     size: [534, 270, 238]
     category: prop
-    pivot: [0.202, 0.5, 0.592]
+    pivot: [0.578, 0.493, 0.353]
+    local_bounds_min: [-309, -133, -84]
+    local_bounds_max: [225, 137, 154]
+    calibrated: true
     footprint: [5, 3]
     tags: [prop, large]
     desc: "卡车"
   truck_3low_001:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/prop/Truck_3Low_001
-    source_fbx: objects/Truck_3Low_001.fbx
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Truck_3Low_001
     size: [534, 270, 238]
     category: prop
-    pivot: [0.202, 0.5, 0.592]
+    pivot: [0.589, 0.498, 0.321]
+    local_bounds_min: [-314, -134, -76]
+    local_bounds_max: [220, 135, 161]
+    calibrated: true
     footprint: [5, 3]
     tags: [prop, large]
     desc: "卡车"
   truck_low:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/prop/Truck_Low
-    source_fbx: objects/Truck_Low.fbx
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Truck_Low
     size: [533, 270, 257]
     category: prop
-    pivot: [0.201, 0.499, 0.552]
+    pivot: [0.538, 0.502, 0.309]
+    local_bounds_min: [-287, -135, -80]
+    local_bounds_max: [246, 134, 178]
+    calibrated: true
     footprint: [5, 3]
     tags: [prop, large]
     desc: "卡车"
+  vert:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Vert
+    size: [61, 61, 87]
+    category: prop
+    pivot: [0.5, 0.503, 0.525]
+    local_bounds_min: [-30, -31, -46]
+    local_bounds_max: [30, 31, 41]
+    calibrated: true
+    footprint: [1, 1]
+    tags: [cover, prop, filler]
+    desc: "小储物箱"
+  vert_001_001:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Vert_001_001
+    size: [202, 73, 202]
+    category: prop
+    pivot: [0.496, 0.31, 0.495]
+    local_bounds_min: [-100, -23, -100]
+    local_bounds_max: [102, 51, 102]
+    calibrated: true
+    footprint: [2, 1]
+    tags: [filler]
+    desc: "立式储物柜(长门半开)"
+  vert_037:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Vert_037
+    size: [167, 49, 243]
+    category: prop
+    pivot: [0.5, 0.494, 0.409]
+    local_bounds_min: [-84, -24, -100]
+    local_bounds_max: [84, 25, 144]
+    calibrated: true
+    footprint: [2, 1]
+    tags: [structure, vertical, filler]
+    desc: "货架"
+  wood_plank_002:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Wood_Plank_002
+    size: [255, 172, 429]
+    category: prop
+    pivot: [0.516, 0.418, 0.393]
+    local_bounds_min: [-131, -72, -169]
+    local_bounds_max: [123, 100, 261]
+    calibrated: true
+    footprint: [3, 2]
+    tags: [cover]
+    desc: "大立板/板材"
+  wood_plank_052:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Wood_Plank_052
+    size: [255, 172, 429]
+    category: prop
+    pivot: [0.516, 0.418, 0.393]
+    local_bounds_min: [-131, -72, -169]
+    local_bounds_max: [123, 100, 261]
+    calibrated: true
+    footprint: [3, 2]
+    tags: [cover]
+    desc: "大立板/板材"
   woodplank:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/prop/WoodPlank
-    source_fbx: objects/WoodPlank.fbx
+    path: /Game/LevelPrototyping/Meshes/ArchKit/WoodPlank
     size: [10, 200, 3]
     category: prop
-    pivot: [0.0, 1.0, 0.0]
+    pivot: [0.5, 0.5, 0.5]
+    local_bounds_min: [-5, -100, -2]
+    local_bounds_max: [5, 100, 2]
+    calibrated: true
     footprint: [1, 2]
     tags: [prop]
     desc: "木板"
   woodplank_001:
-    path: /Game/LevelPrototyping/Meshes/ArchKit/prop/WoodPlank_001
-    source_fbx: objects/WoodPlank_001.fbx
+    path: /Game/LevelPrototyping/Meshes/ArchKit/WoodPlank_001
+    size: [10, 200, 3]
+    category: prop
+    pivot: [0.5, 0.5, 0.5]
+    local_bounds_min: [-5, -100, -2]
+    local_bounds_max: [5, 100, 2]
+    calibrated: true
+    footprint: [1, 2]
+    tags: [prop]
+    desc: "木板"
+  woodplank_0011:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/WoodPlank_0011
     size: [10, 100, 3]
     category: prop
-    pivot: [0.0, 1.0, 0.0]
+    pivot: [0.5, 0.5, 0.5]
+    local_bounds_min: [-5, -50, -2]
+    local_bounds_max: [5, 50, 2]
+    calibrated: true
     footprint: [1, 1]
     tags: [prop]
     desc: "木板"
+  脚手架:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/脚手架
+    size: [367, 710, 659]
+    category: prop
+    pivot: [0.518, 0.5, 0.561]
+    local_bounds_min: [-190, -355, -370]
+    local_bounds_max: [177, 355, 290]
+    calibrated: true
+    footprint: [4, 7]
+    tags: [traversal]
+    desc: "脚手架"
+
+  plane_001:
+    path: /Game/LevelPrototyping/Meshes/ArchKit/Plane_001
+    size: [168, 135, 556]
+    category: prop
+    pivot: [0.515, 0.499, 0.517]
+    local_bounds_min: [-86, -67, -288]
+    local_bounds_max: [81, 68, 269]
+    calibrated: true
+    footprint: [2, 1]
+    tags: [filler]
+    desc: "立式面板/薄板"
 

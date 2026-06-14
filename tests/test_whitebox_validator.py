@@ -57,6 +57,26 @@ def test_perfect_layout_passes():
     assert report.metrics["wall_fragmentation_score"] > 0
     assert report.metrics["actual_count"] == report.metrics["expected_count"]
     assert report.metrics["floor_area_m2"] == 32.0  # 两个 4x4 格房间 = 2 * 16m²
+    assert report.metrics["scale_profile"] == "realistic"
+    assert report.metrics["scale_warning_count"] == 0
+
+
+def test_realistic_scale_metrics_warn_without_failing_geometry():
+    tiny_layout = {
+        "name": "tiny-real-room",
+        "origin": [0, 0, 0],
+        "rooms": [{"name": "Tiny", "rect": [0, 0, 2, 2]}],
+    }
+    spec = layout_from_dict(tiny_layout)
+    manifest = load_manifest(wb_server._MANIFEST)
+    report = validate_layout(spec, manifest, _perfect_actors(spec, manifest))
+
+    assert report.ok, report.violations
+    assert report.metrics["scale_profile"] == "realistic"
+    assert report.metrics["scale_warning_count"] >= 1
+    assert any(
+        "Tiny" in warning and "面积" in warning for warning in report.metrics["scale_warnings"]
+    )
 
 
 def test_missing_component_detected():
@@ -222,6 +242,12 @@ def test_wb_validate_tool_formats_report(monkeypatch):
     out = wb_server.wb_validate(json.dumps(_LAYOUT))
     assert "校验PASS" in out
     assert "metrics" in out
+    assert '"scale_profile": "realistic"' in out
+    assert '"scale_warning_count": 0' in out
+    facts = json.loads(out.split("[facts]", 1)[1].strip())
+    assert facts["metrics"]["structure_mode"] == "slab"
+    assert facts["metrics"]["scale_warning_count"] == 0
+    assert facts["metrics"]["wall_fragmentation_score"] > 0
 
 
 def test_wb_validate_tool_reports_fail(monkeypatch):

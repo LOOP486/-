@@ -28,6 +28,7 @@ from ue5agent.mcp_servers.ue_editor.bridge import send_command
 from ue5agent.whitebox.compiler import Placement
 
 _CLEAR_MAX_ROUNDS = 4  # 删后复查重试轮数上限
+_DEFAULT_PROTOTYPE_MATERIAL = "/Game/LevelPrototyping/Materials/MI_PrototypeGrid_Gray"
 
 
 def _find_actor_names(pattern: str) -> list[str]:
@@ -89,6 +90,7 @@ def spawn_layout(placements: list[Placement], *, prefix: str = "WB") -> list[str
         if placement.actor_type == "StaticMeshActor":
             params["static_mesh"] = placement.asset_path
             params["scale"] = list(placement.scale)
+            params["material"] = _DEFAULT_PROTOTYPE_MATERIAL
         response = send_command(
             "spawn_actor",
             params,

@@ -15,13 +15,21 @@ from mcp.server.fastmcp import FastMCP
 from ue5agent.core.errors import mark_env_unready
 from ue5agent.mcp_servers.ue_editor.bridge import send_command
 from ue5agent.whitebox.compiler import LayoutError, compile_layout, layout_from_dict
-from ue5agent.whitebox.manifest import AssetDef, load_manifest
+from ue5agent.whitebox.level_metrics import load_level_metrics
+from ue5agent.whitebox.manifest import AssetDef, Manifest, load_manifest
+from ue5agent.whitebox.scanner import (
+    build_manifest_dict,
+    diff_manifest,
+    emit_yaml,
+    records_from_bounds_payload,
+)
 from ue5agent.whitebox.spawner import clear_layout, spawn_layout
 from ue5agent.whitebox.validator import ActorView, validate_layout
 
 mcp = FastMCP("ue-whitebox")
 
 _MANIFEST = Path(os.environ.get("WB_MANIFEST", "config/whitebox/kit.yaml"))
+_LEVEL_METRICS = Path(os.environ.get("WB_LEVEL_METRICS", "config/whitebox/level_metrics.yaml"))
 _DEFAULT_PROTOTYPE_MATERIAL = "/Game/LevelPrototyping/Materials/MI_PrototypeGrid_Gray"
 _ASSET_AUDIT_TOL = 1.0
 
@@ -35,15 +43,17 @@ def wb_build(layout_json: str, prefix: str = "WB") -> str:
     "标记销毁 + 延迟 GC"，旧名在 GC 前仍占命名空间，复用同名 spawn 会触发引擎
     Fatal error（"Cannot generate unique name"）直接崩编辑器。唯一名从根上规避。
 
-    前缀纪律：保持默认 prefix="WB"，不要自创前缀——重建语义只清同前缀旧构件，
-    异前缀残留会叠在场景里堵门、断 navmesh（wb_validate 能检出但应避免发生）。
+    前缀纪律：普通重建保持默认 prefix="WB"；评测/并排比较可以显式使用稳定前缀
+    （如 SPC1/SPC2）并在 layout_json 顶层设置非重叠 origin。一次测试内必须复用同一前缀，
+    否则异前缀残留会叠在场景里堵门、断 navmesh（wb_validate 能检出但应避免发生）。
 
     默认使用 config/whitebox/kit.yaml 作为资产库，但结构层默认走 slab 模式：Engine Cube 连续地板/
     连续片墙，门窗只切墙洞，不放门框/窗框模块；如需旧 ArchKit 模块化结构与多层 room，
     在布局 JSON 顶层显式设置 "structure_mode": "modular"。
 
     布局格式（单位=格，1 格=100uu；坐标系：x 东 y 北；默认墙高 400uu）：
-    {"name": "训练场", "structure_mode": "slab", "origin": [5000, 5000, 0],
+    {"name": "训练场", "structure_mode": "slab", "scale_profile": "realistic",
+     "origin": [5000, 5000, 0],
      "level_height": 400,
      "rooms": [{"name": "main", "rect": [x, y, 宽, 深],
                 "level": 0,
@@ -51,20 +61,25 @@ def wb_build(layout_json: str, prefix: str = "WB") -> str:
                 "windows": [{"wall": "north|south|east|west", "at": 1, "width": 2}],
                 "props": [{"key": "smallwoodencrate_001", "at": [2, 2],
                            "rotation": 0, "optional": false}]}],
-     "stairs": [{"room": "main", "at": [1, 0], "from_level": 0, "to_level": 1,
-                 "facing": "north", "key": "stair_2"}],
+    "stairs": [{"room": "main", "at": [1, 0], "from_level": 0, "to_level": 1,
+                 "facing": "north", "key": "stair_2_001"}],
      "gameplay": {}}
     规则：
     - 房间至少 2x2 格；
     - structure_mode 缺省为 slab；slab 只允许 room.level=0。旧多层 room 只能显式
       structure_mode="modular" 使用；
+    - scale_profile 缺省为 realistic；视觉/LLM 负责空间结构，真实米制尺度由
+      config/whitebox/level_metrics.yaml 与 wb_validate 的 scale_warnings 诊断收敛；
     - slab 下 doors/windows 只参与墙体切分，不生成 wall_door/window/glass_wall actor，也不生成
       navproxy；连续地板、片墙和楼梯井护墙使用 /Engine/BasicShapes/Cube.Cube；
     - stairs 只连接相邻楼层，资产高度必须匹配层高差；slab 允许 from_level=0,to_level=1 且没有
       上层 room 的楼梯，只生成楼梯 mesh + 楼梯间护墙，不生成上层空间；
+      stair_2_001 footprint=3x6 格、高 400uu，at 是 footprint 西南角；north/south 占 3x6，
+      east/west 占 6x3，必须完整落在所在 room 内（例：10x8 hall 内 north 可用 at=[2,1]）；
     - modular 下继续使用 ArchKit 地板/墙/门/窗/navproxy 与旧多层 room 行为；
     - stair/prop/cover/pillar 使用资产原生尺寸落地，scale=(1,1,1)，needs_review 资产不参与自动选择；
-    - 只有显式提供 gameplay 时才生成玩法层。gameplay={} 会自动生成两个 PlayerStart、
+    - 纯空间结构测试不要提供 gameplay，也不要提供 props/cover/spawn_points/routes；
+      只有显式提供 gameplay 时才生成玩法层。gameplay={} 会自动生成两个 PlayerStart、
       route markers 与 cover/pillar；不提供 gameplay 时旧布局输出保持结构层行为；
       `spawn_points`/`routes` 只有缺省时才走默认生成，显式 `[]` 表示不生成对应默认层；
     - props 显式优先；required（optional=false）越界、重叠、堵门或堵同房间门到门路线会报错，
@@ -358,7 +373,8 @@ def wb_validate(layout_json: str, prefix: str = "WB") -> str:
                 continue
             seen_names.add(actor.name)
             actors.append(actor)
-    report = validate_layout(spec, manifest, actors, prefix=prefix)
+    level_metrics = load_level_metrics(_LEVEL_METRICS) if _LEVEL_METRICS.exists() else None
+    report = validate_layout(spec, manifest, actors, prefix=prefix, level_metrics=level_metrics)
     verdict = "PASS" if report.ok else "FAIL"
     lines = [f"校验{verdict}：实测 {report.metrics.get('actual_count', 0)} 个构件"]
     lines += [f"- {v}" for v in report.violations]
@@ -369,6 +385,9 @@ def wb_validate(layout_json: str, prefix: str = "WB") -> str:
         "violations": len(report.violations),
         "room_count": report.metrics.get("room_count"),
         "actual_count": report.metrics.get("actual_count"),
+        "scale_profile": report.metrics.get("scale_profile"),
+        "scale_warning_count": report.metrics.get("scale_warning_count"),
+        "metrics": report.metrics,
     }
     lines.append(f"[facts] {json.dumps(facts, ensure_ascii=False)}")
     return "\n".join(lines)
@@ -400,6 +419,130 @@ def wb_clear(prefix: str = "WB") -> str:
     except (OSError, ConnectionError) as exc:
         return f"[error] 编辑器桥通信失败：{exc}"
     return f"已删除 {removed} 个 {prefix}_ 构件"
+
+
+_BRIDGE_DOWN = "编辑器桥连接被拒。请先启动 UE 编辑器并加载工程（UnrealMCP 插件随工程加载）"
+
+
+def _gather_scan_records(content_path: str, existing: Manifest | None):
+    """取扫描记录：优先桥命令 scan_assets（含新件），不可用则回退 get_mesh_bounds 刷新存量。
+
+    返回 (records_or_error, mode, note)；records_or_error 为 str 时表示错误/环境未就绪，直接回传。
+    """
+    try:
+        response = send_command(
+            "scan_assets", {"content_path": content_path, "recursive": True}, timeout=120
+        )
+    except ConnectionRefusedError:
+        return mark_env_unready(_BRIDGE_DOWN), "", ""
+    except (OSError, ConnectionError, TimeoutError) as exc:
+        return f"[error] 编辑器桥通信失败：{exc}", "", ""
+
+    if response.get("status") != "error":
+        result = response.get("result", response)
+        items = result.get("assets") if isinstance(result, dict) else None
+        if isinstance(items, list):
+            return records_from_bounds_payload(items), "scan_assets", f"枚举 {content_path}"
+
+    # scan_assets 不可用（旧插件未实现）→ 回退刷新存量清单
+    if existing is None or not existing.assets:
+        err = response.get("error", response) if response.get("status") == "error" else "返回为空"
+        return (
+            f"[error] 桥不支持 scan_assets（{err}），且无现有 manifest 可回退刷新；"
+            "请重编含 scan_assets 的 UnrealMCP 插件后再扫描",
+            "",
+            "",
+        )
+    records, failures = _refresh_existing_records(existing, content_path)
+    if isinstance(records, str):
+        return records, "", ""
+    note = "桥未提供 scan_assets，回退按现有清单逐件刷新（发现不了新增资产）"
+    if failures:
+        note += f"；{len(failures)} 件读取失败：{', '.join(failures[:5])}"
+    return records, "get_mesh_bounds 回退", note
+
+
+def _refresh_existing_records(existing: Manifest, content_path: str):
+    """回退路径：对现有 manifest 里 content_path 子树的资产逐件 get_mesh_bounds 取真实 bounds。"""
+    records = []
+    failures: list[str] = []
+    for asset in sorted(existing.assets.values(), key=lambda a: a.path):
+        if not asset.path.startswith("/Game/") or not asset.path.startswith(content_path):
+            continue
+        try:
+            response = send_command("get_mesh_bounds", {"asset_path": asset.path})
+        except ConnectionRefusedError:
+            return mark_env_unready(_BRIDGE_DOWN), failures
+        except (OSError, ConnectionError, TimeoutError) as exc:
+            return f"[error] 编辑器桥通信失败：{exc}", failures
+        if response.get("status") == "error":
+            failures.append(asset.key)
+            continue
+        result = response.get("result", response)
+        item = dict(result) if isinstance(result, dict) else {}
+        item["path"] = asset.path
+        records.extend(records_from_bounds_payload([item]))
+    return records, failures
+
+
+@mcp.tool()
+def wb_asset_scan(
+    content_path: str = "/Game/LevelPrototyping/Meshes/ArchKit",
+    apply: bool = False,
+    out_path: str = "",
+) -> str:
+    """扫描 UE 内容目录下的 StaticMesh，按真实 bounds 重建白盒 manifest v2。写工程（写本地清单）。
+
+    解决"重导资产后手工回填 path / 尺寸漂移"：以 UE 导入后 bounds 为真值反推
+    size/pivot/footprint（calibrated），命名前缀 + 几何先验混合归类把 unknown 收敛；
+    重扫会保留你手调过的 roles 与 desc。默认 apply=False 只预览 diff 不写盘，
+    确认后再 apply=True 写出（默认覆盖当前清单 WB_MANIFEST）。
+
+    取数优先调用桥命令 scan_assets 枚举整个目录（含新增件）；插件未提供该命令时，
+    回退用 get_mesh_bounds 仅刷新当前 manifest 已登记的资产（发现不了新件，会在结果里提示）。
+
+    Args:
+        content_path: 要扫描的 /Game 内容目录（默认 ArchKit）
+        apply: True 写出 manifest；False（默认）仅预览 diff
+        out_path: 写出路径，缺省用当前 WB_MANIFEST（config/whitebox/kit.yaml）
+    """
+    content_path = content_path.strip().rstrip("/")
+    if not content_path:
+        return "[error] content_path 不能为空"
+
+    existing = load_manifest(_MANIFEST) if _MANIFEST.exists() else None
+    records, mode, note = _gather_scan_records(content_path, existing)
+    if isinstance(records, str):
+        return records  # 错误/环境未就绪标记，直接回传
+    if not records:
+        return "[error] 未扫描到任何 StaticMesh（content_path 是否正确？或先 import_fbx 导入资产）"
+
+    grid = existing.grid if existing is not None else 100.0
+    new_manifest = build_manifest_dict(records, grid=grid, existing=existing)
+    report = diff_manifest(new_manifest, existing)
+
+    target = Path(out_path.strip()) if out_path.strip() else _MANIFEST
+    lines = [f"资产扫描（{mode}）" + (f"：{note}" if note else ""), report.summary()]
+    if apply:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(emit_yaml(new_manifest), encoding="utf-8")
+        lines.append(f"已写出 manifest → {target}（{report.total} 件）")
+    else:
+        lines.append(f"预览模式：未写盘。确认无误后用 apply=true 写出到 {target}")
+
+    facts = {
+        "kind": "wb_asset_scan",
+        "ok": True,
+        "mode": mode,
+        "total": report.total,
+        "added": len(report.added),
+        "removed": len(report.removed),
+        "resized": len(report.resized),
+        "needs_review": len(report.needs_review),
+        "applied": bool(apply),
+    }
+    lines.append(f"[facts] {json.dumps(facts, ensure_ascii=False)}")
+    return "\n".join(lines)
 
 
 def main() -> None:

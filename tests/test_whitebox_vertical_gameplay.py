@@ -15,7 +15,8 @@ from ue5agent.whitebox.manifest import load_manifest
 from ue5agent.whitebox.validator import ActorView, validate_layout
 
 _CONFIG = Path(__file__).parent.parent / "config" / "whitebox"
-KIT = load_manifest(_CONFIG / "kit.yaml")
+# 编译器单测用冻结的 ArchKit 样例清单，与随用户重扫而变的 config/whitebox/kit.yaml 解耦。
+KIT = load_manifest(Path(__file__).parent / "data" / "kit_archkit_sample.yaml")
 
 
 def _by_name(placements: list[Placement], name: str) -> Placement:

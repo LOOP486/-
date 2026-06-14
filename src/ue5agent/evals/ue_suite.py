@@ -20,6 +20,8 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, Field
 
+from ue5agent.agent.events import read_events
+
 
 class UeEvalTask(BaseModel):
     name: str
@@ -42,6 +44,16 @@ class UeRunRecord:
     """人工确认介入次数（无人值守 eval 恒为 0；保留为交互式未来用）。"""
     error: str = ""
     """运行抛出异常时的描述（记为该任务失败，不中断整批）。"""
+    trace_path: str = ""
+    """本次运行的 trace.jsonl 路径，用于黑盒复盘。"""
+    run_dir: str = ""
+    """本次运行的 runs/<session> 目录。"""
+    tool_calls: list[str] = field(default_factory=list)
+    """trace 中按顺序记录的工具调用名。"""
+    facts: list[dict[str, Any]] = field(default_factory=list)
+    """trace 中工具回传的结构化 facts。"""
+    tool_errors: list[str] = field(default_factory=list)
+    """trace 中以 [error]/[denied] 开头的工具结果摘要。"""
 
 
 @dataclass
@@ -53,6 +65,9 @@ class UeTaskResult:
     iteration_count: int
     max_step_attempts: int
     human_intervention: int
+    trace_path: str = ""
+    tool_calls: list[str] = field(default_factory=list)
+    tool_errors: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -126,7 +141,128 @@ def evaluate_ue_check(check: dict[str, Any], record: UeRunRecord) -> str | None:
         if record.human_intervention > 0:
             return f"出现 {record.human_intervention} 次人工干预"
         return None
+    if kind == "no_tool_errors":
+        if record.tool_errors:
+            return "trace 中出现工具错误：" + "；".join(record.tool_errors[:5])
+        return None
+    if kind == "no_unrecovered_tool_errors":
+        if not record.tool_errors or record.success:
+            return None
+        return "trace 中出现未恢复工具错误：" + "；".join(record.tool_errors[:5])
+    if kind == "tool_called":
+        tool = str(check["tool"])
+        at_least = int(check.get("at_least", 1))
+        count = sum(1 for call in record.tool_calls if _tool_matches(call, tool))
+        if count >= at_least:
+            return None
+        return f"trace 应调用工具 {tool} 至少 {at_least} 次，实际 {count} 次"
+    if kind == "tool_not_called":
+        tool = str(check["tool"])
+        count = sum(1 for call in record.tool_calls if _tool_matches(call, tool))
+        if count == 0:
+            return None
+        return f"trace 不应调用工具 {tool}，实际 {count} 次"
+    if kind in {"fact_equals", "fact_lte", "fact_gte"}:
+        fact = _latest_fact(record.facts, str(check["kind"]))
+        if fact is None:
+            return f"trace 缺少 facts kind={check['kind']}"
+        path = str(check.get("path", "ok"))
+        actual = _field_path(fact, path)
+        if kind == "fact_equals":
+            expected = check.get("equals")
+            if actual == expected:
+                return None
+            return f"facts {check['kind']}.{path}={actual!r}，期望 {expected!r}"
+        expected_num = float(check["value"])
+        try:
+            actual_num = float(actual)
+        except (TypeError, ValueError):
+            return f"facts {check['kind']}.{path}={actual!r} 不是数值"
+        if kind == "fact_lte":
+            return (
+                None
+                if actual_num <= expected_num
+                else (f"facts {check['kind']}.{path}={actual_num}，应 <= {expected_num}")
+            )
+        return (
+            None
+            if actual_num >= expected_num
+            else (f"facts {check['kind']}.{path}={actual_num}，应 >= {expected_num}")
+        )
+    if kind == "fact_any":
+        fact_kind = str(check["kind"])
+        conditions = check.get("where", [])
+        if not isinstance(conditions, list) or not conditions:
+            return "fact_any 缺少 where 条件"
+        candidates = [fact for fact in record.facts if fact.get("kind") == fact_kind]
+        if any(_fact_matches_conditions(fact, conditions) for fact in candidates):
+            return None
+        return f"trace 中没有任何 {fact_kind} fact 同时满足 {conditions}"
     return f"未知检查类型：{kind}"
+
+
+def summarize_trace(path: Path) -> dict[str, Any]:
+    """从 trace 中抽取黑盒 eval 需要的最小摘要：工具调用、facts、工具错误。"""
+    tool_calls: list[str] = []
+    facts: list[dict[str, Any]] = []
+    tool_errors: list[str] = []
+    if not path.exists():
+        return {"tool_calls": tool_calls, "facts": facts, "tool_errors": tool_errors}
+    for event in read_events(path):
+        if event.get("event") != "tool_call":
+            continue
+        tool = str(event.get("tool", ""))
+        if tool:
+            tool_calls.append(tool)
+        fact = event.get("facts")
+        if isinstance(fact, dict):
+            facts.append(fact)
+        preview = str(event.get("result_preview", ""))
+        if preview.startswith(("[error]", "[denied]", "Error executing tool")):
+            tool_errors.append(f"{tool}: {preview}")
+    return {"tool_calls": tool_calls, "facts": facts, "tool_errors": tool_errors}
+
+
+def _tool_matches(actual: str, expected: str) -> bool:
+    return actual == expected or actual.endswith(f"__{expected}")
+
+
+def _latest_fact(facts: list[dict[str, Any]], kind: str) -> dict[str, Any] | None:
+    for fact in reversed(facts):
+        if fact.get("kind") == kind:
+            return fact
+    return None
+
+
+def _field_path(data: dict[str, Any], path: str) -> Any:
+    current: Any = data
+    for part in path.split("."):
+        if not isinstance(current, dict) or part not in current:
+            return None
+        current = current[part]
+    return current
+
+
+def _fact_matches_conditions(fact: dict[str, Any], conditions: list[Any]) -> bool:
+    for condition in conditions:
+        if not isinstance(condition, dict):
+            return False
+        actual = _field_path(fact, str(condition.get("path", "")))
+        if "equals" in condition and actual != condition["equals"]:
+            return False
+        if "gte" in condition:
+            try:
+                if float(actual) < float(condition["gte"]):
+                    return False
+            except (TypeError, ValueError):
+                return False
+        if "lte" in condition:
+            try:
+                if float(actual) > float(condition["lte"]):
+                    return False
+            except (TypeError, ValueError):
+                return False
+    return True
 
 
 async def run_ue_suite(
@@ -153,6 +289,9 @@ async def run_ue_suite(
                 iteration_count=record.iteration_count,
                 max_step_attempts=record.max_step_attempts,
                 human_intervention=record.human_intervention,
+                trace_path=record.trace_path,
+                tool_calls=record.tool_calls,
+                tool_errors=record.tool_errors,
             )
         )
     return UeEvalReport(results=results)

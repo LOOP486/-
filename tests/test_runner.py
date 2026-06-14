@@ -167,6 +167,38 @@ async def test_step_exception_recorded_not_crash(tmp_path):
     assert "失败" in outcome.report
 
 
+async def test_step_execution_exception_aborts_without_evidence_retry(tmp_path):
+    """执行阶段 LLM/底层异常是决定性失败，不应被当作缺证据反复重试。"""
+
+    class ExplodingModel:
+        def __init__(self):
+            self.calls = 0
+
+        async def acomplete(self, role, messages, tools=None):
+            self.calls += 1
+            if self.calls == 1:
+                return plan(
+                    "standard",
+                    ("调用 wb_build", "wb_build 成功"),
+                    ("继续下一步", "不应执行"),
+                )
+            raise TimeoutError("模型请求超时")
+
+    writer = RunWriter(tmp_path, TaskSession.new("异常不重试"))
+    runner = TaskRunner(ExplodingModel(), make_registry(), writer, max_step_attempts=3)
+
+    outcome = await runner.run("搭白盒")
+
+    assert not outcome.success
+    assert writer.session.plan[0].status == "failed"
+    assert writer.session.plan[0].attempts == 1
+    assert writer.session.plan[1].status == "skipped"
+    events = read_events(writer.trace_path)
+    verifies = [e for e in events if e["event"] == "verify_result"]
+    assert verifies[-1]["mode"] == "execution"
+    assert "TimeoutError" in verifies[-1]["reason"]
+
+
 async def test_env_unready_aborts_without_retry(tmp_path):
     """环境未就绪（编辑器桥连接被拒）：验收失败后不重试不烧预算，直接终止并给指引。"""
     registry = ToolRegistry(PermissionGate())
@@ -621,6 +653,67 @@ async def test_contract_success_checks_drive_retry_then_pass(tmp_path):
     assert verifies[1]["mode"] == "contract" and verifies[1]["verdict"] == "pass"
 
 
+async def test_decisive_failure_overrides_contract_pass(tmp_path):
+    """契约检查通过时，也不能忽略同一步里的客观验证失败。
+
+    真机黑盒评测里 build 步 success_checks 只要求 wb_build.ok，但同一步
+    wb_validate 已返回 ok=false；runner 不应把这类步骤放行。
+    """
+    registry = make_registry()
+
+    async def wb_build(layout_json: str = "") -> str:
+        return 'built\n[facts] {"kind": "wb_build", "ok": true}'
+
+    async def wb_validate(layout_json: str = "") -> str:
+        return '校验FAIL\n[facts] {"kind": "wb_validate", "ok": false, "violations": 1}'
+
+    registry.register(
+        ToolSpec(
+            name="ue_whitebox__wb_build",
+            description="",
+            parameters={"type": "object", "properties": {"layout_json": {"type": "string"}}},
+            level=PermissionLevel.WRITE_SAFE,
+            handler=wb_build,
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="ue_whitebox__wb_validate",
+            description="",
+            parameters={"type": "object", "properties": {"layout_json": {"type": "string"}}},
+            level=PermissionLevel.READ,
+            handler=wb_validate,
+        )
+    )
+    model = FakeModel(
+        [
+            plan_raw(
+                "standard",
+                [
+                    {
+                        "intent": "搭建并顺手校验",
+                        "acceptance": "wb_build 成功",
+                        "allowed_tools": ["ue_whitebox__wb_build", "ue_whitebox__wb_validate"],
+                        "success_checks": [{"kind": "wb_build", "field": "ok", "equals": True}],
+                    }
+                ],
+            ),
+            tool_turn("ue_whitebox__wb_build", '{"layout_json": "{}"}'),
+            tool_turn("ue_whitebox__wb_validate", '{"layout_json": "{}"}'),
+            AssistantTurn(content="搭好了，但校验失败"),
+        ]
+    )
+    writer = RunWriter(tmp_path, TaskSession.new("契约不能盖过失败"))
+    runner = TaskRunner(model, registry, writer, max_step_attempts=1)
+
+    outcome = await runner.run("搭白盒")
+
+    assert not outcome.success
+    verifies = [e for e in read_events(writer.trace_path) if e["event"] == "verify_result"]
+    assert verifies[0]["verdict"] == "fail"
+    assert "wb_validate" in verifies[0]["reason"]
+
+
 async def test_contract_allowed_tools_denies_in_step(tmp_path):
     """步内调契约外工具：收到 [denied] 契约文本，换契约内工具后正常收口。"""
     registry = make_registry()
@@ -1013,6 +1106,236 @@ async def test_planner_reconciles_whitebox_build_with_visual_gate():
     assert "viewport_screenshot" in build.allowed_tools
     assert build.preconditions == ["editor_online"]
     assert build.rollback_policy == "wb_clear"
+
+
+async def test_planner_strips_unrequested_whitebox_visual_gate():
+    """用户没有明确要求截图/视觉时，planner 不应靠幻觉把白盒任务升级成视觉硬门禁。"""
+    model = FakeModel(
+        [
+            plan_raw(
+                "standard",
+                [
+                    {
+                        "intent": "使用 wb_build 搭建白盒结构，然后俯视截图自查并运行 wb_validate",
+                        "acceptance": "wb_validate 返回 ok: true",
+                        "allowed_tools": [
+                            "ue_whitebox__wb_build",
+                            "ue_whitebox__wb_clear",
+                            "ue_editor__viewport_screenshot",
+                            "ue_whitebox__wb_validate",
+                        ],
+                        "required_evidence": ["screenshot", "vision_review"],
+                    }
+                ],
+            )
+        ]
+    )
+
+    _, steps = await make_plan(model, "搭建一个默认 slab 白盒空间，并用 wb_validate 校验")
+
+    build = steps[0]
+    assert build.required_evidence == []
+    assert "ue_editor__viewport_screenshot" not in build.allowed_tools
+
+
+async def test_planner_respects_explicit_no_viewport_screenshot():
+    """用户显式禁止 viewport_screenshot 时，不应因为出现 screenshot 字样而加视觉门禁。"""
+    model = FakeModel(
+        [
+            plan_raw(
+                "standard",
+                [
+                    {
+                        "intent": "使用 wb_build 搭建白盒结构",
+                        "acceptance": "wb_build 返回 ok",
+                        "allowed_tools": [
+                            "ue_whitebox__wb_build",
+                            "ue_editor__viewport_screenshot",
+                        ],
+                        "required_evidence": ["screenshot", "vision_review"],
+                    }
+                ],
+            )
+        ]
+    )
+
+    _, steps = await make_plan(
+        model, "搭建默认 slab 白盒空间；不要调用 viewport_screenshot，只用 wb_validate 校验"
+    )
+
+    build = steps[0]
+    assert build.required_evidence == []
+    assert "ue_editor__viewport_screenshot" not in build.allowed_tools
+
+
+async def test_planner_accepts_split_whitebox_build_with_wb_build_fact():
+    """白盒搭建与验证拆成两步时，build 步应靠 wb_build 成功事实收口。"""
+    model = FakeModel(
+        [
+            plan_raw(
+                "standard",
+                [
+                    {
+                        "intent": "使用 wb_build 搭建白盒结构",
+                        "acceptance": "空间结构搭建完成",
+                        "allowed_tools": ["ue_whitebox__wb_build", "ue_whitebox__wb_clear"],
+                    },
+                    {
+                        "intent": "使用 wb_validate 和 path_test 验证",
+                        "acceptance": "验证通过",
+                        "allowed_tools": [
+                            "ue_whitebox__wb_validate",
+                            "ue_editor__path_test",
+                        ],
+                        "success_checks": [
+                            {"kind": "wb_validate"},
+                            {"kind": "path_test", "field": "reachable"},
+                        ],
+                    },
+                ],
+            )
+        ]
+    )
+
+    _, steps = await make_plan(model, "搭建白盒后再验证")
+
+    assert steps[0].success_checks == [{"kind": "wb_build", "field": "ok", "equals": True}]
+    assert "wb_validate" in steps[0].allowed_tools
+
+
+async def test_planner_keeps_clear_for_combined_whitebox_build_validate_step():
+    """同一步 build+validate 失败时，也要允许 wb_clear 后重搭。"""
+    model = FakeModel(
+        [
+            plan_raw(
+                "standard",
+                [
+                    {
+                        "intent": "使用 wb_build 搭建楼梯白盒空间，并立即 wb_validate 校验",
+                        "acceptance": "wb_validate 返回 ok",
+                        "allowed_tools": [
+                            "ue_whitebox__wb_build",
+                            "ue_whitebox__wb_validate",
+                        ],
+                        "success_checks": [{"kind": "wb_validate", "field": "ok", "equals": True}],
+                    }
+                ],
+            )
+        ]
+    )
+
+    _, steps = await make_plan(model, "搭建带楼梯的白盒空间并校验")
+
+    assert "wb_clear" in steps[0].allowed_tools
+
+
+async def test_planner_keeps_whitebox_repair_tools_for_split_nav_validation():
+    """白盒 build 与导航验证拆步时，验证步也要允许重建布局。
+
+    真机黑盒评测里 path_test 发现几何断裂后，模型想用 wb_clear/wb_build 重搭，
+    但 s2 白名单只剩导航工具，导致 agent 自我修复通道被框架切断。
+    """
+    model = FakeModel(
+        [
+            plan_raw(
+                "standard",
+                [
+                    {
+                        "intent": "使用 wb_build 搭建 slab 白盒空间",
+                        "acceptance": "空间落地",
+                        "allowed_tools": ["ue_whitebox__wb_build", "ue_whitebox__wb_clear"],
+                    },
+                    {
+                        "intent": "重建 NavMesh 并用 path_test 验证入口到尽端房间可达",
+                        "acceptance": "path_test 返回 reachable true",
+                        "allowed_tools": [
+                            "ue_editor__navmesh_rebuild",
+                            "ue_editor__path_test",
+                        ],
+                        "success_checks": [
+                            {"kind": "path_test", "field": "reachable", "equals": True}
+                        ],
+                    },
+                ],
+            )
+        ]
+    )
+
+    _, steps = await make_plan(model, "搭建白盒空间，然后验证导航可达")
+
+    validate = steps[1]
+    assert "wb_build" in validate.allowed_tools
+    assert "wb_clear" in validate.allowed_tools
+
+
+async def test_planner_keeps_repair_tools_for_split_wb_validate():
+    """wb_validate 单独成步时，也要允许重建布局。"""
+    model = FakeModel(
+        [
+            plan_raw(
+                "standard",
+                [
+                    {
+                        "intent": "使用 wb_build 搭建 slab 白盒空间",
+                        "acceptance": "空间落地",
+                        "allowed_tools": ["ue_whitebox__wb_build"],
+                    },
+                    {
+                        "intent": "使用 wb_validate 校验空间结构",
+                        "acceptance": "wb_validate 返回 ok",
+                        "allowed_tools": ["ue_whitebox__wb_validate"],
+                        "success_checks": [{"kind": "wb_validate", "field": "ok", "equals": True}],
+                    },
+                ],
+            )
+        ]
+    )
+
+    _, steps = await make_plan(model, "搭建白盒空间后校验")
+
+    validate = steps[1]
+    assert "wb_build" in validate.allowed_tools
+    assert "wb_clear" in validate.allowed_tools
+
+
+async def test_planner_keeps_navmesh_rebuild_for_split_path_validation():
+    """path_test 单独成步时，仍要允许重建 NavMesh。
+
+    否则该步即使能 wb_build 重搭布局，也不能对新布局重建导航。
+    """
+    model = FakeModel(
+        [
+            plan_raw(
+                "standard",
+                [
+                    {
+                        "intent": "使用 wb_build 搭建 slab 白盒空间",
+                        "acceptance": "空间落地",
+                        "allowed_tools": ["ue_whitebox__wb_build"],
+                    },
+                    {
+                        "intent": "重建导航网格",
+                        "acceptance": "navmesh_rebuild 完成",
+                        "allowed_tools": ["ue_editor__navmesh_rebuild"],
+                    },
+                    {
+                        "intent": "用 path_test 验证入口到尽端房间可达",
+                        "acceptance": "path_test 返回 reachable true",
+                        "allowed_tools": ["ue_editor__path_test"],
+                        "success_checks": [
+                            {"kind": "path_test", "field": "reachable", "equals": True}
+                        ],
+                    },
+                ],
+            )
+        ]
+    )
+
+    _, steps = await make_plan(model, "搭建白盒空间，重建导航后测试路径")
+
+    path_step = steps[2]
+    assert "navmesh_rebuild" in path_step.allowed_tools
+    assert "wb_build" in path_step.allowed_tools
 
 
 # ---------- B4 上下文工程 ----------
