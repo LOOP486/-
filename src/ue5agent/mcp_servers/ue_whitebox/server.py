@@ -38,11 +38,12 @@ def wb_build(layout_json: str, prefix: str = "WB") -> str:
     前缀纪律：保持默认 prefix="WB"，不要自创前缀——重建语义只清同前缀旧构件，
     异前缀残留会叠在场景里堵门、断 navmesh（wb_validate 能检出但应避免发生）。
 
-    默认使用 config/whitebox/kit.yaml（ArchKit 真实模块件）；如需旧 cube 清单可用
-    WB_MANIFEST=config/whitebox/levelprototyping.yaml 覆写。
+    默认使用 config/whitebox/kit.yaml 作为资产库，但结构层默认走 slab 模式：Engine Cube 连续地板/
+    连续片墙，门窗只切墙洞，不放门框/窗框模块；如需旧 ArchKit 模块化结构与多层 room，
+    在布局 JSON 顶层显式设置 "structure_mode": "modular"。
 
     布局格式（单位=格，1 格=100uu；坐标系：x 东 y 北；默认墙高 400uu）：
-    {"name": "训练场", "origin": [5000, 5000, 0],
+    {"name": "训练场", "structure_mode": "slab", "origin": [5000, 5000, 0],
      "level_height": 400,
      "rooms": [{"name": "main", "rect": [x, y, 宽, 深],
                 "level": 0,
@@ -55,10 +56,14 @@ def wb_build(layout_json: str, prefix: str = "WB") -> str:
      "gameplay": {}}
     规则：
     - 房间至少 2x2 格；
-    - room.level 缺省 0；level_height 缺省等于 wall_height。多层房间按 level 抬升；
-    - stairs 只连接相邻楼层，资产高度必须匹配层高差；上层楼梯井不铺地板；
-    - 墙体继续使用结构件拉伸（当前 ArchKit 为 Wall1_4 + butt joint）；stair/prop/cover/
-      pillar 使用资产原生尺寸落地，scale=(1,1,1)，needs_review 资产不参与自动选择；
+    - structure_mode 缺省为 slab；slab 只允许 room.level=0。旧多层 room 只能显式
+      structure_mode="modular" 使用；
+    - slab 下 doors/windows 只参与墙体切分，不生成 wall_door/window/glass_wall actor，也不生成
+      navproxy；连续地板、片墙和楼梯井护墙使用 /Engine/BasicShapes/Cube.Cube；
+    - stairs 只连接相邻楼层，资产高度必须匹配层高差；slab 允许 from_level=0,to_level=1 且没有
+      上层 room 的楼梯，只生成楼梯 mesh + 楼梯间护墙，不生成上层空间；
+    - modular 下继续使用 ArchKit 地板/墙/门/窗/navproxy 与旧多层 room 行为；
+    - stair/prop/cover/pillar 使用资产原生尺寸落地，scale=(1,1,1)，needs_review 资产不参与自动选择；
     - 只有显式提供 gameplay 时才生成玩法层。gameplay={} 会自动生成两个 PlayerStart、
       route markers 与 cover/pillar；不提供 gameplay 时旧布局输出保持结构层行为；
       `spawn_points`/`routes` 只有缺省时才走默认生成，显式 `[]` 表示不生成对应默认层；

@@ -93,6 +93,16 @@ def test_build_messages_includes_images_and_checklist(tmp_path):
     assert image_blocks[0]["image_url"]["url"].startswith("data:image/png;base64,")
 
 
+def test_default_review_checklist_focuses_on_blockout_space_not_frames(tmp_path):
+    p = _make_png(tmp_path)
+    messages = build_review_messages("单层三空间白盒", [p])
+    text = messages[1]["content"][0]["text"]
+
+    assert "不要因缺少门框/窗框扣分" in text
+    for keyword in ("主空间", "开合", "遮挡", "转角", "比例", "无意义孤立墙"):
+        assert keyword in text
+
+
 def test_parse_no_issues():
     result = parse_review('{"issues": []}')
     assert result.parsed is True

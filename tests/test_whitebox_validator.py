@@ -53,6 +53,8 @@ def test_perfect_layout_passes():
     assert report.ok, report.violations
     assert report.metrics["room_count"] == 2
     assert report.metrics["door_count"] == 2
+    assert report.metrics["structure_mode"] == "slab"
+    assert report.metrics["wall_fragmentation_score"] > 0
     assert report.metrics["actual_count"] == report.metrics["expected_count"]
     assert report.metrics["floor_area_m2"] == 32.0  # 两个 4x4 格房间 = 2 * 16m²
 
@@ -72,14 +74,14 @@ def test_missing_component_detected():
 def test_missing_wall_reports_wall_gap_metric():
     spec, manifest = _spec_and_manifest()
     actors = _perfect_actors(spec, manifest)
-    removed = next(a for a in actors if a.name.endswith("A_north_0_0"))
+    removed = next(a for a in actors if a.name.endswith("A_north_0"))
     actors.remove(removed)
 
     report = validate_layout(spec, manifest, actors)
 
     assert not report.ok
     assert report.metrics["wall_gap_count"] > 0
-    assert any("墙体缺口" in v and "A_north_0_0" in v for v in report.violations)
+    assert any("墙体缺口" in v and "A_north_0" in v for v in report.violations)
 
 
 def test_extra_component_detected():
@@ -185,7 +187,9 @@ def test_visual_bounds_mismatch_detected_even_when_transform_matches():
         assets={"floor": floor, "wall": wall},
         roles={"floor": "floor", "wall": "wall"},
     )
-    spec = LayoutSpec(name="visual", rooms=[Room(name="A", rect=(0, 0, 3, 3))])
+    spec = LayoutSpec(
+        name="visual", structure_mode="modular", rooms=[Room(name="A", rect=(0, 0, 3, 3))]
+    )
     actors = _perfect_actors(spec, manifest)
 
     report = validate_layout(spec, manifest, actors)

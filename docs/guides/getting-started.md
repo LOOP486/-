@@ -34,30 +34,42 @@ chat 里试一句「编译 MyGameEditor」——agent 会调用 ue_build 的 `ub
 
 ## 白盒布局 JSON 速记
 
-`wb_build` 接收布局 DSL，单位为格（默认 1 格 = 100uu）。最小结构层只需要 rooms；提供
-`gameplay` 时才会额外生成真实 `PlayerStart`、route markers、cover/pillar。
+`wb_build` 接收布局 DSL，单位为格（默认 1 格 = 100uu）。最小结构层只需要 rooms。
+`structure_mode` 缺省为 `slab`：连续地板、连续片墙、门窗只作为墙洞，不默认放门框/窗框模块。
+提供 `gameplay` 时才会额外生成真实 `PlayerStart`、route markers、cover/pillar。
 `gameplay.spawn_points` 与 `gameplay.routes` 只有缺省时才走默认生成；显式写 `[]` 表示关闭
 对应默认出生点或路线。
 
 ```json
 {
-  "name": "two_level_blockout",
+  "name": "single_level_slab",
   "origin": [0, 0, 0],
   "wall_height": 400,
-  "level_height": 400,
   "rooms": [
-    {"name": "L0", "rect": [0, 0, 6, 6], "level": 0},
-    {"name": "L1", "rect": [0, 0, 6, 6], "level": 1}
+    {
+      "name": "main",
+      "rect": [0, 0, 8, 8],
+      "doors": [{"wall": "east", "at": 2, "width": 2}],
+      "windows": [{"wall": "north", "at": 1, "width": 2}]
+    },
+    {
+      "name": "side",
+      "rect": [8, 0, 4, 8],
+      "doors": [{"wall": "west", "at": 2, "width": 2}]
+    }
   ],
   "stairs": [
-    {"room": "L0", "at": [1, 0], "from_level": 0, "to_level": 1, "facing": "north"}
+    {"room": "main", "at": [1, 1], "from_level": 0, "to_level": 1, "facing": "north"}
   ],
   "gameplay": {}
 }
 ```
 
-结构墙会继续按 ArchKit `Wall1_4` 拉伸对齐；楼梯、掩体、柱子、props 使用资产原生尺寸，
-生成结果的 `scale` 应为 `[1, 1, 1]`。
+slab 模式只允许 `room.level=0`；楼梯可以写 `from_level=0,to_level=1` 作为空间构件，
+即使没有上层 room，也只会生成楼梯 mesh 与楼梯间护墙，不生成二层空间。
+地板、片墙和楼梯间护墙使用 `/Engine/BasicShapes/Cube.Cube`；楼梯、掩体、柱子、props
+仍使用资产原生尺寸，生成结果的 `scale` 应为 `[1, 1, 1]`。如果需要旧 ArchKit 地板/墙/
+门/窗/navproxy 和多层 room 行为，在顶层显式写 `"structure_mode": "modular"`。
 显式 props 与自动 cover/pillar 会避开门洞、同房间门到门 corridor 和 gameplay 主路线；
 required prop 冲突会报错，optional prop 冲突会跳过。楼梯会额外避开同房间对穿门的直通
 corridor，避免把穿堂动线切断。

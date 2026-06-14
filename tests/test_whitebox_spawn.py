@@ -155,6 +155,34 @@ def test_spawn_uses_unique_names_avoiding_zombie_collision(monkeypatch):
     assert names[0].startswith("WB_") and names[0].endswith("_Room_floor"), names[0]
 
 
+def test_spawn_passes_room_folder_to_spawn_actor(monkeypatch):
+    """房间构件落地时应进入 World Outliner 的按房间文件夹。"""
+    import ue5agent.whitebox.spawner as sp
+    from ue5agent.whitebox.compiler import Placement
+
+    calls: list[tuple[str, dict]] = []
+
+    def fake_send(command, params=None, **_kwargs):
+        params = params or {}
+        calls.append((command, params))
+        return {"status": "success", "result": {"name": params.get("name")}}
+
+    monkeypatch.setattr(sp, "send_command", fake_send)
+    p = Placement(
+        name="Room_floor",
+        asset_path="/Engine/BasicShapes/Cube.Cube",
+        location=(0, 0, 0),
+        scale=(1, 1, 1),
+        metadata={"room": "Room"},
+    )
+
+    sp.spawn_layout([p], prefix="WB")
+
+    spawn = next(params for command, params in calls if command == "spawn_actor")
+    assert spawn["folder_path"] == "WB/Rooms/Room"
+    assert spawn["folder"] == "WB/Rooms/Room"
+
+
 def test_spawn_names_differ_across_batches(monkeypatch):
     """两次 build 的 spawn 名必须不同批次标记，确保跨批不撞名。"""
     import time

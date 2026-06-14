@@ -57,6 +57,7 @@ def test_layout_from_dict_parses_levels_stairs_props_and_gameplay():
     spec = layout_from_dict(
         {
             "name": "vertical",
+            "structure_mode": "modular",
             "wall_height": 400,
             "rooms": [
                 {
@@ -88,6 +89,7 @@ def test_layout_from_dict_parses_levels_stairs_props_and_gameplay():
     )
 
     assert spec.level_height == 400.0
+    assert spec.structure_mode == "modular"
     assert spec.rooms[0].level == 1
     assert spec.rooms[0].props[0].key == "smallwoodencrate_001"
     assert spec.rooms[0].props[0].rotation == 90.0
@@ -95,10 +97,56 @@ def test_layout_from_dict_parses_levels_stairs_props_and_gameplay():
     assert spec.gameplay is not None
 
 
+def test_default_slab_rejects_upper_room_levels():
+    spec = layout_from_dict(
+        {
+            "name": "slab-rejects-upper-room",
+            "rooms": [
+                {"name": "Lower", "rect": [0, 0, 6, 6], "level": 0},
+                {"name": "Upper", "rect": [0, 0, 6, 6], "level": 1},
+            ],
+        }
+    )
+
+    with pytest.raises(LayoutError, match='structure_mode="modular"'):
+        compile_layout(spec, KIT)
+
+
+def test_default_slab_allows_stair_without_upper_room_and_no_upper_structure():
+    spec = layout_from_dict(
+        {
+            "name": "single-level-stair",
+            "rooms": [{"name": "Lower", "rect": [0, 0, 7, 8], "level": 0}],
+            "stairs": [
+                {
+                    "room": "Lower",
+                    "at": [1, 1],
+                    "from_level": 0,
+                    "to_level": 1,
+                    "facing": "north",
+                    "key": "stair_2",
+                }
+            ],
+        }
+    )
+
+    placements = compile_layout(spec, KIT)
+    upper_structure = [
+        p
+        for p in placements
+        if p.kind in {"floor", "wall"} and p.target_min is not None and p.target_min[2] >= 400.0
+    ]
+
+    assert any(p.kind == "stair" for p in placements)
+    assert any(p.kind == "stairwell" for p in placements)
+    assert not upper_structure
+
+
 def test_multilevel_rooms_use_z_offset_and_upper_stairwell_has_no_floor():
     spec = layout_from_dict(
         {
             "name": "two-level",
+            "structure_mode": "modular",
             "wall_height": 400,
             "rooms": [
                 {"name": "Lower", "rect": [0, 0, 6, 8], "level": 0},
@@ -135,6 +183,7 @@ def test_stair_generates_stairwell_guards_and_metrics():
     spec = layout_from_dict(
         {
             "name": "stairwell",
+            "structure_mode": "modular",
             "wall_height": 400,
             "rooms": [
                 {"name": "Lower", "rect": [0, 0, 6, 8], "level": 0},
@@ -165,6 +214,7 @@ def test_multilevel_structural_laps_are_legal_but_stairs_still_cannot_cross_wall
     good = layout_from_dict(
         {
             "name": "legal-structural-laps",
+            "structure_mode": "modular",
             "wall_height": 400,
             "rooms": [
                 {"name": "Lower", "rect": [0, 0, 6, 8], "level": 0},
@@ -189,6 +239,7 @@ def test_multilevel_structural_laps_are_legal_but_stairs_still_cannot_cross_wall
     bad = layout_from_dict(
         {
             "name": "stair-crosses-wall",
+            "structure_mode": "modular",
             "wall_height": 400,
             "rooms": [
                 {"name": "Lower", "rect": [0, 0, 6, 8], "level": 0},
@@ -213,6 +264,7 @@ def test_stair_must_connect_adjacent_levels_and_match_level_height():
     bad_jump = layout_from_dict(
         {
             "name": "bad-jump",
+            "structure_mode": "modular",
             "wall_height": 400,
             "rooms": [
                 {"name": "L0", "rect": [0, 0, 6, 6], "level": 0},
@@ -235,6 +287,7 @@ def test_stair_must_connect_adjacent_levels_and_match_level_height():
     bad_height = layout_from_dict(
         {
             "name": "bad-height",
+            "structure_mode": "modular",
             "wall_height": 300,
             "level_height": 300,
             "rooms": [
@@ -260,6 +313,7 @@ def test_stair_cannot_block_straight_door_to_door_route():
     spec = layout_from_dict(
         {
             "name": "stair-blocks-through-route",
+            "structure_mode": "modular",
             "rooms": [
                 {
                     "name": "Lower",
@@ -578,6 +632,7 @@ def test_default_route_through_stairs_marks_both_stair_landings():
     spec = layout_from_dict(
         {
             "name": "vertical-route",
+            "structure_mode": "modular",
             "rooms": [
                 {"name": "Lower", "rect": [0, 0, 7, 7], "level": 0},
                 {"name": "Upper", "rect": [0, 0, 7, 7], "level": 1},
@@ -700,6 +755,7 @@ def test_auto_cover_keeps_clearance_from_stairwell_guards():
     spec = layout_from_dict(
         {
             "name": "stairwell-clearance",
+            "structure_mode": "modular",
             "rooms": [
                 {"name": "Lower", "rect": [0, 0, 7, 7], "level": 0},
                 {"name": "Upper", "rect": [0, 0, 7, 7], "level": 1},
@@ -736,6 +792,7 @@ def test_auto_cover_keeps_upper_stairwell_hole_clear():
     spec = layout_from_dict(
         {
             "name": "upper-stairwell-clearance",
+            "structure_mode": "modular",
             "rooms": [
                 {"name": "Lower", "rect": [0, 0, 7, 7], "level": 0},
                 {"name": "Upper", "rect": [0, 0, 7, 7], "level": 1},

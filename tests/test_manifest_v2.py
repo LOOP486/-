@@ -134,14 +134,22 @@ class TestPivotCompensation:
         )
 
     def test_floor_bottom_pivot_lands_on_ground(self):
-        spec = LayoutSpec(name="t", rooms=[Room(name="a", rect=(0, 0, 4, 3))])
+        spec = LayoutSpec(
+            name="t",
+            structure_mode="modular",
+            rooms=[Room(name="a", rect=(0, 0, 4, 3))],
+        )
         floor = by_name(compile_layout(spec, self._kit()), "a_floor")
         # 底面 pivot(z=0)：location.z=tmin.z=-20，AABB -20..0，顶面贴地 z=0
         assert floor.location == (200.0, 150.0, -20.0)
         assert floor.scale == (4.0, 3.0, 1.0)  # 20uu 厚 / 资产基准 20 = 1.0
 
     def test_wall_corner_pivot_fills_target_aabb(self):
-        spec = LayoutSpec(name="t", rooms=[Room(name="a", rect=(0, 0, 4, 3))])
+        spec = LayoutSpec(
+            name="t",
+            structure_mode="modular",
+            rooms=[Room(name="a", rect=(0, 0, 4, 3))],
+        )
         placements = compile_layout(spec, self._kit())
         south = by_name(placements, "a_south_0")
         # 南墙目标 AABB: x0..400 / y0..20 / z0..300；pivot=(0,1,0) → 原点在 x左/+Y面/底
@@ -171,6 +179,7 @@ class TestPivotCompensation:
 
         spec = LayoutSpec(
             name="t",
+            structure_mode="modular",
             wall_height=400,
             rooms=[Room(name="a", rect=(0, 0, 4, 3))],
         )

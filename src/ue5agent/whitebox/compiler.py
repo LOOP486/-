@@ -44,6 +44,16 @@ _ROUTE_CORRIDOR_HALF_WIDTH = 45.0
 
 _FLOOR_THICKNESS = 20.0
 """地板板厚（uu）：顶面贴 z=0，向下 20uu。cube 基准 100uu 时即旧逻辑的 scale.z=0.2。"""
+_STRUCTURE_MODES = {"slab", "modular"}
+_ENGINE_SLAB_ASSET = AssetDef(
+    key="_engine_slab",
+    path="/Engine/BasicShapes/Cube.Cube",
+    size=(100.0, 100.0, 100.0),
+    category="slab",
+    pivot=(0.5, 0.5, 0.5),
+    footprint=(1, 1),
+    tags=("structure", "slab"),
+)
 
 
 class LayoutError(Exception):
@@ -99,6 +109,7 @@ class GameplaySpec:
 class LayoutSpec:
     name: str
     rooms: list[Room]
+    structure_mode: str = "slab"
     wall_height: float = 300.0
     level_height: float = 0.0
     wall_thickness: float = 20.0
@@ -107,6 +118,10 @@ class LayoutSpec:
     gameplay: GameplaySpec | None = None
 
     def __post_init__(self) -> None:
+        self.structure_mode = self.structure_mode.strip().lower()
+        if self.structure_mode not in _STRUCTURE_MODES:
+            modes = "、".join(sorted(_STRUCTURE_MODES))
+            raise LayoutError(f"structure_mode 只支持 {modes}，收到：{self.structure_mode}")
         if self.level_height <= 0:
             self.level_height = self.wall_height
 
@@ -133,6 +148,10 @@ class Placement:
 def layout_from_dict(data: dict) -> LayoutSpec:
     """模型产出的 JSON → LayoutSpec（结构错误转为可读的 LayoutError）。"""
     try:
+        structure_mode = str(data.get("structure_mode", "slab")).strip().lower()
+        if structure_mode not in _STRUCTURE_MODES:
+            modes = "、".join(sorted(_STRUCTURE_MODES))
+            raise LayoutError(f"structure_mode 只支持 {modes}，收到：{structure_mode}")
         rooms = []
         for raw in data["rooms"]:
             rect = tuple(int(v) for v in raw["rect"])
@@ -190,6 +209,7 @@ def layout_from_dict(data: dict) -> LayoutSpec:
         return LayoutSpec(
             name=str(data.get("name", "layout")),
             rooms=rooms,
+            structure_mode=structure_mode,
             wall_height=float(data.get("wall_height", 400)),
             level_height=float(data.get("level_height", data.get("wall_height", 400))),
             wall_thickness=float(data.get("wall_thickness", 20)),
@@ -219,6 +239,22 @@ def _xy_int(raw: object) -> tuple[int, int]:
 
 def compile_layout(spec: LayoutSpec, manifest: Manifest) -> list[Placement]:
     _validate(spec, manifest)
+    if spec.structure_mode == "slab":
+        return _compile_layout_slab(spec, manifest)
+    return _compile_layout_modular_or_legacy(spec, manifest)
+
+
+def _compile_layout_slab(spec: LayoutSpec, manifest: Manifest) -> list[Placement]:
+    g = manifest.grid
+    placements: list[Placement] = []
+    for room in spec.rooms:
+        placements += _compile_room(room, spec, _ENGINE_SLAB_ASSET, _ENGINE_SLAB_ASSET, g)
+    placements = _dedupe_shared_walls(placements)
+    placements += _compile_native_layers(spec, manifest)
+    return placements
+
+
+def _compile_layout_modular_or_legacy(spec: LayoutSpec, manifest: Manifest) -> list[Placement]:
     stairwells = _stairwell_cells(spec, manifest)
     if _uses_modular_kit(manifest):
         modular_placements = _compile_layout_modular(spec, manifest, stairwells)
@@ -431,6 +467,7 @@ def _compile_nav_proxies(
                     ),
                     tsize=(g, g, _NAV_PROXY_THICKNESS),
                     kind="nav_proxy",
+                    metadata={"room": room.name},
                 )
             )
     return out
@@ -451,6 +488,7 @@ def _compile_nav_proxy(room: Room, spec: LayoutSpec, g: float) -> Placement:
         ),
         tsize=(w * g, d * g, _NAV_PROXY_THICKNESS),
         kind="nav_proxy",
+        metadata={"room": room.name},
     )
 
 
@@ -490,6 +528,7 @@ def _compile_floor_tiles(
                     tmin=(ox + (x + cx) * g, oy + (y + cy) * g, base_z - asset.size[2]),
                     tsize=(fw * g, fd * g, asset.size[2]),
                     kind="floor",
+                    metadata={"room": room.name},
                 )
             )
     return out
@@ -597,6 +636,7 @@ def _compile_wall_run(
             tsize,
             rotation,
             kind="wall",
+            metadata={"room": room.name},
         )
     ]
 
@@ -641,6 +681,7 @@ def _compile_opening(
         tsize,
         rotation,
         kind="wall",
+        metadata={"room": room.name},
     )
 
 
@@ -757,6 +798,8 @@ def _compile_stairs(spec: LayoutSpec, manifest: Manifest) -> list[Placement]:
 
 
 def _stairwell_wall_asset(manifest: Manifest, spec: LayoutSpec) -> AssetDef | None:
+    if spec.structure_mode == "slab":
+        return _ENGINE_SLAB_ASSET
     wall_assets = _assets_by_category(manifest, "wall")
     if not wall_assets:
         return None
@@ -1629,12 +1672,20 @@ def _walls_coincide(
 
 
 def _validate(spec: LayoutSpec, manifest: Manifest) -> None:
+    if spec.structure_mode not in _STRUCTURE_MODES:
+        modes = "、".join(sorted(_STRUCTURE_MODES))
+        raise LayoutError(f"structure_mode 只支持 {modes}，收到：{spec.structure_mode}")
     if not spec.rooms:
         raise LayoutError("布局至少要有一个房间")
     names = [room.name for room in spec.rooms]
     if len(names) != len(set(names)):
         raise LayoutError("房间 name 必须唯一")
     for room in spec.rooms:
+        if spec.structure_mode == "slab" and room.level != 0:
+            raise LayoutError(
+                f"默认 slab 模式只支持 room.level=0；房间 {room.name} 的 level={room.level}。"
+                '如需旧多层 room，请显式设置 structure_mode="modular"'
+            )
         _x, _y, w, d = room.rect
         if w < 2 or d < 2:
             raise LayoutError(f"房间 {room.name} 太小（{w}x{d}），至少 2x2 格")
@@ -1692,7 +1743,7 @@ def _validate_stairs(spec: LayoutSpec, manifest: Manifest) -> None:
             raise LayoutError(f"房间 {room.name} 的楼梯 {asset.key} 堵门到门路线")
         if _native_piece_crosses_wall(spec, room, stair.at, asset, rotation, manifest.grid):
             raise LayoutError(f"房间 {room.name} 的楼梯 {asset.key} 穿墙")
-        if _stair_target_room(spec, stair) is None:
+        if spec.structure_mode == "modular" and _stair_target_room(spec, stair) is None:
             raise LayoutError(f"楼梯 {room.name} 的上端没有可衔接房间")
 
 
@@ -1811,14 +1862,17 @@ def _compile_room(
             tmin=(ox + x * g, oy + y * g, base_z - _FLOOR_THICKNESS),
             tsize=(w * g, d * g, _FLOOR_THICKNESS),
             kind="floor",
+            metadata={"room": room.name},
         )
     ]
-    doors_by_wall: dict[str, list[tuple[int, int]]] = {wall: [] for wall in WALLS}
+    openings_by_wall: dict[str, list[tuple[int, int]]] = {wall: [] for wall in WALLS}
     for door in room.doors:
-        doors_by_wall[door.wall].append((door.at, door.at + door.width))
+        openings_by_wall[door.wall].append((door.at, door.at + door.width))
+    for window in room.windows:
+        openings_by_wall[window.wall].append((window.at, window.at + window.width))
 
     def add_wall(wall: str, length: int) -> None:
-        for index, (s, e) in enumerate(_segments(length, doors_by_wall[wall], room.name, wall)):
+        for index, (s, e) in enumerate(_segments(length, openings_by_wall[wall], room.name, wall)):
             run = (e - s) * g
             if wall == "south":
                 tmin = (ox + (x + s) * g, oy + y * g, base_z)
@@ -1833,7 +1887,14 @@ def _compile_room(
                 tmin = (ox + (x + w) * g - t, oy + (y + s) * g, base_z)
                 tsize = (t, run, h)
             out.append(
-                _fit_placement(f"{room.name}_{wall}_{index}", wall_asset, tmin, tsize, kind="wall")
+                _fit_placement(
+                    f"{room.name}_{wall}_{index}",
+                    wall_asset,
+                    tmin,
+                    tsize,
+                    kind="wall",
+                    metadata={"room": room.name},
+                )
             )
 
     add_wall("south", w)
@@ -1844,14 +1905,14 @@ def _compile_room(
 
 
 def _segments(
-    length: int, doors: list[tuple[int, int]], room: str, wall: str
+    length: int, openings: list[tuple[int, int]], room: str, wall: str
 ) -> list[tuple[int, int]]:
-    """墙长按门洞切分为实体段；门洞重叠即报错。"""
+    """墙长按门/窗开口切分为实体段；开口重叠即报错。"""
     cursor = 0
     segments: list[tuple[int, int]] = []
-    for start, end in sorted(doors):
+    for start, end in sorted(openings):
         if start < cursor:
-            raise LayoutError(f"房间 {room} 的 {wall} 墙门洞重叠")
+            raise LayoutError(f"房间 {room} 的 {wall} 墙开口重叠")
         if start > cursor:
             segments.append((cursor, start))
         cursor = end

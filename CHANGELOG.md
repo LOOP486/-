@@ -4,6 +4,21 @@
 
 ## [未发布]
 
+### 变更（白盒 slab-first 默认策略）
+
+- 布局 JSON 新增顶层 `structure_mode`：缺省为 `"slab"`，显式 `"modular"` 才走旧 ArchKit
+  模块化结构路径。
+- 默认 slab 模式改为 Engine Cube 连续地板与连续片墙；`doors`/`windows` 只切墙洞，不再生成
+  `wall_door`、`window`、`glass_wall` actor，也不生成 ArchKit 导航 `navproxy`。
+- 默认 slab 模式只支持 `room.level=0`；需要旧多层 room 时必须显式设置
+  `structure_mode="modular"`。
+- slab 模式允许只有 level 0 room 的楼梯（如 `from_level=0,to_level=1`）：生成楼梯 mesh 与
+  Engine Cube 楼梯间护墙，不生成上层 floor/wall。
+- `wb_validate` metrics 新增 `structure_mode` 与只读空间指标 `wall_fragmentation_score`；视觉审查
+  清单改为关注主空间、开合、遮挡、转角、比例与无意义孤立墙，并明确不因缺少门框/窗框扣分。
+- 白盒落地时会按 `Placement.metadata["room"]` 写入 World Outliner 文件夹：房间构件进入
+  `<prefix>/Rooms/<room>`，方便手动整理与检查默认 slab 测试场景。
+
 ### 新增（白盒可靠性底座）
 
 - manifest v2 支持 UE 校准后的 `local_bounds_min`、`local_bounds_max` 与 `calibrated` 字段；

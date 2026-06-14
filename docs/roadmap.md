@@ -37,12 +37,12 @@
 
 ### 白盒能力优化（ArchKit / 玩法 / 平面图）
 
-- [x] A. 结构质感：默认接入 `/Game/LevelPrototyping/Meshes/ArchKit`，编译器按真实地板、
+- [x] A. 结构质感：接入 `/Game/LevelPrototyping/Meshes/ArchKit`，编译器可按真实地板、
   墙、门、窗模块拼装；支持显式 `windows`、400uu 默认墙高、rotation 落地与校验。
   2026-06-13 真机 e2e：两房间 ArchKit 布局 spawn 25 件（含每房间隐藏 navproxy），`wb_validate`
   PASS，`navmesh_rebuild + path_test` 可达；当前 ArchKit 角件因体积过大默认禁用，墙体改用
   `Wall1_4` 单件拉伸，东西墙按墙厚端部缩进形成 butt joint，门/窗框通过 manifest `snap_box`
-  用 20uu 结构核心贴齐墙厚。
+  用 20uu 结构核心贴齐墙厚。2026-06-14 起该路径降级为显式 `structure_mode="modular"`。
 - [x] B. 玩法可用性：自动放掩体、柱子、路线、出生点，让关卡更像可玩的 blockout。
   2026-06-13 完成 B+ 垂直结构：DSL 支持 `room.level`、`level_height`、`stairs`、
   `props` 与显式 `gameplay`；无 gameplay 时旧布局保持结构层行为，有 `gameplay` 时自动生成
@@ -57,6 +57,11 @@
   可计数的 `stairwell` guard pieces；默认关键 ArchKit 地板/墙/楼梯资产已写入校准 bounds，
   validator 增加 `floor_hole_count` / `wall_gap_count` 量化缺地板与墙体缺口；截图 facts 增加本地
   取景快检，主体贴边/空图不能作为视觉硬证据。
+- [x] B3. Slab-first 默认策略：布局 DSL 顶层新增 `structure_mode`，默认 `slab` 生成 Engine Cube
+  连续地板与连续片墙，门窗只切墙洞且不生成 door/window actor 或 navproxy；`room.level > 0`
+  在默认模式下直接报错，旧 ArchKit 模块化与多层 room 行为仅在显式 `structure_mode="modular"`
+  保留。`wb_validate` 增加 `structure_mode` 与 `wall_fragmentation_score` 指标，视觉审查改为评价
+  blockout 空间组织，不因缺少门框/窗框扣分。
 - [ ] C. 平面图输入：从手绘/平面图/草图识别房间、门窗与连通关系，生成布局 DSL；透视图仅作风格/
   语义参考。（剩余的"图→布局 DSL 结构化识别"尚未做。）
 

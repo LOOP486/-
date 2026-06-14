@@ -52,6 +52,21 @@ def _batch_token() -> str:
     return format(int(time.time() * 1000) & 0xFFFFFFF, "x")
 
 
+def _folder_segment(value: object, *, fallback: str) -> str:
+    """把布局名/房间名压成单层 Outliner 文件夹名，避免斜杠意外拆层。"""
+    text = str(value).strip().replace("\\", "/").strip("/")
+    parts = [part.strip() for part in text.split("/") if part.strip()]
+    return "_".join(parts) if parts else fallback
+
+
+def _placement_folder_path(prefix: str, placement: Placement) -> str:
+    root = _folder_segment(prefix, fallback="WB")
+    room = placement.metadata.get("room")
+    if room:
+        return f"{root}/Rooms/{_folder_segment(room, fallback='UnnamedRoom')}"
+    return f"{root}/Misc"
+
+
 def spawn_layout(placements: list[Placement], *, prefix: str = "WB") -> list[str]:
     """落地一批构件，使用运行唯一名避免与僵尸名（待 GC 的旧 actor）撞名崩溃。
 
@@ -68,6 +83,9 @@ def spawn_layout(placements: list[Placement], *, prefix: str = "WB") -> list[str
             "location": list(placement.location),
             "rotation": list(placement.rotation),
         }
+        folder_path = _placement_folder_path(prefix, placement)
+        params["folder_path"] = folder_path
+        params["folder"] = folder_path
         if placement.actor_type == "StaticMeshActor":
             params["static_mesh"] = placement.asset_path
             params["scale"] = list(placement.scale)

@@ -482,10 +482,17 @@ def _fill_metrics(
         else p.scale[0] * p.scale[1]
         for p in floors
     )
+    total_wall_length_m = sum(
+        max(p.target_size[0], p.target_size[1]) / 100.0
+        if p.target_size is not None
+        else max(p.scale[0], p.scale[1])
+        for p in walls
+    )
     xs = [p.location[0] for p in expected]
     ys = [p.location[1] for p in expected]
     report.metrics.update(
         {
+            "structure_mode": spec.structure_mode,
             "room_count": len(spec.rooms),
             "door_count": sum(len(room.doors) for room in spec.rooms),
             "level_count": len({room.level for room in spec.rooms}),
@@ -498,6 +505,10 @@ def _fill_metrics(
             "spawn_count": sum(1 for p in expected if p.kind == "spawn"),
             "route_count": len(route_ids),
             "floor_area_m2": round(floor_area, 1),
+            "wall_fragmentation_score": round(
+                len(walls) / max(total_wall_length_m, 1.0),
+                3,
+            ),
             "bbox_center_xy": (round((min(xs) + max(xs)) / 2), round((min(ys) + max(ys)) / 2)),
         }
     )
