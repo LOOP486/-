@@ -21,8 +21,9 @@ from ue5agent.tools.registry import ToolRegistry, ToolSpec
 
 
 class McpManager:
-    def __init__(self, servers: dict[str, McpServerConfig]):
+    def __init__(self, servers: dict[str, McpServerConfig], *, env: dict[str, str] | None = None):
         self._configs = servers
+        self._env = dict(os.environ if env is None else env)
         self._stack = AsyncExitStack()
         self._sessions: dict[str, ClientSession] = {}
 
@@ -33,7 +34,7 @@ class McpManager:
             params = StdioServerParameters(
                 command=config.command[0],
                 args=config.command[1:],
-                env=dict(os.environ),
+                env=self._env,
             )
             read, write = await self._stack.enter_async_context(stdio_client(params))
             session = await self._stack.enter_async_context(ClientSession(read, write))

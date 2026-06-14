@@ -9,7 +9,11 @@ from ue5agent.agent.planner import make_plan
 from ue5agent.agent.report import build_report
 from ue5agent.agent.runner import TaskRunner
 from ue5agent.agent.state import PlanStep, TaskSession
-from ue5agent.agent.verifier import deterministic_verdict, evaluate_success_checks
+from ue5agent.agent.verifier import (
+    deterministic_verdict,
+    evaluate_required_evidence,
+    evaluate_success_checks,
+)
 from ue5agent.agent.vision_review import parse_review
 from ue5agent.core.errors import ErrorCategory, mark_env_unready, mark_error
 from ue5agent.core.permissions import PermissionGate, PermissionLevel
@@ -428,6 +432,7 @@ async def test_planner_parses_contract_fields():
                         "permission_ceiling": "write_safe",
                         "preconditions": ["editor_online"],
                         "success_checks": [{"kind": "wb_validate"}],
+                        "required_evidence": ["screenshot", "vision_review"],
                         "rollback_policy": "wb_clear",
                         "step_budget": {"max_turns": 5},
                     }
@@ -441,6 +446,7 @@ async def test_planner_parses_contract_fields():
     assert step.permission_ceiling == "write_safe"
     assert step.preconditions == ["editor_online"]
     assert step.success_checks == [{"kind": "wb_validate"}]
+    assert step.required_evidence == ["screenshot", "vision_review"]
     assert step.rollback_policy == "wb_clear"
     assert step.step_budget == {"max_turns": 5}
 
@@ -505,6 +511,53 @@ def test_evaluate_success_checks_rules():
         [{"kind": "wb_validate", "ok": True}, {"kind": "path_test", "ok": True, "reachable": True}],
     )
     assert passed is not None and passed.verdict == "pass"
+
+
+def test_required_evidence_fails_when_screenshot_frame_fact_is_false():
+    result = evaluate_required_evidence(
+        ["screenshot", "vision_review"],
+        [
+            {"kind": "screenshot", "ok": False, "framing_reason": "截图主体不在画面中心"},
+            {"kind": "vision_review", "ok": True},
+        ],
+    )
+
+    assert result is not None
+    assert result.verdict == "fail"
+    assert "screenshot" in result.reason
+
+
+async def test_required_evidence_blocks_whitebox_pass_without_screenshot_and_vision(tmp_path):
+    """白盒硬门禁：即使 wb_validate PASS，缺截图/视觉证据也不能收口。"""
+    registry = _facts_tool_registry(
+        "ue_whitebox__wb_validate",
+        '校验PASS\n[facts] {"kind": "wb_validate", "ok": true, "violations": 0}',
+    )
+    script = [
+        plan_raw(
+            "standard",
+            [
+                {
+                    "intent": "搭建并视觉校验白盒",
+                    "acceptance": "校验和视觉都通过",
+                    "success_checks": [{"kind": "wb_validate"}],
+                    "required_evidence": ["screenshot", "vision_review"],
+                }
+            ],
+        ),
+        tool_turn("ue_whitebox__wb_validate", '{"layout_json": "{}"}'),
+        AssistantTurn(content="校验通过"),
+    ]
+    writer = RunWriter(tmp_path, TaskSession.new("白盒硬门禁"))
+    runner = TaskRunner(FakeModel(script), registry, writer, max_step_attempts=1)
+
+    outcome = await runner.run("搭一个白盒并截图自查")
+
+    assert not outcome.success
+    verifies = [e for e in read_events(writer.trace_path) if e["event"] == "verify_result"]
+    assert verifies[0]["mode"] == "required_evidence"
+    assert verifies[0]["verdict"] == "insufficient"
+    assert "screenshot" in verifies[0]["reason"]
 
 
 async def test_scoped_registry_allowlist_and_ceiling():
@@ -936,6 +989,30 @@ async def test_contract_reconciles_check_tools_into_allowlist():
     )
     _, steps2 = await make_plan(model2, "目标")
     assert steps2[0].allowed_tools == []
+
+
+async def test_planner_reconciles_whitebox_build_with_visual_gate():
+    model = FakeModel(
+        [
+            plan_raw(
+                "standard",
+                [
+                    {"intent": "使用 wb_build 搭建白盒结构", "acceptance": "完成落地"},
+                    {"intent": "拍摄俯视截图并做 vision_review", "acceptance": "视觉通过"},
+                ],
+            )
+        ]
+    )
+
+    _, steps = await make_plan(model, "搭建白盒并截图视觉审查")
+
+    build = steps[0]
+    assert build.required_evidence == ["screenshot", "vision_review"]
+    assert "wb_build" in build.allowed_tools
+    assert "wb_clear" in build.allowed_tools
+    assert "viewport_screenshot" in build.allowed_tools
+    assert build.preconditions == ["editor_online"]
+    assert build.rollback_policy == "wb_clear"
 
 
 # ---------- B4 上下文工程 ----------

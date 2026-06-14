@@ -4,6 +4,74 @@
 
 ## [未发布]
 
+### 新增（白盒可靠性底座）
+
+- manifest v2 支持 UE 校准后的 `local_bounds_min`、`local_bounds_max` 与 `calibrated` 字段；
+  `Placement` 记录 `asset_key`、`visual_min`、`visual_size`、校准状态与 snap box 状态。
+- `ue_whitebox` 新增只读 `wb_asset_audit`，用 UE `get_mesh_bounds` 对照 manifest 尺寸并输出
+  `wb_asset_audit` facts，避免 FBX 草稿数据与 UE imported mesh bounds 偏离后继续自洽搭建。
+- `wb_validate` 新增校准资产 visual AABB 对齐检查与 `calibrated_asset_count`、
+  `visual_mismatch_count`、`stairwell_count` metrics；transform 完全匹配但真实视觉 AABB 偏移会报
+  `视觉对齐偏差`。
+- 默认 ArchKit 清单为 `floor_n`、`floor2_2`、`floor4_4`、`wall1_4`、`stair_2` 写入 UE
+  imported bounds 校准数据；`wb_validate` 新增 `floor_hole_count` / `wall_gap_count`，把缺地板、
+  缺墙从单个 actor 缺失提升为可聚合的结构洞/缝指标。
+- `PlanStep` 新增 `required_evidence`；runner 在 `success_checks` 前执行硬证据门禁，白盒步骤缺
+  `screenshot` / `vision_review` 等 facts 时不会只凭 `wb_validate` PASS 收口。
+- `viewport_screenshot` 的 `screenshot` facts 新增本地取景快检：成功回包后会检查截图文件存在、
+  非背景主体占比与主体是否居中；缺文件、空画面或主体贴边会令 `screenshot.ok=false`，避免“截到天空/
+  边角”也被当作白盒视觉硬证据。
+- 楼梯编译会生成 `stairwell` guard pieces，validator 可计数，补上“有楼梯但没有楼梯间结构”的基础契约。
+
+### 新增（白盒 B+ 垂直结构与玩法层）
+
+- 布局 DSL 扩展 `room.level`、`level_height`、顶层 `stairs`、`room.props` 与顶层
+  `gameplay`；未提供 `gameplay` 时保持旧结构层输出，提供 `gameplay`（含 `{}`）时自动生成
+  出生点、主路线、掩体与柱子。
+- `gameplay.spawn_points` 与 `gameplay.routes` 只有缺省时才走默认生成；显式 `[]` 会覆盖默认
+  生成并关闭对应 PlayerStart 或 route marker 输出。
+- 多层房间按 `origin.z + level * level_height` 抬升；楼梯只允许连接相邻楼层，资产高度必须匹配
+  层高差，上层楼梯井不铺地板/NavProxy。
+- 保持结构墙 `Wall1_4` 拉伸 + butt joint 对齐策略；新增 stair/prop/cover/pillar 原生尺寸放置路径，
+  自动件过滤 `needs_review` 资产，非结构件 `scale=(1,1,1)`。
+- 编译期按外墙厚度检查原生尺寸件目标 AABB：显式 props 与 stairs 不能侵入外墙边界带，避免
+  `wb_build` 把肉眼可见的穿墙布局先落地再等 `wb_validate` 失败。
+- 显式 props 与自动 cover/pillar 会避开同房间门到门 corridor；required prop 堵住该 corridor 时
+  编译期报错，optional prop 则跳过。
+- stairs 会避开同房间对穿门的直通 corridor，防止楼梯井切断穿堂动线；相邻转角门仍允许通过房间内
+  其它空间绕行。
+- 自动 cover/pillar 的占用表会同时保留楼梯 footprint 的上下层安全区，避免上层楼梯井洞口被自动玩法件填住。
+- 默认 gameplay route 经过楼梯边时会在下层楼梯脚与上层楼梯口各插入 route marker，让自动玩法件避让
+  真正的上下楼动线，而不是只连接上下层房间中心。
+- `Placement`/spawner 支持非 StaticMeshActor；白盒 gameplay 出生点以真实 `PlayerStart` 落地，
+  `spawn_actor` 调用不再传 `static_mesh`。
+- `wb_build` 在 spawn 阶段遇到桥断开、丢响应或单件落地失败时，会自动按同前缀执行 best-effort
+  回滚，避免半批次 actor 残留到下次校验并造成叠批穿插。
+- validator 增加 `level_count`、`stair_count`、`prop_count`、`spawn_count`、`route_count` metrics，
+  并检查 cover/prop/pillar 是否堵塞主路线 corridor；PlayerStart/route/navproxy 不污染 wall/floor metrics。
+- UnrealMCP 插件侧 `spawn_actor` 白名单新增 `type="PlayerStart"`，并对空参数请求返回错误。
+
+### 新增（ArchKit 结构质感）
+
+- `ue_whitebox` 默认白盒清单切到 `config/whitebox/kit.yaml`（可用 `WB_MANIFEST` 覆写回旧
+  LevelPrototyping 清单），`wb_build` 现在优先使用 `/Game/LevelPrototyping/Meshes/ArchKit`
+  的真实模块件搭结构。
+- 白盒布局 DSL 新增显式 `windows` 字段（同 `doors` 的 `wall/at/width` 结构）；`layout_json`
+  默认墙高调整为 400uu，以匹配 ArchKit 墙/门/窗的原生高度。
+- 编译器新增混合模块铺排：地板按 tile 覆盖，墙体主路径统一使用 `Wall1_4` 单件沿 X 拉伸到目标
+  长度，减少多墙段接缝与外沿错位；门洞/窗洞放 `wall_door`/`window` 模块。
+- 当前 ArchKit `corner` 资产是占 1x1m 的实体角墙，和已铺到角点的直墙叠放会严重穿模；
+  因此默认禁用自动角件，转角由南北墙满长 + 东西墙按墙厚端部缩进形成 butt joint，后续换成墙厚级角件后再接入。
+- manifest v2 新增 `snap_box`：资产可声明用于拼接/贴齐的结构核心盒，而不是拿完整视觉包围盒对齐；
+  ArchKit 门框与窗框已标中间 20uu 核心，外框可自然突出但墙体核心仍贴齐。
+- 修复共享墙去重误判：去重时纳入 yaw，避免南北墙和东西墙在角点附近被当成同一面墙而误删。
+- 相邻房间的共享门只在墙段上切开通道，不再额外放 `wall_door` 门框，避免室内连通口被实体门框
+  碰撞误堵；外墙门仍使用 ArchKit `wall_door` 模块。
+- ArchKit 地板下方自动生成薄 `navproxy` 导航承载面（Engine cube，藏在地板下，不计入地板面积/
+  墙体 metrics），解决当前 ArchKit floor 资产不产出可走 NavMesh 的问题。
+- 白盒落地与校验支持旋转：`Placement` 记录 rotation/目标 AABB，`spawn_layout` 透传 rotation，
+  `wb_validate` 对照 rotation 并用目标 AABB 避免旋转模块误报穿插。
+
 ### 新增（WB-1：资产库地基）
 
 - FBX 批量导入（**真机导入 80 件通过 2026-06-13**）：`ue_editor` 新增 `import_fbx(tasks,
@@ -31,6 +99,10 @@
     **`FStaticMeshCompilingManager::FinishCompilation` 阻塞等异步构建完成**（否则保存的是未缩放旧数据、
     不持久化，且累积异步任务会致崩）→ 保存。米制 ArchKit 80 件经 build_scale=100 校正到正确 uu 尺寸
     （Wall8_4 实测 800×20×400），原点保持局部。
+- StaticMesh 默认材质工具：`ue_editor` 新增 `set_static_mesh_material(asset_path, material_path,
+  material_slot=0)`（write_project），插件 C++ 新增同名命令；`ue_whitebox` 新增
+  `wb_apply_manifest_material(material_path=MI_PrototypeGrid_Gray)` 批量读取当前 manifest 并逐个设置
+  ArchKit 资产默认材质。当前源码已接线，需重编译/重启编辑器后生效。
 
 ### 新增（Stage E：行为闭环与编排）
 

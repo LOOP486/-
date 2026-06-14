@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -137,3 +138,19 @@ def load_models_config(path: Path) -> ModelsConfig:
 
 def load_agent_settings(path: Path) -> AgentSettings:
     return AgentSettings.model_validate(_load_yaml(path))
+
+
+def build_runtime_env(
+    settings: AgentSettings, base_env: dict[str, str] | None = None
+) -> dict[str, str]:
+    """把 agent.yaml 的工程配置转换为 MCP 子进程运行环境。"""
+    env = dict(os.environ if base_env is None else base_env)
+    if settings.engine is not None:
+        env.setdefault("UE_ENGINE_ROOT", str(settings.engine.root))
+    if settings.project is not None:
+        uproject = settings.project.uproject
+        env.setdefault("UE_UPROJECT", str(uproject))
+        token_file = uproject.parent / "Saved" / "ue5agent_bridge_token.txt"
+        if "UE_MCP_TOKEN" not in env and "UE_MCP_TOKEN_FILE" not in env and token_file.exists():
+            env["UE_MCP_TOKEN_FILE"] = str(token_file)
+    return env

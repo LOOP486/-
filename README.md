@@ -2,7 +2,7 @@
 
 面向 UE5 游戏开发的 agent：用 C++ 实现功能、读懂蓝图工程、用模块化资产搭建白盒场景，并自主完成编译、测试与截图验证。支持 GPT / Claude / DeepSeek 及任意 OpenAI 兼容 API。
 
-**当前状态**：Phase 0（核心骨架 + C++ 编译闭环），见 [路线图](docs/roadmap.md)。
+**当前状态**：Phase 0–3 主线已完成（C++ 编译闭环、蓝图只读理解、白盒搭建、行为验证与子代理编排均已收口）。当前推进白盒能力优化：WB-1 资产库地基已接上 ArchKit，结构搭建已能按真实地板/墙/门/窗模块拼装并通过 NavMesh 可达性验证；当前 ArchKit 角件因体积过大默认禁用，墙体改用 `Wall1_4` 单件拉伸 + 东西墙端部缩进形成干净转角，门/窗框通过 manifest `snap_box` 用 20uu 结构核心贴齐墙厚。B+ 玩法层已支持多层房间、相邻楼层楼梯、楼梯井 guard、原生尺寸 props/cover/pillar、自动 route markers 与真实 `PlayerStart` 出生点；白盒可靠性底座新增 UE imported bounds 资产审计、visual AABB 校验和截图/视觉硬证据门禁。下一步聚焦平面图输入。详见 [路线图](docs/roadmap.md)、[工作日志](docs/worklog.md) 与 [CHANGELOG](CHANGELOG.md)。
 
 ## 快速开始
 

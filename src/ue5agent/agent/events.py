@@ -25,6 +25,7 @@ EVENT_TYPES = frozenset(
         "recover_action",
         "checkpoint",
         "budget_warning",
+        "run_error",
         "run_end",
         # B1 步骤契约
         "precondition_unmet",
@@ -119,6 +120,11 @@ def read_events(path: Path) -> list[dict[str, Any]]:
         except json.JSONDecodeError:
             continue
     return events
+
+
+def resolve_trace_path(path: Path) -> Path:
+    """接受 trace 文件或 run 目录；目录输入自动解析为 trace.jsonl。"""
+    return path / "trace.jsonl" if path.is_dir() else path
 
 
 def latest_trace(root: Path) -> Path | None:

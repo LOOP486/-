@@ -23,6 +23,10 @@ import yaml
 
 # cube 等价默认：正中 pivot，使 v1 资产经新编译路径产出与旧逻辑完全一致的坐标。
 _DEFAULT_PIVOT: tuple[float, float, float] = (0.5, 0.5, 0.5)
+_DEFAULT_SNAP_BOX: tuple[tuple[float, float, float], tuple[float, float, float]] = (
+    (0.0, 0.0, 0.0),
+    (1.0, 1.0, 1.0),
+)
 
 
 @dataclass
@@ -33,10 +37,31 @@ class AssetDef:
     category: str
     pivot: tuple[float, float, float] = _DEFAULT_PIVOT
     footprint: tuple[int, int] = (1, 1)
+    snap_box: tuple[tuple[float, float, float], tuple[float, float, float]] = _DEFAULT_SNAP_BOX
+    local_bounds_min: tuple[float, float, float] | None = None
+    local_bounds_max: tuple[float, float, float] | None = None
+    calibrated: bool = False
     tags: tuple[str, ...] = ()
     desc: str = ""
     source_fbx: str = ""
     needs_review: bool = False
+
+    @property
+    def visual_bounds(self) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
+        """UE 本地视觉包围盒；未校准旧清单按 size/pivot 反推以保持兼容。"""
+        if self.local_bounds_min is not None and self.local_bounds_max is not None:
+            return (self.local_bounds_min, self.local_bounds_max)
+        lo = (
+            -self.pivot[0] * self.size[0],
+            -self.pivot[1] * self.size[1],
+            -self.pivot[2] * self.size[2],
+        )
+        hi = (
+            (1.0 - self.pivot[0]) * self.size[0],
+            (1.0 - self.pivot[1]) * self.size[1],
+            (1.0 - self.pivot[2]) * self.size[2],
+        )
+        return (lo, hi)
 
 
 @dataclass
@@ -74,6 +99,22 @@ def _as_xyz(raw: object, default: tuple[float, float, float]) -> tuple[float, fl
     return (float(raw[0]), float(raw[1]), float(raw[2]))
 
 
+def _as_snap_box(
+    raw: object,
+) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
+    if not isinstance(raw, (list, tuple)) or len(raw) != 2:
+        return _DEFAULT_SNAP_BOX
+    lo = _as_xyz(raw[0], _DEFAULT_SNAP_BOX[0])
+    hi = _as_xyz(raw[1], _DEFAULT_SNAP_BOX[1])
+    return (lo, hi)
+
+
+def _optional_xyz(raw: object) -> tuple[float, float, float] | None:
+    if raw is None:
+        return None
+    return _as_xyz(raw, _DEFAULT_PIVOT)
+
+
 def load_manifest(path: Path) -> Manifest:
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
     assets = {
@@ -84,6 +125,10 @@ def load_manifest(path: Path) -> Manifest:
             category=item.get("category", "block"),
             pivot=_as_xyz(item.get("pivot"), _DEFAULT_PIVOT),
             footprint=_footprint(item.get("footprint")),
+            snap_box=_as_snap_box(item.get("snap_box")),
+            local_bounds_min=_optional_xyz(item.get("local_bounds_min")),
+            local_bounds_max=_optional_xyz(item.get("local_bounds_max")),
+            calibrated=bool(item.get("calibrated", False)),
             tags=tuple(str(t) for t in (item.get("tags") or [])),
             desc=str(item.get("desc", "")),
             source_fbx=str(item.get("source_fbx", "")),

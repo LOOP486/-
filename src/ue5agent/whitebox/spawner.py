@@ -62,15 +62,18 @@ def spawn_layout(placements: list[Placement], *, prefix: str = "WB") -> list[str
     spawned: list[str] = []
     for placement in placements:
         name = f"{prefix}_{batch}_{placement.name}"
+        params = {
+            "type": placement.actor_type,
+            "name": name,
+            "location": list(placement.location),
+            "rotation": list(placement.rotation),
+        }
+        if placement.actor_type == "StaticMeshActor":
+            params["static_mesh"] = placement.asset_path
+            params["scale"] = list(placement.scale)
         response = send_command(
             "spawn_actor",
-            {
-                "type": "StaticMeshActor",
-                "name": name,
-                "static_mesh": placement.asset_path,
-                "location": list(placement.location),
-                "scale": list(placement.scale),
-            },
+            params,
         )
         if response.get("status") == "error":
             raise RuntimeError(f"spawn {name} 失败：{response.get('error')}")

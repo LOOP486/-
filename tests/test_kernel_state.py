@@ -3,7 +3,13 @@
 import pytest
 
 from tests.test_loop import FakeModel, make_registry
-from ue5agent.agent.events import EVENT_TYPES, RunWriter, latest_trace, read_events
+from ue5agent.agent.events import (
+    EVENT_TYPES,
+    RunWriter,
+    latest_trace,
+    read_events,
+    resolve_trace_path,
+)
 from ue5agent.agent.state import Budgets, PlanStep, TaskSession
 from ue5agent.core.loop import AgentLoop
 from ue5agent.llm.types import AssistantTurn, ToolCall
@@ -78,6 +84,14 @@ def test_read_events_skips_corrupt_lines(tmp_path):
     path = tmp_path / "t.jsonl"
     path.write_text('{"event": "a"}\n{broken\n{"event": "b"}\n', encoding="utf-8")
     assert [e["event"] for e in read_events(path)] == ["a", "b"]
+
+
+def test_resolve_trace_path_accepts_run_directory(tmp_path):
+    writer = RunWriter(tmp_path, TaskSession.new("目录回放"))
+    writer.event("run_start")
+
+    assert resolve_trace_path(writer.dir) == writer.trace_path
+    assert resolve_trace_path(writer.trace_path) == writer.trace_path
 
 
 class TestLatestTrace:

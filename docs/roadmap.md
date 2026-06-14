@@ -35,6 +35,31 @@
   path_test 三对房间均可达，全程无人值守）
 - [x] 验收：文字需求 + 模块资产库 → 可走通的白盒关卡 + 截图证据（2026-06-12 三房间死斗 e2e 达成）
 
+### 白盒能力优化（ArchKit / 玩法 / 平面图）
+
+- [x] A. 结构质感：默认接入 `/Game/LevelPrototyping/Meshes/ArchKit`，编译器按真实地板、
+  墙、门、窗模块拼装；支持显式 `windows`、400uu 默认墙高、rotation 落地与校验。
+  2026-06-13 真机 e2e：两房间 ArchKit 布局 spawn 25 件（含每房间隐藏 navproxy），`wb_validate`
+  PASS，`navmesh_rebuild + path_test` 可达；当前 ArchKit 角件因体积过大默认禁用，墙体改用
+  `Wall1_4` 单件拉伸，东西墙按墙厚端部缩进形成 butt joint，门/窗框通过 manifest `snap_box`
+  用 20uu 结构核心贴齐墙厚。
+- [x] B. 玩法可用性：自动放掩体、柱子、路线、出生点，让关卡更像可玩的 blockout。
+  2026-06-13 完成 B+ 垂直结构：DSL 支持 `room.level`、`level_height`、`stairs`、
+  `props` 与显式 `gameplay`；无 gameplay 时旧布局保持结构层行为，有 `gameplay` 时自动生成
+  真实 `PlayerStart`、route markers 与 cover/pillar。墙体继续 `Wall1_4` 拉伸 + butt joint；
+  stair/prop/cover/pillar 均以资产原生尺寸落地（scale=1），validator 增加 level/stair/prop/
+  spawn/route metrics 与主路线堵塞检查；跨楼层默认 route 会插入楼梯脚/楼梯口 marker，保护真实
+  上下楼动线。
+- [x] B2. 可靠性底座：UE imported StaticMesh bounds 作为资产真值；manifest 支持
+  `local_bounds_min/local_bounds_max/calibrated`，新增 `wb_asset_audit` 检查 manifest 与 UE
+  bounds 偏差；`Placement` 带 visual AABB，`wb_validate` 能抓 transform 自洽但视觉 AABB 偏移；
+  白盒步骤可声明 `required_evidence`，缺截图/视觉审查时不能仅凭 `wb_validate` PASS；楼梯会生成
+  可计数的 `stairwell` guard pieces；默认关键 ArchKit 地板/墙/楼梯资产已写入校准 bounds，
+  validator 增加 `floor_hole_count` / `wall_gap_count` 量化缺地板与墙体缺口；截图 facts 增加本地
+  取景快检，主体贴边/空图不能作为视觉硬证据。
+- [ ] C. 平面图输入：从手绘/平面图/草图识别房间、门窗与连通关系，生成布局 DSL；透视图仅作风格/
+  语义参考。（剩余的"图→布局 DSL 结构化识别"尚未做。）
+
 ## Phase 3：行为闭环与编排
 
 > 细案见 [stage-e-plan.md](stage-e-plan.md)（E1 PIE/Automation、E2 子代理、E3 基准+UE eval）。下列项多需 UE 在线 + 插件 C++。

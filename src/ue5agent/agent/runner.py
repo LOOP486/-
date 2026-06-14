@@ -22,6 +22,7 @@ from ue5agent.agent.state import PlanStep
 from ue5agent.agent.verifier import (
     VerifyResult,
     deterministic_verdict,
+    evaluate_required_evidence,
     evaluate_success_checks,
     verify_step,
 )
@@ -357,7 +358,9 @@ class TaskRunner:
         deadline = time.monotonic() + self._total_wall_seconds
         self._writer.event("phase_enter", phase="plan")
         session.task_class, session.plan = await make_plan(
-            self._llm, goal, tool_names=self._registry.names()
+            self._llm,
+            goal,
+            tool_names=self._registry.names(),
         )
         self._writer.event(
             "phase_exit",
@@ -415,16 +418,21 @@ class TaskRunner:
                 # A4：对本步截图做视觉审查，结果并入 tee.facts（驱动下方确定性验收）
                 vision_result = await self._run_vision_review(step, goal, tee)
 
-                # 验收优先级：步骤契约 success_checks（B1）→ 通用确定性规则（A3）→ LLM judge
+                # 验收优先级：硬证据门禁 → 步骤契约 success_checks（B1）
+                # → 通用确定性规则（A3）→ LLM judge
                 mode = "judge"
-                det = (
+                det = evaluate_required_evidence(step.required_evidence, tee.facts)
+                if det is not None:
+                    mode = "required_evidence"
+                contract = (
                     evaluate_success_checks(step.success_checks, tee.facts)
                     if step.success_checks
                     else None
                 )
-                if det is not None:
+                if det is None and contract is not None:
+                    det = contract
                     mode = "contract"
-                else:
+                if det is None:
                     det = deterministic_verdict(tee.facts)
                     if det is not None:
                         mode = "deterministic"

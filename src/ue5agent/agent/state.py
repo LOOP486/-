@@ -52,6 +52,8 @@ class PlanStep:
     success_checks: list[dict] = field(default_factory=list)
     """声明式验收：[{"kind": "wb_validate", "field": "ok", "equals": true}]，
     绑定 facts 证据通道（A3）；缺证据 → insufficient，驱动补证据重试"""
+    required_evidence: list[str] = field(default_factory=list)
+    """硬证据门禁：列出必须出现的 facts kind（如 screenshot/vision_review）。"""
     rollback_policy: str = "none"
     """步骤最终失败时的回滚策略：none | wb_clear（restore_checkpoint 仅提示不自动执行）"""
     step_budget: dict = field(default_factory=dict)

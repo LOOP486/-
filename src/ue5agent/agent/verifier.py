@@ -116,6 +116,25 @@ def evaluate_success_checks(checks: list[dict], facts: list[dict]) -> VerifyResu
     return VerifyResult("pass", f"契约检查全部通过（{valid} 项）")
 
 
+def evaluate_required_evidence(required: list[str], facts: list[dict]) -> VerifyResult | None:
+    """硬证据门禁：required 中列出的 facts kind 必须存在，且最新事实不能 ok=False。"""
+    kinds = [str(kind).strip() for kind in required if str(kind).strip()]
+    if not kinds:
+        return None
+    latest: dict[str, dict] = {}
+    for fact in facts:
+        kind = fact.get("kind")
+        if isinstance(kind, str):
+            latest[kind] = fact
+    missing = [kind for kind in kinds if kind not in latest]
+    failed = [kind for kind in kinds if latest.get(kind, {}).get("ok") is False]
+    if failed:
+        return VerifyResult("fail", "硬证据失败：" + "、".join(failed))
+    if missing:
+        return VerifyResult("insufficient", "缺少硬证据：" + "、".join(missing))
+    return None
+
+
 async def verify_step(
     llm: ChatModel,
     *,

@@ -1,8 +1,15 @@
 """config 模块：models.yaml / agent.yaml 的加载与校验。"""
 
+from pathlib import Path
+
 import pytest
 
-from ue5agent.config import AgentSettings, load_agent_settings, load_models_config
+from ue5agent.config import (
+    AgentSettings,
+    build_runtime_env,
+    load_agent_settings,
+    load_models_config,
+)
 
 VALID_MODELS = """\
 providers:
@@ -150,3 +157,40 @@ mcp_servers:
     )
     with pytest.raises(ValueError, match="navmesh_rebuild"):
         load_agent_settings(path)
+
+
+def test_runtime_env_uses_agent_project_paths_and_token_file(tmp_path):
+    project_dir = tmp_path / "Game"
+    saved_dir = project_dir / "Saved"
+    saved_dir.mkdir(parents=True)
+    uproject = project_dir / "Game.uproject"
+    uproject.write_text("{}", encoding="utf-8")
+    token_file = saved_dir / "ue5agent_bridge_token.txt"
+    token_file.write_text("secret\n", encoding="utf-8")
+    settings = AgentSettings.model_validate(
+        {
+            "engine": {"root": str(tmp_path / "UE_5.7"), "version": "5.7"},
+            "project": {"uproject": str(uproject)},
+        }
+    )
+
+    env = build_runtime_env(settings, base_env={})
+
+    assert env["UE_ENGINE_ROOT"] == str(Path(tmp_path / "UE_5.7"))
+    assert env["UE_UPROJECT"] == str(uproject)
+    assert env["UE_MCP_TOKEN_FILE"] == str(token_file)
+
+
+def test_runtime_env_does_not_override_explicit_token(tmp_path):
+    project_dir = tmp_path / "Game"
+    saved_dir = project_dir / "Saved"
+    saved_dir.mkdir(parents=True)
+    uproject = project_dir / "Game.uproject"
+    uproject.write_text("{}", encoding="utf-8")
+    (saved_dir / "ue5agent_bridge_token.txt").write_text("file-secret\n", encoding="utf-8")
+    settings = AgentSettings.model_validate({"project": {"uproject": str(uproject)}})
+
+    env = build_runtime_env(settings, base_env={"UE_MCP_TOKEN": "explicit-secret"})
+
+    assert env["UE_MCP_TOKEN"] == "explicit-secret"
+    assert "UE_MCP_TOKEN_FILE" not in env

@@ -164,8 +164,169 @@ def viewport_screenshot(
     if out.startswith("[error]") or is_env_unready(out):
         return out
     # screenshot 事实：runner 据此发现本步截图并触发 A4 视觉审查（路径 = 实际落盘路径）
-    facts = {"kind": "screenshot", "ok": True, "path": params["file_path"]}
-    return f"{out}\n[facts] {json.dumps(facts, ensure_ascii=False)}"
+    frame = _analyze_screenshot_frame(Path(params["file_path"]))
+    facts = {
+        "kind": "screenshot",
+        "ok": frame["framing_ok"],
+        "path": params["file_path"],
+        **frame,
+    }
+    verdict = "PASS" if frame["framing_ok"] else "FAIL"
+    note = f"截图取景{verdict}：{frame['framing_reason']}"
+    return f"{out}\n{note}\n[facts] {json.dumps(facts, ensure_ascii=False)}"
+
+
+def _analyze_screenshot_frame(path: Path) -> dict[str, Any]:
+    """本地截图可用性快检：文件存在、画面中有足量且居中的非背景内容。
+
+    这不是替代 vision_review 的语义审查，只防止“截到了天空/边角/空图”也进入
+    硬证据通道。背景色取四角均值，前景取与背景差异足够大的像素。
+    """
+    if not path.exists():
+        return _screenshot_frame_fail("截图文件不存在", foreground_ratio=0.0)
+    try:
+        from PIL import Image
+    except ImportError:
+        return {"framing_ok": True, "framing_reason": "未安装 Pillow，跳过本地取景快检"}
+    try:
+        with Image.open(path) as opened:
+            original_size = opened.size
+            img = opened.convert("RGB")
+            if max(img.size) > 512:
+                img.thumbnail((512, 512), Image.Resampling.BILINEAR)
+            bbox, ratio, centroid = _foreground_stats(img)
+    except Exception as exc:
+        return _screenshot_frame_fail(f"截图无法解码：{type(exc).__name__}", foreground_ratio=0.0)
+
+    if bbox is None:
+        return _screenshot_frame_fail("截图未检测到主体", foreground_ratio=ratio)
+
+    width, height = img.size
+    x0, y0, x1, y1 = bbox
+    bbox_w = (x1 - x0 + 1) / max(width, 1)
+    bbox_h = (y1 - y0 + 1) / max(height, 1)
+    center_x, center_y = centroid
+    original_bbox = _scale_bbox(bbox, img.size, original_size)
+    centroid_out = [round(center_x, 3), round(center_y, 3)]
+
+    if ratio < 0.02:
+        return _screenshot_frame_fail(
+            "截图主体占比过小",
+            foreground_ratio=ratio,
+            foreground_bbox=original_bbox,
+            foreground_centroid=centroid_out,
+        )
+    if bbox_w < 0.12 or bbox_h < 0.12:
+        return _screenshot_frame_fail(
+            "截图主体尺寸过小",
+            foreground_ratio=ratio,
+            foreground_bbox=original_bbox,
+            foreground_centroid=centroid_out,
+        )
+    if not (0.22 <= center_x <= 0.78 and 0.22 <= center_y <= 0.78):
+        return _screenshot_frame_fail(
+            "截图主体不在画面中心",
+            foreground_ratio=ratio,
+            foreground_bbox=original_bbox,
+            foreground_centroid=centroid_out,
+        )
+    return {
+        "framing_ok": True,
+        "framing_reason": "主体取景正常",
+        "foreground_ratio": round(ratio, 4),
+        "foreground_bbox": original_bbox,
+        "foreground_centroid": centroid_out,
+    }
+
+
+def _foreground_stats(img: Any) -> tuple[list[int] | None, float, tuple[float, float]]:
+    width, height = img.size
+    pixels = img.load()
+    bg = _corner_background_rgb(img)
+    threshold = 70
+    x0, y0 = width, height
+    x1 = y1 = -1
+    count = 0
+    sum_x = 0
+    sum_y = 0
+    for y in range(height):
+        for x in range(width):
+            rgb = pixels[x, y]
+            delta = abs(rgb[0] - bg[0]) + abs(rgb[1] - bg[1]) + abs(rgb[2] - bg[2])
+            if _looks_like_editor_blue_background(rgb) or delta <= threshold:
+                continue
+            count += 1
+            sum_x += x
+            sum_y += y
+            x0 = min(x0, x)
+            y0 = min(y0, y)
+            x1 = max(x1, x)
+            y1 = max(y1, y)
+    ratio = count / max(width * height, 1)
+    if count == 0:
+        return None, ratio, (0.0, 0.0)
+    centroid = (
+        sum_x / count / max(width - 1, 1),
+        sum_y / count / max(height - 1, 1),
+    )
+    return [x0, y0, x1, y1], ratio, centroid
+
+
+def _looks_like_editor_blue_background(rgb: tuple[int, int, int]) -> bool:
+    r, g, b = rgb
+    return b > 70 and b > r + 20 and b > g + 5
+
+
+def _corner_background_rgb(img: Any) -> tuple[int, int, int]:
+    width, height = img.size
+    pixels = img.load()
+    sample = max(1, min(width, height) // 20)
+    points: list[tuple[int, int, int]] = []
+    for xs, ys in (
+        (range(sample), range(sample)),
+        (range(width - sample, width), range(sample)),
+        (range(sample), range(height - sample, height)),
+        (range(width - sample, width), range(height - sample, height)),
+    ):
+        for x in xs:
+            for y in ys:
+                points.append(pixels[x, y])
+    return (
+        round(sum(rgb[0] for rgb in points) / len(points)),
+        round(sum(rgb[1] for rgb in points) / len(points)),
+        round(sum(rgb[2] for rgb in points) / len(points)),
+    )
+
+
+def _scale_bbox(
+    bbox: list[int], analyzed_size: tuple[int, int], original_size: tuple[int, int]
+) -> list[int]:
+    if analyzed_size == original_size:
+        return bbox
+    sx = original_size[0] / analyzed_size[0]
+    sy = original_size[1] / analyzed_size[1]
+    return [
+        round(bbox[0] * sx),
+        round(bbox[1] * sy),
+        round(bbox[2] * sx),
+        round(bbox[3] * sy),
+    ]
+
+
+def _screenshot_frame_fail(
+    reason: str,
+    *,
+    foreground_ratio: float,
+    foreground_bbox: list[int] | None = None,
+    foreground_centroid: list[float] | None = None,
+) -> dict[str, Any]:
+    return {
+        "framing_ok": False,
+        "framing_reason": reason,
+        "foreground_ratio": round(foreground_ratio, 4),
+        "foreground_bbox": foreground_bbox or [],
+        "foreground_centroid": foreground_centroid or [],
+    }
 
 
 @mcp.tool()
@@ -456,6 +617,37 @@ def set_mesh_build_scale(asset_path: str, scale: float = 1.0) -> str:
     if not asset_path or not asset_path.strip():
         return "[error] asset_path 不能为空"
     return _call("set_mesh_build_scale", {"asset_path": asset_path.strip(), "scale": float(scale)})
+
+
+@mcp.tool()
+def set_static_mesh_material(
+    asset_path: str,
+    material_path: str,
+    material_slot: int = 0,
+) -> str:
+    """设置 StaticMesh 资产的默认材质 slot。写工程。
+
+    用于把白盒模块件统一刷成项目原型网格材质，例如
+    /Game/LevelPrototyping/Materials/MI_PrototypeGrid_Gray。该操作改的是 StaticMesh
+    资产默认材质，之后新生成的关卡实例会自动使用它。
+
+    Args:
+        asset_path: StaticMesh 资产路径，如 /Game/LevelPrototyping/Meshes/ArchKit/wall/Wall1_4
+        material_path: Material/MaterialInstance 资产路径
+        material_slot: 要替换的材质槽位（默认 0）
+    """
+    if not asset_path or not asset_path.strip():
+        return "[error] asset_path 不能为空"
+    if not material_path or not material_path.strip():
+        return "[error] material_path 不能为空"
+    return _call(
+        "set_static_mesh_material",
+        {
+            "asset_path": asset_path.strip(),
+            "material_path": material_path.strip(),
+            "material_slot": int(material_slot),
+        },
+    )
 
 
 def main() -> None:

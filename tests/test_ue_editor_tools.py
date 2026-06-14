@@ -4,6 +4,8 @@ import inspect
 import json
 from pathlib import Path
 
+from PIL import Image, ImageDraw
+
 import ue5agent.mcp_servers.ue_editor.server as ed_server
 
 
@@ -42,15 +44,103 @@ def test_screenshot_camera_params_passthrough(monkeypatch):
     assert Path(params["file_path"]).is_absolute()
 
 
-def test_screenshot_success_emits_screenshot_facts(monkeypatch):
+def test_screenshot_success_emits_screenshot_facts(monkeypatch, tmp_path):
     """A4：截图成功须落 screenshot 事实，path=实际落盘绝对路径（runner 据此触发视觉审查）。"""
     _record_bridge(monkeypatch)
-    out = ed_server.viewport_screenshot(file_path="shot.png")
+    path = tmp_path / "shot.png"
+    _make_viewport_shot(path, (70, 40, 170, 120))
+
+    out = ed_server.viewport_screenshot(file_path=str(path))
     assert "[facts]" in out
     facts = json.loads(out.split("[facts]", 1)[1].strip())
     assert facts["kind"] == "screenshot"
     assert facts["ok"] is True
-    assert Path(facts["path"]) == Path("shot.png").resolve()
+    assert Path(facts["path"]) == path.resolve()
+
+
+def _make_viewport_shot(path: Path, rect: tuple[int, int, int, int]) -> None:
+    img = Image.new("RGB", (240, 160), (55, 90, 135))
+    draw = ImageDraw.Draw(img)
+    draw.rectangle(rect, fill=(120, 118, 110))
+    img.save(path)
+
+
+def _make_gradient_viewport_shot(path: Path, rect: tuple[int, int, int, int]) -> None:
+    img = Image.new("RGB", (240, 160), (55, 90, 135))
+    pixels = img.load()
+    for y in range(img.height):
+        for x in range(img.width):
+            pixels[x, y] = (40 + y // 2, 80 + y // 3, 130 + y // 4)
+    draw = ImageDraw.Draw(img)
+    draw.rectangle(rect, fill=(34, 34, 34))
+    img.save(path)
+
+
+def test_screenshot_facts_include_frame_quality_for_visible_subject(monkeypatch, tmp_path):
+    """截图文件要有本地可检的主体覆盖，避免“只截到天空/边角”也算硬证据。"""
+    _record_bridge(monkeypatch)
+    path = tmp_path / "framed.png"
+    _make_viewport_shot(path, (70, 40, 170, 120))
+
+    out = ed_server.viewport_screenshot(file_path=str(path))
+    facts = json.loads(out.split("[facts]", 1)[1].strip())
+
+    assert facts["kind"] == "screenshot"
+    assert facts["ok"] is True
+    assert facts["framing_ok"] is True
+    assert facts["foreground_ratio"] > 0.1
+    assert facts["foreground_bbox"] == [70, 40, 170, 120]
+
+
+def test_screenshot_facts_fail_when_subject_is_out_of_frame(monkeypatch, tmp_path):
+    _record_bridge(monkeypatch)
+    path = tmp_path / "edge.png"
+    _make_viewport_shot(path, (60, 0, 180, 30))
+
+    out = ed_server.viewport_screenshot(file_path=str(path))
+    facts = json.loads(out.split("[facts]", 1)[1].strip())
+
+    assert facts["kind"] == "screenshot"
+    assert facts["ok"] is False
+    assert facts["framing_ok"] is False
+    assert "主体不在画面中心" in facts["framing_reason"]
+
+
+def test_screenshot_frame_quality_ignores_editor_sky_gradient(monkeypatch, tmp_path):
+    _record_bridge(monkeypatch)
+    path = tmp_path / "gradient-edge.png"
+    _make_gradient_viewport_shot(path, (70, 0, 170, 34))
+
+    out = ed_server.viewport_screenshot(file_path=str(path))
+    facts = json.loads(out.split("[facts]", 1)[1].strip())
+
+    assert facts["ok"] is False
+    assert facts["framing_ok"] is False
+    assert "主体不在画面中心" in facts["framing_reason"]
+
+
+def test_screenshot_facts_fail_when_bridge_reports_success_but_file_missing(monkeypatch, tmp_path):
+    _record_bridge(monkeypatch)
+    path = tmp_path / "missing.png"
+
+    out = ed_server.viewport_screenshot(file_path=str(path))
+    facts = json.loads(out.split("[facts]", 1)[1].strip())
+
+    assert facts["ok"] is False
+    assert facts["framing_ok"] is False
+    assert "截图文件不存在" in facts["framing_reason"]
+
+
+def test_screenshot_text_keeps_frame_reason_before_facts(monkeypatch, tmp_path):
+    """facts 会被管线剥离；正文也要保留原因，供模型下一轮修正取景。"""
+    _record_bridge(monkeypatch)
+    path = tmp_path / "missing.png"
+
+    out = ed_server.viewport_screenshot(file_path=str(path))
+    visible_text = out.split("[facts]", 1)[0]
+
+    assert "截图取景FAIL" in visible_text
+    assert "截图文件不存在" in visible_text
 
 
 def test_screenshot_bridge_error_emits_no_facts(monkeypatch):
@@ -133,6 +223,7 @@ _EXPECTED_TOOLS = {
     "import_fbx",
     "get_mesh_bounds",
     "set_mesh_build_scale",
+    "set_static_mesh_material",
 }
 
 # 编辑/批量构建类桥命令一律不得在瘦桥源码中出现（防止未来误暴露写能力）。
@@ -502,4 +593,36 @@ def test_set_mesh_build_scale_empty_rejected(monkeypatch):
     calls = _record_bridge(monkeypatch)
     out = ed_server.set_mesh_build_scale("", scale=100)
     assert out.startswith("[error]")
+    assert not calls
+
+
+def test_set_static_mesh_material_calls_bridge(monkeypatch):
+    """set_static_mesh_material 透传资产路径、材质路径与 slot 到桥命令。"""
+    calls = _record_bridge(monkeypatch)
+    ed_server.set_static_mesh_material(
+        "/Game/Kit/wall/Wall1_4",
+        "/Game/LevelPrototyping/Materials/MI_PrototypeGrid_Gray",
+        material_slot=0,
+    )
+
+    command, params = calls[0]
+    assert command == "set_static_mesh_material"
+    assert params == {
+        "asset_path": "/Game/Kit/wall/Wall1_4",
+        "material_path": "/Game/LevelPrototyping/Materials/MI_PrototypeGrid_Gray",
+        "material_slot": 0,
+    }
+
+
+def test_set_static_mesh_material_empty_rejected(monkeypatch):
+    """空 asset_path/material_path 直接拒绝。"""
+    calls = _record_bridge(monkeypatch)
+
+    out_asset = ed_server.set_static_mesh_material(
+        "", "/Game/LevelPrototyping/Materials/MI_PrototypeGrid_Gray"
+    )
+    out_material = ed_server.set_static_mesh_material("/Game/Kit/wall/Wall1_4", "")
+
+    assert out_asset.startswith("[error]")
+    assert out_material.startswith("[error]")
     assert not calls

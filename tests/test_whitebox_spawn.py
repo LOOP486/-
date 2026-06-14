@@ -83,6 +83,46 @@ def test_wb_build_is_idempotent_no_duplicate_spawn(monkeypatch):
     assert not deletes_after_spawn, "清理必须全部在落地之前完成"
 
 
+def test_wb_build_rolls_back_partial_batch_when_spawn_loses_response(monkeypatch):
+    """桥偶发丢响应：spawn 已在 UE 执行但客户端抛错，wb_build 必须清理半批次。"""
+    calls: list[tuple[str, dict]] = []
+    present: list[str] = []
+    spawn_count = 0
+
+    def fake_send(command, params=None, **_kwargs):
+        nonlocal spawn_count
+        params = params or {}
+        calls.append((command, params))
+        if command == "find_actors_by_name":
+            pattern = params.get("pattern", "")
+            return {
+                "status": "success",
+                "result": {"actors": [{"name": n} for n in present if pattern in n]},
+            }
+        if command == "delete_actor":
+            name = params.get("name")
+            if name in present:
+                present.remove(name)
+            return {"status": "success"}
+        if command == "spawn_actor":
+            spawn_count += 1
+            name = params["name"]
+            present.append(name)
+            if spawn_count == 2:
+                raise ConnectionError("桥连接关闭但 UE 已创建 actor")
+            return {"status": "success", "result": {"name": name}}
+        return {"status": "success", "result": {}}
+
+    monkeypatch.setattr(spawner, "send_command", fake_send)
+
+    out = wb_server.wb_build(_LAYOUT, prefix="WB_PARTIAL")
+
+    assert out.startswith("[error] 落地失败"), out
+    assert present == [], "spawn 中途失败后必须自动清理同前缀半批次"
+    first_spawn = next(i for i, (command, _params) in enumerate(calls) if command == "spawn_actor")
+    assert any(command == "delete_actor" for command, _params in calls[first_spawn + 1 :])
+
+
 def test_spawn_uses_unique_names_avoiding_zombie_collision(monkeypatch):
     """根治回归：模拟引擎"僵尸名"（delete 后 find 查不到、命名空间仍占用），
 

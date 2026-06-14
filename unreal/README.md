@@ -6,6 +6,10 @@
 
 1. 移除蓝图编辑类工具（[ADR-0003](../docs/architecture/decisions/0003-blueprint-readonly.md)：蓝图只读）；
 2. 自研蓝图只读导出：`bp_overview` / `bp_pseudocode` / `bp_graph` / `bp_find_usages`；
-3. Phase 2 在此基础上加白盒搭建工具集（`actors_spawn_batch`、`navmesh_rebuild`、`path_test`、正交截图）。
+3. Phase 2 在此基础上加白盒搭建工具集（`spawn_actor`、`navmesh_rebuild`、`path_test`、正交截图）。
+
+当前测试工程中的 UnrealMCP 插件位于 `C:/Users/chengpeixin/Documents/Unreal Projects/agent_test/Plugins/UnrealMCP`。
+白盒 B+ 要求 `spawn_actor` 支持 `type="PlayerStart"`：该类型不需要 `static_mesh` 参数，用于真实出生点；
+`StaticMeshActor` 仍按原路径接收 `static_mesh`、`location`、`rotation`、`scale`。
 
 实现注意：所有编辑器操作必须 marshal 到 GameThread；工具超时要熔断，避免卡死编辑器。

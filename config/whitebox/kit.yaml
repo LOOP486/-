@@ -22,7 +22,10 @@ assets:
     source_fbx: objects/Floor2_2.fbx
     size: [200, 200, 100]
     category: floor
-    pivot: [0.0, 1.0, 0.0]
+    pivot: [0.0, 0.0, 0.0]
+    local_bounds_min: [0, 0, 0]
+    local_bounds_max: [200, 200, 100]
+    calibrated: true
     footprint: [2, 2]
     tags: [structure, ground]
   floor4_4:
@@ -30,7 +33,10 @@ assets:
     source_fbx: objects/Floor4_4.fbx
     size: [400, 400, 100]
     category: floor
-    pivot: [0.0, 1.0, 0.0]
+    pivot: [0.0, 0.0, 0.0]
+    local_bounds_min: [0, 0, 0]
+    local_bounds_max: [400, 400, 100]
+    calibrated: true
     footprint: [4, 4]
     tags: [structure, ground]
   floor_n:
@@ -38,7 +44,10 @@ assets:
     source_fbx: objects/Floor_n.fbx
     size: [100, 100, 20]
     category: floor
-    pivot: [0.0, 1.0, 0.0]
+    pivot: [0.0, 0.0, 0.0]
+    local_bounds_min: [0, 0, 0]
+    local_bounds_max: [100, 100, 20]
+    calibrated: true
     footprint: [1, 1]
     tags: [structure, ground]
   flooroutdoor:
@@ -84,7 +93,10 @@ assets:
     source_fbx: objects/Wall1_4.fbx
     size: [100, 20, 400]
     category: wall
-    pivot: [0.0, 1.0, 0.0]
+    pivot: [0.0, 0.0, 0.0]
+    local_bounds_min: [0, 0, 0]
+    local_bounds_max: [100, 20, 400]
+    calibrated: true
     footprint: [1, 1]
     tags: [structure, vertical]
   wall2_1:
@@ -169,6 +181,7 @@ assets:
     size: [210, 56, 400]
     category: wall_door
     pivot: [0.143, 0.5, 0.025]
+    snap_box: [[0.0, 0.3214285714, 0.0], [1.0, 0.6785714286, 1.0]]
     footprint: [2, 1]
     tags: [structure, vertical, opening]
     desc: "门洞框"
@@ -178,6 +191,7 @@ assets:
     size: [280, 56, 400]
     category: wall_door
     pivot: [0.107, 0.5, 0.025]
+    snap_box: [[0.0, 0.3214285714, 0.0], [1.0, 0.6785714286, 1.0]]
     footprint: [3, 1]
     tags: [structure, vertical, opening]
     desc: "门洞框"
@@ -187,6 +201,7 @@ assets:
     size: [380, 56, 400]
     category: wall_door
     pivot: [0.079, 0.5, 0.025]
+    snap_box: [[0.0, 0.3214285714, 0.0], [1.0, 0.6785714286, 1.0]]
     footprint: [4, 1]
     tags: [structure, vertical, opening]
     desc: "门洞框"
@@ -196,6 +211,7 @@ assets:
     size: [480, 66, 400]
     category: wall_door
     pivot: [0.062, 0.5, 0.025]
+    snap_box: [[0.0, 0.3484848485, 0.0], [1.0, 0.6515151515, 1.0]]
     footprint: [5, 1]
     tags: [structure, vertical, opening]
     desc: "门洞框"
@@ -205,6 +221,7 @@ assets:
     size: [580, 56, 400]
     category: wall_door
     pivot: [0.052, 0.5, 0.025]
+    snap_box: [[0.0, 0.3214285714, 0.0], [1.0, 0.6785714286, 1.0]]
     footprint: [6, 1]
     tags: [structure, vertical, opening]
     desc: "门洞框"
@@ -226,6 +243,7 @@ assets:
     size: [100, 52, 400]
     category: window
     pivot: [0.0, 0.691, 0.0]
+    snap_box: [[0.0, 0.3076923077, 0.0], [1.0, 0.6923076923, 1.0]]
     footprint: [1, 1]
     tags: [structure, vertical, window]
   window1_4_high:
@@ -234,6 +252,7 @@ assets:
     size: [100, 52, 400]
     category: window
     pivot: [0.0, 0.691, 0.0]
+    snap_box: [[0.0, 0.3076923077, 0.0], [1.0, 0.6923076923, 1.0]]
     footprint: [1, 1]
     tags: [structure, vertical, window]
   window1_4_low:
@@ -242,6 +261,7 @@ assets:
     size: [100, 52, 400]
     category: window
     pivot: [0.0, 0.691, 0.125]
+    snap_box: [[0.0, 0.3076923077, 0.0], [1.0, 0.6923076923, 1.0]]
     footprint: [1, 1]
     tags: [structure, vertical, window]
   window2_4:
@@ -250,6 +270,7 @@ assets:
     size: [200, 52, 400]
     category: window
     pivot: [0.0, 0.693, 0.0]
+    snap_box: [[0.0, 0.3076923077, 0.0], [1.0, 0.6923076923, 1.0]]
     footprint: [2, 1]
     tags: [structure, vertical, window]
   window2_4_high:
@@ -258,6 +279,7 @@ assets:
     size: [200, 52, 400]
     category: window
     pivot: [0.0, 0.693, 0.0]
+    snap_box: [[0.0, 0.3076923077, 0.0], [1.0, 0.6923076923, 1.0]]
     footprint: [2, 1]
     tags: [structure, vertical, window]
   window2_4_low:
@@ -266,6 +288,7 @@ assets:
     size: [200, 52, 400]
     category: window
     pivot: [0.0, 0.691, 0.125]
+    snap_box: [[0.0, 0.3076923077, 0.0], [1.0, 0.6923076923, 1.0]]
     footprint: [2, 1]
     tags: [structure, vertical, window]
   window4_4:
@@ -274,6 +297,7 @@ assets:
     size: [400, 52, 400]
     category: window
     pivot: [0.0, 0.693, 0.0]
+    snap_box: [[0.0, 0.3076923077, 0.0], [1.0, 0.6923076923, 1.0]]
     footprint: [4, 1]
     tags: [structure, vertical, window]
   window4_4_high:
@@ -282,6 +306,7 @@ assets:
     size: [400, 52, 400]
     category: window
     pivot: [0.0, 0.693, 0.0]
+    snap_box: [[0.0, 0.3076923077, 0.0], [1.0, 0.6923076923, 1.0]]
     footprint: [4, 1]
     tags: [structure, vertical, window]
   window4_4_low:
@@ -290,6 +315,7 @@ assets:
     size: [400, 52, 400]
     category: window
     pivot: [0.0, 0.691, 0.125]
+    snap_box: [[0.0, 0.3076923077, 0.0], [1.0, 0.6923076923, 1.0]]
     footprint: [4, 1]
     tags: [structure, vertical, window]
 
@@ -380,7 +406,10 @@ assets:
     source_fbx: objects/Stair_2.fbx
     size: [300, 550, 400]
     category: stair
-    pivot: [0.0, 0.0, 0.0]
+    pivot: [0.0, 1.0, 0.0]
+    local_bounds_min: [0, -550, 0]
+    local_bounds_max: [300, 0, 400]
+    calibrated: true
     footprint: [3, 6]
     tags: [structure, vertical, traversal]
   stair_2_001:

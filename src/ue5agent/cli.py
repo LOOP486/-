@@ -16,15 +16,24 @@ from ue5agent import __version__
 from ue5agent.config import (
     AgentSettings,
     ModelsConfig,
+    build_runtime_env,
     load_agent_settings,
     load_models_config,
 )
 
 app = typer.Typer(help="UE5 游戏开发 agent", no_args_is_help=True)
-console = Console()
+console = Console(legacy_windows=False)
 
 DEFAULT_MODELS = Path("config/models.yaml")
 DEFAULT_AGENT = Path("config/agent.yaml")
+
+
+def _safe_console_print(*args: Any, **kwargs: Any) -> None:
+    """控制台句柄异常不应中断 agent 执行；trace/report 仍会落盘。"""
+    try:
+        console.print(*args, **kwargs)
+    except OSError:
+        return
 
 
 @app.callback()
@@ -89,9 +98,9 @@ def trace(
     path: Path | None = typer.Argument(None, help="trace 文件；缺省取 sessions/ 最新一份"),
 ) -> None:
     """回放查看一次会话：逐轮模型决策、工具调用、耗时与 token。"""
-    from ue5agent.agent.events import latest_trace, read_events
+    from ue5agent.agent.events import latest_trace, read_events, resolve_trace_path
 
-    target = path or latest_trace(Path("runs"))
+    target = resolve_trace_path(path) if path is not None else latest_trace(Path("runs"))
     if target is None or not target.exists():
         console.print("[red]找不到 trace 文件（runs/ 为空？）[/red]")
         raise typer.Exit(1)
@@ -231,7 +240,7 @@ async def _run_ue_eval(
     try:
         with run_lock(Path("runs") / ".runner.lock"):  # D2.1 同工程单 runner
             registry = ToolRegistry(_build_gate(settings, assume_yes=True))  # 评测无人值守
-            async with McpManager(settings.mcp_servers) as manager:
+            async with McpManager(settings.mcp_servers, env=build_runtime_env(settings)) as manager:
                 await manager.register_all(registry)
 
                 async def run_one(task: UeEvalTask) -> UeRunRecord:
@@ -385,7 +394,7 @@ async def _run_single(
         with run_lock(Path("runs") / ".runner.lock"):  # D2.1 同工程单 runner
             llm = LiteLLMClient(config)
             registry = ToolRegistry(_build_gate(settings, assume_yes=assume_yes))
-            async with McpManager(settings.mcp_servers) as manager:
+            async with McpManager(settings.mcp_servers, env=build_runtime_env(settings)) as manager:
                 await manager.register_all(registry)
                 await _execute_task(llm, registry, settings, task, config=config)
     except RunLockError as exc:
@@ -433,16 +442,16 @@ def _build_checkpoint_hook(settings: AgentSettings):
         return None
     repo = settings.project.uproject.parent
     if not gitops.is_git_repo(repo):
-        console.print(f"[yellow]提示：{repo} 不在 git 管理下，工程写操作将被拒绝[/yellow]")
+        _safe_console_print(f"[yellow]提示：{repo} 不在 git 管理下，工程写操作将被拒绝[/yellow]")
         return None
 
     def hook() -> bool:
         try:
             result = gitops.checkpoint(repo, "auto: before WRITE_PROJECT tool")
-            console.print(f"[dim]已自动 checkpoint：{result['ref']}[/dim]")
+            _safe_console_print(f"[dim]已自动 checkpoint：{result['ref']}[/dim]")
             return True
         except RuntimeError as exc:
-            console.print(f"[red]checkpoint 失败：{exc}[/red]")
+            _safe_console_print(f"[red]checkpoint 失败：{exc}[/red]")
             return False
 
     return hook
@@ -464,7 +473,7 @@ async def _chat(config: ModelsConfig, settings: AgentSettings) -> None:
     try:
         llm = LiteLLMClient(config)
         registry = ToolRegistry(_build_gate(settings))
-        async with McpManager(settings.mcp_servers) as manager:
+        async with McpManager(settings.mcp_servers, env=build_runtime_env(settings)) as manager:
             await manager.register_all(registry)
             console.print(f"[dim]已加载 {len(registry)} 个工具；输入 exit 退出[/dim]")
             # 每条输入是一个独立 TaskSession（runs/ 一个目录）；跨任务记忆留给后续里程碑
@@ -497,27 +506,27 @@ async def _execute_task(
             super().event(event_type, **kwargs)
             if event_type == "phase_exit" and kwargs.get("phase") == "plan":
                 steps = kwargs.get("steps") or []
-                console.print(
+                _safe_console_print(
                     f"[dim]计划（{kwargs.get('task_class')}，{len(steps)} 步）："
                     f"{'；'.join(str(s)[:40] for s in steps)}[/dim]"
                 )
             elif event_type == "tool_call":
-                console.print(
+                _safe_console_print(
                     f"[dim]  ↳ {kwargs.get('tool')}（{kwargs.get('duration_ms', 0)}ms）[/dim]"
                 )
             elif event_type == "verify_result":
                 color = "green" if kwargs.get("verdict") == "pass" else "yellow"
-                console.print(
+                _safe_console_print(
                     f"[{color}]  验收 {kwargs.get('step_id')}：{kwargs.get('verdict')}"
                     f" {str(kwargs.get('reason', ''))[:60]}[/{color}]"
                 )
             elif event_type == "recover_action":
-                console.print(
+                _safe_console_print(
                     f"[yellow]  {kwargs.get('action')} {kwargs.get('step_id')}："
                     f"{str(kwargs.get('reason', ''))[:60]}[/yellow]"
                 )
 
-    console.print("[dim]任务执行中（规划→执行→验收）…[/dim]")
+    _safe_console_print("[dim]任务执行中（规划→执行→验收）…[/dim]")
     writer = ConsoleRunWriter(Path("runs"), TaskSession.new(text[:40]), secrets=secrets)
     # A4：配了 vision 角色才注入视觉审查钩子；未配则降级为"截图存档供人看"（行为同前）
     vision_reviewer = None
@@ -548,14 +557,19 @@ async def _execute_task(
         step_max_iterations=settings.limits.max_iterations,
         vision_reviewer=vision_reviewer,
     )
-    outcome = await runner.run(text)
+    try:
+        outcome = await runner.run(text)
+    except Exception as exc:
+        writer.event("run_error", error=f"{type(exc).__name__}: {exc}")
+        writer.write_report(f"# 运行异常\n\n{type(exc).__name__}: {exc}\n")
+        raise
     # 主输出 = 完整答案；过程性报告归档 runs/，仅失败时展示以便排查
     if outcome.success and outcome.final_answer:
-        console.print(outcome.final_answer)
+        _safe_console_print(outcome.final_answer)
     else:
-        console.print(outcome.report)
+        _safe_console_print(outcome.report)
     steps = writer.session.plan
-    console.print(
+    _safe_console_print(
         f"[dim]{'完成' if outcome.success else '未完成'} · {len(steps)} 步 · "
         f"报告与 trace：{writer.dir}[/dim]"
     )

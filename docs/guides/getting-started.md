@@ -32,6 +32,44 @@ uv run ue5agent chat           # 进入交互会话
 
 chat 里试一句「编译 MyGameEditor」——agent 会调用 ue_build 的 `ubt_compile` 并回报结构化错误。
 
+## 白盒布局 JSON 速记
+
+`wb_build` 接收布局 DSL，单位为格（默认 1 格 = 100uu）。最小结构层只需要 rooms；提供
+`gameplay` 时才会额外生成真实 `PlayerStart`、route markers、cover/pillar。
+`gameplay.spawn_points` 与 `gameplay.routes` 只有缺省时才走默认生成；显式写 `[]` 表示关闭
+对应默认出生点或路线。
+
+```json
+{
+  "name": "two_level_blockout",
+  "origin": [0, 0, 0],
+  "wall_height": 400,
+  "level_height": 400,
+  "rooms": [
+    {"name": "L0", "rect": [0, 0, 6, 6], "level": 0},
+    {"name": "L1", "rect": [0, 0, 6, 6], "level": 1}
+  ],
+  "stairs": [
+    {"room": "L0", "at": [1, 0], "from_level": 0, "to_level": 1, "facing": "north"}
+  ],
+  "gameplay": {}
+}
+```
+
+结构墙会继续按 ArchKit `Wall1_4` 拉伸对齐；楼梯、掩体、柱子、props 使用资产原生尺寸，
+生成结果的 `scale` 应为 `[1, 1, 1]`。
+显式 props 与自动 cover/pillar 会避开门洞、同房间门到门 corridor 和 gameplay 主路线；
+required prop 冲突会报错，optional prop 冲突会跳过。楼梯会额外避开同房间对穿门的直通
+corridor，避免把穿堂动线切断。
+
+白盒搭建前可用 `wb_asset_audit` 对照 manifest 与 UE 导入后的 StaticMesh bounds；搭建后用
+`wb_validate` 检查 actor transform、visual AABB、残留批次、route blocker 与 metrics。若任务要求
+截图/视觉自查，计划步骤应声明 `required_evidence=["screenshot", "vision_review"]`，缺硬证据时
+runner 不会只凭 `wb_validate` 放行。`viewport_screenshot` 会对落盘 PNG 做轻量取景快检：截图文件
+不存在、主体占比过小或主体贴在画面边缘时，`screenshot` fact 会标为 `ok=false`，该步需要重新取景。
+`wb_build` 在 spawn 中途失败时会自动按同前缀回滚半批次；若错误文本提示自动回滚失败，先执行
+`wb_clear(prefix=...)` 清干净现场，再重新 `wb_build`。
+
 ## 常见问题
 
 - `uv: 无法识别` → 重开终端（安装后 PATH 需要重载）。

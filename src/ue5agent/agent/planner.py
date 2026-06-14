@@ -34,6 +34,7 @@ PLAN_PROMPT = """\
 - "success_checks": [{"kind": "compile|wb_validate|path_test", "field": "ok", "equals": true}]
   ——仅当该步会调用对应验证工具（ubt_compile/wb_validate/path_test）时才声明，
   查询类步骤和没有这些工具的任务不要写；
+- "required_evidence": ["screenshot", "vision_review"]——白盒搭建要求截图/视觉门禁时声明；
 - "rollback_policy": "wb_clear"——白盒搭建类步骤失败时整批回滚。
 """
 
@@ -72,6 +73,7 @@ async def make_plan(
     ]
     for step in steps:
         _reconcile_contract(step)
+    _reconcile_whitebox_visual_gate(goal, steps)
     return task_class, steps
 
 
@@ -98,6 +100,46 @@ def _reconcile_contract(step: PlanStep) -> None:
             step.allowed_tools.append(hint)
 
 
+def _reconcile_whitebox_visual_gate(goal: str, steps: list[PlanStep]) -> None:
+    """白盒搭建 + 视觉审查必须在同一步形成硬证据闭环。"""
+    if not _needs_whitebox_visual_gate(goal, steps):
+        return
+    build_step = next((step for step in steps if _looks_like_whitebox_build(step.intent)), None)
+    if build_step is None:
+        return
+
+    for evidence in ("screenshot", "vision_review"):
+        if evidence not in build_step.required_evidence:
+            build_step.required_evidence.append(evidence)
+    for tool in ("wb_build", "wb_clear", "viewport_screenshot"):
+        if not any(
+            existing == tool or existing.endswith(f"__{tool}")
+            for existing in build_step.allowed_tools
+        ):
+            build_step.allowed_tools.append(tool)
+    if "editor_online" not in build_step.preconditions:
+        build_step.preconditions.append("editor_online")
+    if build_step.rollback_policy == "none":
+        build_step.rollback_policy = "wb_clear"
+
+
+def _needs_whitebox_visual_gate(goal: str, steps: list[PlanStep]) -> bool:
+    text = " ".join([goal, *(step.intent for step in steps)]).lower()
+    wants_whitebox = any(token in text for token in ("白盒", "whitebox", "wb_build"))
+    wants_visual = any(
+        token in text
+        for token in ("截图", "视觉", "vision_review", "viewport_screenshot", "screenshot")
+    )
+    return wants_whitebox and wants_visual
+
+
+def _looks_like_whitebox_build(intent: str) -> bool:
+    text = intent.lower()
+    return ("白盒" in text or "whitebox" in text or "wb_build" in text) and any(
+        token in text for token in ("搭建", "构建", "生成", "build", "落地")
+    )
+
+
 _CEILING_VALUES = ("read", "write_safe", "write_project", "dangerous")
 
 
@@ -113,6 +155,7 @@ def _contract_fields(step: dict[str, Any]) -> dict[str, Any]:
         "success_checks": [c for c in step.get("success_checks", []) if isinstance(c, dict)]
         if isinstance(step.get("success_checks"), list)
         else [],
+        "required_evidence": _str_list(step.get("required_evidence")),
         "rollback_policy": rollback or "none",
         "step_budget": budget if isinstance(budget, dict) else {},
     }

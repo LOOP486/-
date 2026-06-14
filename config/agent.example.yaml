@@ -28,6 +28,13 @@ mcp_servers:
       run_functional_test: write_project # 运行 Automation/Functional Test（进 PIE/改运行状态）
       import_fbx: write_project # 批量导入 FBX 为 StaticMesh（写工程，生成 .uasset）
       set_mesh_build_scale: write_project # 改 StaticMesh 的 BuildScale3D 并重建保存（写工程）
+      set_static_mesh_material: write_project # 改 StaticMesh 默认材质 slot 并保存（写工程）
+  ue_whitebox:
+    command: ["uv", "run", "python", "-m", "ue5agent.mcp_servers.ue_whitebox"]
+    permission: write_safe # 白盒临时关卡按设计可整批回滚；默认使用 config/whitebox/kit.yaml
+    tool_permissions:
+      wb_validate: read # 只读校验
+      wb_apply_manifest_material: write_project # 批量改 manifest 里 StaticMesh 默认材质（写工程）
   ue_lifecycle:
     command: ["uv", "run", "python", "-m", "ue5agent.mcp_servers.ue_lifecycle"]
     permission: dangerous # 启动编辑器进程；还需加入下方 allowlist 才会放行

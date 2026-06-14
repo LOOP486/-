@@ -34,6 +34,7 @@ class TestLoaderBackCompat:
         wall = KIT.require("wall8_4")
         assert wall.size == (800.0, 20.0, 400.0)
         assert wall.pivot == (0.0, 1.0, 0.0)  # 反推：原点在 X 左端/+Y 面/底
+        assert wall.snap_box == ((0.0, 0.0, 0.0), (1.0, 1.0, 1.0))
         assert wall.footprint == (8, 1)
         assert "structure" in wall.tags
         assert wall.source_fbx.endswith("Wall8_4.fbx")
@@ -41,6 +42,45 @@ class TestLoaderBackCompat:
     def test_needs_review_flag(self):
         assert KIT.require("irongrilledoor").needs_review is True
         assert KIT.require("wall8_4").needs_review is False
+
+    def test_default_archkit_path_uses_ue_calibrated_bounds(self):
+        for key, pivot in {
+            "floor_n": (0.0, 0.0, 0.0),
+            "floor2_2": (0.0, 0.0, 0.0),
+            "floor4_4": (0.0, 0.0, 0.0),
+            "wall1_4": (0.0, 0.0, 0.0),
+            "stair_2": (0.0, 1.0, 0.0),
+        }.items():
+            asset = KIT.require(key)
+            assert asset.calibrated is True
+            assert asset.pivot == pivot
+            assert asset.local_bounds_min is not None
+            assert asset.local_bounds_max is not None
+
+    def test_ue_calibrated_bounds_fields_parsed(self, tmp_path):
+        manifest_path = tmp_path / "kit.yaml"
+        manifest_path.write_text(
+            """
+version: 2
+grid: 100
+assets:
+  wall:
+    path: /Game/Kit/Wall
+    size: [100, 20, 400]
+    category: wall
+    pivot: [0, 1, 0]
+    local_bounds_min: [0, 0, 0]
+    local_bounds_max: [100, 20, 400]
+    calibrated: true
+""",
+            encoding="utf-8",
+        )
+
+        wall = load_manifest(manifest_path).require("wall")
+
+        assert wall.local_bounds_min == (0.0, 0.0, 0.0)
+        assert wall.local_bounds_max == (100.0, 20.0, 400.0)
+        assert wall.calibrated is True
 
 
 class TestAssetForRole:
@@ -110,3 +150,33 @@ class TestPivotCompensation:
         north = by_name(placements, "a_north_0")
         # 北墙内侧贴 y=300：AABB y280..300，pivot.y=1 → location.y=300
         assert north.location == (0.0, 300.0, 0.0)
+
+    def test_snap_box_aligns_structure_core_instead_of_full_visual_bounds(self):
+        floor = AssetDef("f", "/F", (100, 100, 20), "floor", pivot=(0.5, 0.5, 0.0))
+        wall = AssetDef(
+            "w",
+            "/W",
+            (120, 40, 400),
+            "wall",
+            pivot=(0.5, 0.5, 0.0),
+            snap_box=((10 / 120, 10 / 40, 0.0), (110 / 120, 30 / 40, 1.0)),
+        )
+        door = AssetDef("d", "/D", (100, 20, 400), "wall_door")
+        manifest = Manifest(
+            grid=100,
+            assets={"f": floor, "w": wall, "d": door},
+            version=2,
+            roles={"floor": "f", "wall": "w", "wall_door": "d"},
+        )
+
+        spec = LayoutSpec(
+            name="t",
+            wall_height=400,
+            rooms=[Room(name="a", rect=(0, 0, 4, 3))],
+        )
+        south = by_name(compile_layout(spec, manifest), "a_south_0_0")
+
+        assert south.target_min == (0.0, 0.0, 0.0)
+        assert south.target_size == (400.0, 20.0, 400.0)
+        assert south.scale == (4.0, 1.0, 1.0)
+        assert south.location == (200.0, 10.0, 0.0)
