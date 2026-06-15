@@ -453,6 +453,68 @@ async def test_whitebox_validate_step_does_not_get_build_prompt(tmp_path):
     assert "不要重复粘贴完整 JSON" not in prompt
 
 
+async def test_wb_build_dispatch_repairs_internal_window_and_one_sided_door(tmp_path):
+    captured_layouts: list[dict] = []
+    registry = make_registry()
+
+    async def wb_build(layout_json: str = "", prefix: str = "WB") -> str:
+        captured_layouts.append(json.loads(layout_json))
+        return 'built\n[facts] {"kind": "wb_build", "ok": true}'
+
+    registry.register(
+        ToolSpec(
+            name="ue_whitebox__wb_build",
+            description="",
+            parameters={"type": "object", "properties": {"layout_json": {"type": "string"}}},
+            level=PermissionLevel.READ,
+            handler=wb_build,
+        )
+    )
+    bad_layout = {
+        "name": "guarded",
+        "rooms": [
+            {
+                "name": "a",
+                "rect": [0, 0, 4, 4],
+                "doors": [{"wall": "east", "at": 1, "width": 2}],
+                "windows": [{"wall": "east", "at": 0, "width": 1}],
+            },
+            {"name": "b", "rect": [4, 0, 4, 4], "doors": []},
+        ],
+    }
+    model = FakeModel(
+        [
+            plan_raw(
+                "standard",
+                [
+                    {
+                        "intent": "使用 wb_build 搭建白盒结构",
+                        "acceptance": "wb_build 返回 ok",
+                        "allowed_tools": ["ue_whitebox__wb_build"],
+                        "success_checks": [{"kind": "wb_build", "field": "ok", "equals": True}],
+                    }
+                ],
+            ),
+            tool_turn(
+                "ue_whitebox__wb_build",
+                json.dumps({"layout_json": json.dumps(bad_layout)}, ensure_ascii=False),
+            ),
+            AssistantTurn(content="完成"),
+        ]
+    )
+    writer = RunWriter(tmp_path, TaskSession.new("白盒 guardrail"))
+    runner = TaskRunner(model, registry, writer)
+
+    outcome = await runner.run("搭建默认 slab 白盒空间")
+
+    assert outcome.success
+    assert captured_layouts
+    repaired = captured_layouts[0]
+    room_a, room_b = repaired["rooms"]
+    assert room_a["windows"] == []
+    assert {"wall": "west", "at": 1, "width": 2} in room_b["doors"]
+
+
 async def test_fail_then_retry_then_pass(tmp_path):
     runner, model, writer = make_runner(
         tmp_path,

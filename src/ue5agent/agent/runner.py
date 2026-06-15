@@ -243,6 +243,218 @@ def _with_auto_screenshot_focus(name: str, arguments_json: str, facts: list[dict
     return arguments_json
 
 
+def _with_whitebox_layout_guardrails(name: str, arguments_json: str) -> str:
+    """在派发 wb_build 前做轻量 DSL 修正，把确定非法的模型输出拉回可验证空间。
+
+    这里不替模型重设计布局，只处理确定性的结构错误：
+    - windows 只能在外墙；共享墙上的窗删除即可，结构/导航任务不依赖窗；
+    - 共享墙门洞必须两侧成对；单侧门洞可安全补齐对侧同轴同宽门洞。
+    """
+    if name != "wb_build" and not name.endswith("__wb_build"):
+        return arguments_json
+    try:
+        arguments = json.loads(arguments_json or "{}")
+    except json.JSONDecodeError:
+        return arguments_json
+    if not isinstance(arguments, dict):
+        return arguments_json
+    raw_layout = arguments.get("layout_json")
+    if isinstance(raw_layout, str):
+        try:
+            layout = json.loads(raw_layout)
+        except json.JSONDecodeError:
+            return arguments_json
+    elif isinstance(raw_layout, dict):
+        layout = raw_layout
+    else:
+        return arguments_json
+    if not isinstance(layout, dict):
+        return arguments_json
+    if not _apply_whitebox_layout_guardrails(layout):
+        return arguments_json
+    arguments["layout_json"] = json.dumps(layout, ensure_ascii=False)
+    return json.dumps(arguments, ensure_ascii=False)
+
+
+def _apply_whitebox_layout_guardrails(layout: dict[str, Any]) -> bool:
+    rooms = layout.get("rooms")
+    if not isinstance(rooms, list):
+        return False
+    room_dicts = [room for room in rooms if isinstance(room, dict)]
+    changed = _drop_internal_windows(room_dicts)
+    changed = _mirror_internal_doors(room_dicts) or changed
+    return changed
+
+
+def _drop_internal_windows(rooms: list[dict[str, Any]]) -> bool:
+    changed = False
+    for room in rooms:
+        windows = room.get("windows")
+        if not isinstance(windows, list):
+            continue
+        kept: list[Any] = []
+        for window in windows:
+            segment = _layout_opening_segment(room, window)
+            if segment is not None and _adjacent_room_wall(rooms, room, segment) is not None:
+                changed = True
+                continue
+            kept.append(window)
+        if len(kept) != len(windows):
+            room["windows"] = kept
+    return changed
+
+
+def _mirror_internal_doors(rooms: list[dict[str, Any]]) -> bool:
+    changed = False
+    for room in rooms:
+        doors = room.get("doors")
+        if not isinstance(doors, list):
+            continue
+        for door in list(doors):
+            segment = _layout_opening_segment(room, door)
+            if segment is None:
+                continue
+            adjacent = _adjacent_room_wall(rooms, room, segment)
+            if adjacent is None:
+                continue
+            other, other_wall = adjacent
+            if _room_has_door_segment(other, segment):
+                continue
+            mirrored = _door_from_segment(other, other_wall, segment)
+            if mirrored is None:
+                continue
+            other_doors = other.setdefault("doors", [])
+            if isinstance(other_doors, list):
+                other_doors.append(mirrored)
+                changed = True
+    return changed
+
+
+def _adjacent_room_wall(
+    rooms: list[dict[str, Any]],
+    room: dict[str, Any],
+    segment: tuple[str, int, int, int],
+) -> tuple[dict[str, Any], str] | None:
+    axis, coord, lo, hi = segment
+    level = _layout_room_level(room)
+    if level is None:
+        return None
+    for other in rooms:
+        if other is room or _layout_room_level(other) != level:
+            continue
+        for wall in ("north", "south", "east", "west"):
+            other_segment = _layout_wall_segment(other, wall)
+            if other_segment is None:
+                continue
+            other_axis, other_coord, other_lo, other_hi = other_segment
+            if axis != other_axis or coord != other_coord:
+                continue
+            if min(hi, other_hi) - max(lo, other_lo) > 0:
+                return other, wall
+    return None
+
+
+def _room_has_door_segment(room: dict[str, Any], segment: tuple[str, int, int, int]) -> bool:
+    doors = room.get("doors")
+    if not isinstance(doors, list):
+        return False
+    return any(_layout_opening_segment(room, door) == segment for door in doors)
+
+
+def _door_from_segment(
+    room: dict[str, Any], wall: str, segment: tuple[str, int, int, int]
+) -> dict[str, int | str] | None:
+    rect = _layout_rect(room)
+    if rect is None:
+        return None
+    x, y, w, d = rect
+    _axis, _coord, lo, hi = segment
+    width = hi - lo
+    if width <= 0:
+        return None
+    if wall in ("north", "south"):
+        at = lo - x
+        length = w
+    else:
+        at = lo - y
+        length = d
+    if at < 0 or at + width > length:
+        return None
+    return {"wall": wall, "at": at, "width": width}
+
+
+def _layout_opening_segment(
+    room: dict[str, Any], opening: object
+) -> tuple[str, int, int, int] | None:
+    if not isinstance(opening, dict):
+        return None
+    wall = opening.get("wall")
+    at = _layout_int(opening.get("at"))
+    width = _layout_int(opening.get("width", 1))
+    if not isinstance(wall, str) or at is None or width is None:
+        return None
+    rect = _layout_rect(room)
+    if rect is None:
+        return None
+    x, y, w, d = rect
+    if wall == "south":
+        return ("y", y, x + at, x + at + width)
+    if wall == "north":
+        return ("y", y + d, x + at, x + at + width)
+    if wall == "west":
+        return ("x", x, y + at, y + at + width)
+    if wall == "east":
+        return ("x", x + w, y + at, y + at + width)
+    return None
+
+
+def _layout_wall_segment(room: dict[str, Any], wall: str) -> tuple[str, int, int, int] | None:
+    rect = _layout_rect(room)
+    if rect is None:
+        return None
+    x, y, w, d = rect
+    if wall == "south":
+        return ("y", y, x, x + w)
+    if wall == "north":
+        return ("y", y + d, x, x + w)
+    if wall == "west":
+        return ("x", x, y, y + d)
+    if wall == "east":
+        return ("x", x + w, y, y + d)
+    return None
+
+
+def _layout_rect(room: dict[str, Any]) -> tuple[int, int, int, int] | None:
+    raw = room.get("rect")
+    if not isinstance(raw, list | tuple) or len(raw) != 4:
+        return None
+    values = tuple(_layout_int(value) for value in raw)
+    if any(value is None for value in values):
+        return None
+    return values  # type: ignore[return-value]
+
+
+def _layout_room_level(room: dict[str, Any]) -> int | None:
+    return _layout_int(room.get("level", 0))
+
+
+def _layout_int(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    if isinstance(value, str):
+        stripped = value.strip()
+        try:
+            parsed = int(stripped)
+        except ValueError:
+            return None
+        return parsed if stripped == str(parsed) else None
+    return None
+
+
 @dataclass
 class RunOutcome:
     success: bool
@@ -310,6 +522,7 @@ class _AutoScreenshotFocusRegistry:
         return self._base.get(name)
 
     async def run(self, name: str, arguments_json: str) -> Any:
+        arguments_json = _with_whitebox_layout_guardrails(name, arguments_json)
         arguments_json = _with_auto_screenshot_focus(name, arguments_json, self._tee.facts)
         return await self._base.run(name, arguments_json)
 
