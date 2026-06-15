@@ -83,7 +83,7 @@
   SPC/DST 题面冻结为 `prompt_id=spc-dst-space-v1`，并固定
   `deepseek/deepseek-v4-pro` + Kimi 轻量视觉模型；planner 会把 `path_test.success` 别名归一化为
   `reachable`，并清理未请求视觉时幻觉出的截图/视觉硬门禁。后续需把楼梯间阻断主通路提升为硬约束。
-- [ ] B7. SPC/DST 第二轮复盘优化：问题列表与执行计划见
+- [x] B7. SPC/DST 第二轮复盘优化：问题列表与执行计划见
   [2026-06-15-whitebox-eval-optimization.md](superpowers/plans/2026-06-15-whitebox-eval-optimization.md)。
   2026-06-15 已完成代码侧修复：墙体端点半墙厚补偿、楼梯间护墙小夹缝与 validator metrics、
   coder LLM 超时分类/请求开始事件/同 step 重试、白盒执行提示与视觉失败重试 history 压缩、
