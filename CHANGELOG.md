@@ -26,8 +26,9 @@
   非必要 windows，共享墙门洞错误时退回更简单的矩形邻接并重新成对校准，楼梯错误时优先保证
   footprint 在大房间内部且不切断门到门路线；视觉失败重试只携带目标、最新 folder/screenshot 与
   high 问题摘要，避免长 history 放大超时概率。
-- runner 在派发 `wb_build` 前新增轻量布局 guardrail：删除确定落在共享墙上的 windows，并为单侧
-  共享墙门洞补齐对侧同轴同宽门洞；这属于 agent 侧入参预检，不改变评测题面，也不替模型重设计布局。
+- runner 在派发 `wb_build` 前新增轻量布局 guardrail：删除确定落在共享墙上的 windows，为单侧
+  共享墙门洞补齐对侧同轴同宽门洞，并把明显越界的常见楼梯 footprint 收进所在房间内部；这属于
+  agent 侧入参预检，不改变评测题面，也不替模型重设计布局。
 - `viewport_screenshot` 新增 `clean_view`、`focus_prefix` 与 `margin`；runner 会在模型未显式传参时
   用最新 `wb_build.folder_root` 自动聚焦本批白盒，UE 侧按 Actor/Outliner 前缀计算 bbox、隐藏
   grid/选中描边/轴标并俯拍，减少旧批次和邻近结构污染视觉判断。

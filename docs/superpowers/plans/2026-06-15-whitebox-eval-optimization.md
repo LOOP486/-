@@ -296,7 +296,7 @@ Expected: high blocking 仍失败，medium/low 不阻断。
 > 对外墙窗与共享墙门洞仍靠猜，反复把 windows 放到共享墙、把支线房间贴出歧义共享边，最终触发
 > `llm_timeout` 重试。按反馈，本轮停止继续改测试题面，改为优化白盒搭建 agent 的通用构型守则与
 > LayoutError 恢复提示，并在 `wb_build` 派发前补轻量布局 guardrail：删除共享墙窗、补齐单侧
-> 共享门洞；正式 baseline 仍保持待复跑。
+> 共享门洞、收拢越界楼梯 footprint；正式 baseline 仍保持待复跑。
 
 - [ ] **Step 1: 跑结构测试**
 
@@ -323,6 +323,7 @@ Expected: high 问题为 0 的任务通过；medium/low 出现在报告但不压
 现有 DSL 方向是成立的，不需要因为这两轮问题推翻。代码侧 P0/P1 修复已完成，离线回归已覆盖墙体、
 楼梯、LLM timeout、MCP session 重启、截图聚焦、视觉 high-only gate、
 `path_test.total/count/path_test_result` 验收别名、白盒搭建 agent 的通用构型守则/错误恢复提示，
-以及 `wb_build` 派发前轻量布局 guardrail（删除共享墙窗、补齐单侧共享门洞）。
+以及 `wb_build` 派发前轻量布局 guardrail（删除共享墙窗、补齐单侧共享门洞、收拢越界楼梯
+footprint）。
 下一步应优先继续提升 agent 自主布局稳定性，而不是靠反复收窄测试题面；结构档稳定后再归档正式
 baseline，视觉档随后复跑。

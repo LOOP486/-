@@ -89,10 +89,10 @@
   coder LLM 超时分类/请求开始事件/同 step 重试、白盒执行提示与视觉失败重试 history 压缩、
   白盒 agent 通用构型守则与 LayoutError 恢复提示、MCP stdio session 关闭后的自动重启、
   `path_test.total/count/path_test_result` 验收别名、
-  `wb_build` 派发前轻量 guardrail（删除共享墙窗、补齐单侧共享门洞）、
+  `wb_build` 派发前轻量 guardrail（删除共享墙窗、补齐单侧共享门洞、收拢越界楼梯 footprint）、
   `viewport_screenshot` clean view/focus_prefix/margin 与按最新 `folder_root` 自动聚焦截图、
   视觉 high-only gate，以及 blockout 视觉清单（不因门窗框、楼梯踏步/扶手、房间标签扣分）。
-  离线回归已更新到 472 个单测全绿；UE 在线结构档复跑多次推进到 SPC/DST 中后段，暴露出
+  离线回归已更新到 473 个单测全绿；UE 在线结构档复跑多次推进到 SPC/DST 中后段，暴露出
   agent 对外墙窗/共享墙门洞仍会靠猜的问题，本轮已转为优化 agent 通用构型策略；正式结构/视觉
   baseline 待 agent 策略稳定后再跑并归档。
 - [ ] C. 平面图输入：从手绘/平面图/草图识别房间、门窗与连通关系，生成布局 DSL；透视图仅作风格/

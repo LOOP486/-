@@ -249,6 +249,7 @@ def _with_whitebox_layout_guardrails(name: str, arguments_json: str) -> str:
     这里不替模型重设计布局，只处理确定性的结构错误：
     - windows 只能在外墙；共享墙上的窗删除即可，结构/导航任务不依赖窗；
     - 共享墙门洞必须两侧成对；单侧门洞可安全补齐对侧同轴同宽门洞。
+    - 常见楼梯 footprint 如果明显越界，先收进所在房间内部，避免白跑一轮 LayoutError。
     """
     if name != "wb_build" and not name.endswith("__wb_build"):
         return arguments_json
@@ -283,6 +284,7 @@ def _apply_whitebox_layout_guardrails(layout: dict[str, Any]) -> bool:
     room_dicts = [room for room in rooms if isinstance(room, dict)]
     changed = _drop_internal_windows(room_dicts)
     changed = _mirror_internal_doors(room_dicts) or changed
+    changed = _clamp_stairs_to_rooms(layout, room_dicts) or changed
     return changed
 
 
@@ -328,6 +330,68 @@ def _mirror_internal_doors(rooms: list[dict[str, Any]]) -> bool:
                 other_doors.append(mirrored)
                 changed = True
     return changed
+
+
+_COMMON_STAIR_FOOTPRINTS: dict[str, tuple[int, int]] = {
+    "stair_1": (1, 2),
+    "stair_1_001": (1, 2),
+    "stair_2": (3, 6),
+    "stair_2_001": (3, 6),
+}
+
+
+def _clamp_stairs_to_rooms(layout: dict[str, Any], rooms: list[dict[str, Any]]) -> bool:
+    stairs = layout.get("stairs")
+    if not isinstance(stairs, list):
+        return False
+    rooms_by_name = {room.get("name"): room for room in rooms if isinstance(room.get("name"), str)}
+    changed = False
+    for stair in stairs:
+        if not isinstance(stair, dict):
+            continue
+        room_name = stair.get("room")
+        room = rooms_by_name.get(room_name)
+        if room is None:
+            continue
+        at = _layout_xy(stair.get("at"))
+        rect = _layout_rect(room)
+        footprint = _stair_footprint_for_guardrail(stair)
+        if at is None or rect is None or footprint is None:
+            continue
+        _x, _y, room_w, room_d = rect
+        fw, fd = footprint
+        if room_w < fw or room_d < fd:
+            continue
+        margin_x = 1 if room_w - fw >= 2 else 0
+        margin_y = 1 if room_d - fd >= 2 else 0
+        clamped = (
+            min(max(at[0], margin_x), room_w - fw - margin_x),
+            min(max(at[1], margin_y), room_d - fd - margin_y),
+        )
+        if clamped != at:
+            stair["at"] = [clamped[0], clamped[1]]
+            changed = True
+    return changed
+
+
+def _stair_footprint_for_guardrail(stair: dict[str, Any]) -> tuple[int, int] | None:
+    raw_footprint = _layout_xy(stair.get("footprint"))
+    key = stair.get("key")
+    base = raw_footprint
+    if base is None and isinstance(key, str):
+        base = _COMMON_STAIR_FOOTPRINTS.get(key.strip().lower())
+    if base is None and key is None:
+        base = (3, 6)
+    if base is None:
+        return None
+    facing = stair.get("facing")
+    if not isinstance(facing, str):
+        return None
+    if facing.strip().lower() in {"east", "west"}:
+        return (base[1], base[0])
+    if facing.strip().lower() in {"north", "south"}:
+        return base
+    return None
 
 
 def _adjacent_room_wall(
@@ -432,6 +496,16 @@ def _layout_rect(room: dict[str, Any]) -> tuple[int, int, int, int] | None:
     if any(value is None for value in values):
         return None
     return values  # type: ignore[return-value]
+
+
+def _layout_xy(value: object) -> tuple[int, int] | None:
+    if not isinstance(value, list | tuple) or len(value) != 2:
+        return None
+    x = _layout_int(value[0])
+    y = _layout_int(value[1])
+    if x is None or y is None:
+        return None
+    return (x, y)
 
 
 def _layout_room_level(room: dict[str, Any]) -> int | None:
