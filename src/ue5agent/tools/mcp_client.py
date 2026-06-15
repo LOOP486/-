@@ -14,6 +14,7 @@ from typing import Any
 import anyio
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+from mcp.shared.exceptions import McpError
 
 from ue5agent.config import McpServerConfig
 from ue5agent.core.permissions import PermissionLevel
@@ -57,7 +58,9 @@ class McpManager:
     async def _list_tools(self, server_name: str) -> Any:
         try:
             return await self._sessions[server_name].list_tools()
-        except _RECONNECTABLE_ERRORS:
+        except Exception as exc:
+            if not _is_reconnectable_error(exc):
+                raise
             return await (await self._restart_session(server_name)).list_tools()
 
     async def call_tool_text(
@@ -65,7 +68,9 @@ class McpManager:
     ) -> str:
         try:
             result = await self._sessions[server_name].call_tool(tool_name, arguments)
-        except _RECONNECTABLE_ERRORS:
+        except Exception as exc:
+            if not _is_reconnectable_error(exc):
+                raise
             result = await (await self._restart_session(server_name)).call_tool(
                 tool_name, arguments
             )
@@ -100,6 +105,14 @@ _RECONNECTABLE_ERRORS = (
     anyio.ClosedResourceError,
     anyio.EndOfStream,
 )
+
+
+def _is_reconnectable_error(exc: Exception) -> bool:
+    if isinstance(exc, _RECONNECTABLE_ERRORS):
+        return True
+    if isinstance(exc, McpError):
+        return "connection closed" in str(exc).lower()
+    return False
 
 
 def _make_handler(manager: McpManager, server_name: str, tool_name: str):

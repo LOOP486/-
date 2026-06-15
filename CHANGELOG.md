@@ -16,6 +16,8 @@
   `ClosedResourceError`。
 - MCP 客户端在 stdio session 已关闭、损坏或 end-of-stream 后会自动重启对应 server session，
   避免单个断链工具把后续调用全部污染成同类错误。
+- MCP 客户端会把 MCP SDK 抛出的 `McpError: Connection closed` 也识别为可重连断链，
+  由 client 层透明重启对应 server session，避免把断链重试外包给模型导致白盒步骤空耗一轮。
 - 声明式验收支持 `path_test.total` / `path_test.count` 以及 `path_test_result` 作为最新
   `path_test` 事实存在别名：
   只要最终导航事实没有显式 `ok=false`，即可计为 1，避免 `path_test` 已成功但报告误判失败。
@@ -37,6 +39,8 @@
 - `viewport_screenshot` 新增 `clean_view`、`focus_prefix` 与 `margin`；runner 会在模型未显式传参时
   用最新 `wb_build.folder_root` 自动聚焦本批白盒，UE 侧按 Actor/Outliner 前缀计算 bbox、隐藏
   grid/选中描边/轴标并俯拍，减少旧批次和邻近结构污染视觉判断。
+- 要求截图/视觉硬证据的白盒步骤在拿到 `wb_build`、`wb_validate` 与合格截图后会立即交还 runner
+  执行 `vision_review`，不再让 coder 在同一步内自行推进到下一阶段，避免导航验证阶段漂移成继续截图。
 - `viewport_screenshot` 在编辑器桥在线但没有活动 Level Editor 视口时，会把
   `No active editor viewport` 映射为 `env_unready`；runner 对要求截图/视觉硬证据的步骤会快速终止，
   不再让模型反复更换截图参数并膨胀 history。

@@ -1504,7 +1504,11 @@ def _vision_registry() -> ToolRegistry:
     """注册会落 screenshot/wb_validate 事实的工具（供 A4 集成测试用）。"""
     registry = ToolRegistry(PermissionGate())
 
-    async def viewport_screenshot(file_path: str = "") -> str:
+    async def viewport_screenshot(
+        file_path: str = "",
+        focus_prefix: str = "",
+        clean_view: bool = False,
+    ) -> str:
         return 'saved\n[facts] {"kind": "screenshot", "ok": true, "path": "/tmp/shot.png"}'
 
     async def wb_validate(layout_json: str = "") -> str:
@@ -1514,7 +1518,14 @@ def _vision_registry() -> ToolRegistry:
         ToolSpec(
             name="ue_editor__viewport_screenshot",
             description="",
-            parameters={"type": "object", "properties": {"file_path": {"type": "string"}}},
+            parameters={
+                "type": "object",
+                "properties": {
+                    "file_path": {"type": "string"},
+                    "focus_prefix": {"type": "string"},
+                    "clean_view": {"type": "boolean"},
+                },
+            },
             level=PermissionLevel.READ,
             handler=viewport_screenshot,
         )
@@ -1662,6 +1673,68 @@ class _FakeReviewer:
     async def __call__(self, paths, requirement):
         self.calls.append((list(paths), requirement))
         return self._results.pop(0)
+
+
+async def test_whitebox_visual_step_stops_after_build_validate_and_screenshot(tmp_path):
+    """白盒视觉步骤拿到必要证据后应交还 runner 审查，不再让 coder 继续漂移。
+
+    真机视觉评测里 s1 已完成搭建/校验/截图后，模型继续在同一步里说"进入 s2"，
+    但工具白名单仍是 s1，导致后续导航验证漂移成继续截图。
+    """
+    registry = _vision_registry()
+
+    async def wb_build(layout_json: str = "") -> str:
+        return (
+            '搭建完成\n[facts] {"kind": "wb_build", "ok": true, '
+            '"prefix": "SPC1V", "folder_root": "SPC1V/batch"}'
+        )
+
+    registry.register(
+        ToolSpec(
+            name="ue_whitebox__wb_build",
+            description="",
+            parameters={"type": "object", "properties": {"layout_json": {"type": "string"}}},
+            level=PermissionLevel.WRITE_SAFE,
+            handler=wb_build,
+        )
+    )
+    reviewer = _FakeReviewer([parse_review('{"issues": []}')])
+    model = FakeModel(
+        [
+            plan_raw(
+                "standard",
+                [
+                    {
+                        "intent": "使用 wb_build 搭建白盒结构并俯视截图自查",
+                        "acceptance": "wb_validate 与 vision_review 均通过",
+                        "allowed_tools": [
+                            "ue_whitebox__wb_build",
+                            "ue_whitebox__wb_validate",
+                            "ue_editor__viewport_screenshot",
+                        ],
+                        "success_checks": [{"kind": "wb_validate", "field": "ok", "equals": True}],
+                        "required_evidence": ["screenshot", "vision_review"],
+                    }
+                ],
+            ),
+            tool_turn("ue_whitebox__wb_build", '{"layout_json": "{}"}'),
+            tool_turn("ue_whitebox__wb_validate", '{"layout_json": "{}"}'),
+            tool_turn("ue_editor__viewport_screenshot", "{}"),
+        ]
+    )
+    writer = RunWriter(tmp_path, TaskSession.new("视觉早停"))
+    runner = TaskRunner(model, registry, writer, vision_reviewer=reviewer, max_step_attempts=1)
+
+    outcome = await runner.run("搭建白盒并截图视觉审查")
+
+    assert outcome.success
+    assert len(model.seen_messages) == 4  # plan + 三轮工具调用；截图后没有额外总结请求
+    assert reviewer.calls == [(["/tmp/shot.png"], "搭建白盒并截图视觉审查")]
+    events = read_events(writer.trace_path)
+    early_stops = [e for e in events if e["event"] == "run_end" and e.get("early_stop")]
+    assert early_stops
+    verifies = [e for e in events if e["event"] == "verify_result"]
+    assert verifies[0]["verdict"] == "pass"
 
 
 async def test_vision_high_issue_fails_then_regenerates_and_passes(tmp_path):

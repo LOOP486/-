@@ -604,6 +604,37 @@ class _AutoScreenshotFocusRegistry:
         return (await self.run(name, arguments_json)).text
 
 
+def _visual_step_ready_for_review(step: PlanStep, facts: list[dict]) -> bool:
+    """白盒视觉步骤拿到必要工具证据后，应交还 runner 做 vision_review。"""
+    if not any(item in step.required_evidence for item in ("screenshot", "vision_review")):
+        return False
+    if not _latest_fact_passed(facts, "screenshot", require_framing=True):
+        return False
+    if _is_whitebox_build_step(step) and not _latest_fact_passed(facts, "wb_build"):
+        return False
+    if _step_allows_tool(step, "wb_validate") and not _latest_fact_passed(facts, "wb_validate"):
+        return False
+    if step.success_checks:
+        contract = evaluate_success_checks(step.success_checks, facts)
+        if contract is None or contract.verdict != "pass":
+            return False
+    return True
+
+
+def _step_allows_tool(step: PlanStep, tool_name: str) -> bool:
+    return any(tool == tool_name or tool.endswith(f"__{tool_name}") for tool in step.allowed_tools)
+
+
+def _latest_fact_passed(facts: list[dict], kind: str, *, require_framing: bool = False) -> bool:
+    for fact in reversed(facts):
+        if fact.get("kind") != kind:
+            continue
+        if fact.get("ok") is not True:
+            return False
+        return not (require_framing and fact.get("framing_ok") is False)
+    return False
+
+
 class TaskRunner:
     def __init__(
         self,
@@ -671,6 +702,8 @@ class TaskRunner:
 
     def _early_contract_pass_summary(self, step: PlanStep, tee: _EvidenceTee) -> str | None:
         """工具事实已满足步骤契约时，直接结束本步，避免为一句总结再打 LLM。"""
+        if _visual_step_ready_for_review(step, tee.facts):
+            return "[工具证据已满足视觉审查前置] 白盒搭建、校验和截图已完成，进入视觉审查。"
         if step.required_evidence or not step.success_checks:
             return None
         check_kinds = {

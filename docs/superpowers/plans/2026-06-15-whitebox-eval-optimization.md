@@ -311,6 +311,13 @@ Expected: high blocking 仍失败，medium/low 不阻断。
 > `No active editor viewport`；当时 UE 主窗口处于“恢复包”，没有可读 Level Editor 视口。本问题不是
 > 空间构型失败，已把该截图错误映射为 `env_unready` 并在 runner 侧快速终止，避免模型反复换截图参数
 > 把 history 膨胀到 70k tokens。视觉 baseline 暂不归档，待编辑器恢复到正常关卡视口后重跑。
+>
+> 2026-06-15 晚间复盘：UE 恢复到正常关卡视口后，小步复跑首个视觉任务发现两处 agent 执行链问题：
+> 首次 `wb_build` 遇到 MCP SDK `McpError: Connection closed` 时未在 client 层透明重连，而是回传给模型
+> 触发重试；随后 s1 已拿到 `wb_build`、`wb_validate` 与截图事实后，coder 仍在同一步里自行宣布进入 s2，
+> 导致导航验证阶段漂移成继续调用截图工具。已停止长跑视觉评测，改为修 agent 侧：MCP client 把
+> `Connection closed` 纳入可重连断链；runner 对白盒视觉步骤在 build/validate/screenshot 证据齐备后早停，
+> 交还 runner 执行 `vision_review`，不再让 coder 在当前步继续推进下一阶段。
 
 - [x] **Step 1: 跑结构测试**
 
@@ -326,6 +333,10 @@ Expected: high 问题为 0 的任务通过；medium/low 出现在报告但不压
 
 Attempt: `space-agent-test-visual-20260615-211212.json` 未产出正式 baseline；首个 `SPC1V`
 暴露 `viewport_screenshot` 环境错误（无活动编辑器视口），已改为 `env_unready` 快速分类。
+
+Follow-up: UE 恢复正常视口后未继续完整长跑；首个视觉任务暴露 agent 执行链缺陷（MCP SDK
+`Connection closed` 未透明重连、视觉步骤完成后仍让 coder 在同一步推进下一阶段），已转为小范围修复
+与回归验证。视觉 baseline 继续作为后续验证项保留，不作为本轮完成条件。
 
 - [x] **Step 3: 更新文档**
 
@@ -344,5 +355,6 @@ Attempt: `space-agent-test-visual-20260615-211212.json` 未产出正式 baseline
 `path_test.total/count/path_test_result` 与 `wb_validate.is_valid` 验收别名、白盒搭建 agent 的通用构型守则/
 错误恢复提示，以及 `wb_build` 派发前轻量布局 guardrail（删除共享墙窗、补齐单侧共享门洞、收拢越界
 楼梯 footprint）和 UE eval `failure_type` 报告分类。结构档正式 baseline 已归档并 6/6 通过；视觉档当前
-阻塞在编辑器无活动视口的环境状态，已快速分类为 `env_unready`，不再让模型空转。下一步应优先继续提升
-agent 自主布局稳定性，而不是靠反复收窄或反复运行测试题面。视觉档作为后续验证项保留。
+先后暴露编辑器无活动视口、MCP SDK 断链重连缺口与步骤漂移问题；已快速分类/修复，不再让模型空转或把
+断链重试外包给模型。下一步应优先继续提升 agent 自主布局稳定性，而不是靠反复收窄或反复运行测试题面。
+视觉档作为后续验证项保留。
