@@ -2119,6 +2119,51 @@ async def test_later_nav_step_does_not_review_carried_screenshot(tmp_path):
     assert [e["step_id"] for e in vis] == ["s1"]
 
 
+async def test_visual_step_with_failed_review_cannot_cached_contract_pass(tmp_path):
+    """视觉步骤首次 high 后，即便已有 wb_validate 成功，也不能缓存契约直接放行。"""
+    reviewer = _FakeReviewer(
+        [
+            parse_review(
+                '{"issues": [{"area": "回游路线", "issue": "表达不清", "severity": "high"}]}'
+            ),
+            parse_review('{"issues": []}'),
+        ]
+    )
+    model = FakeModel(
+        [
+            plan_raw(
+                "standard",
+                [
+                    {
+                        "intent": "截图并做视觉审查",
+                        "acceptance": "wb_validate 和视觉审查均通过",
+                        "allowed_tools": [
+                            "ue_whitebox__wb_validate",
+                            "ue_editor__viewport_screenshot",
+                        ],
+                        "success_checks": [{"kind": "wb_validate", "field": "ok", "equals": True}],
+                    }
+                ],
+            ),
+            tool_turn("ue_whitebox__wb_validate", '{"layout_json": "{}"}'),
+            tool_turn("ue_editor__viewport_screenshot", "{}"),
+            tool_turn("ue_editor__viewport_screenshot", "{}"),
+        ]
+    )
+    writer = RunWriter(tmp_path, TaskSession.new("视觉失败后重试"))
+    runner = TaskRunner(model, _vision_registry(), writer, vision_reviewer=reviewer)
+
+    outcome = await runner.run("白盒空间需要截图并通过视觉审查")
+
+    assert outcome.success
+    assert writer.session.plan[0].attempts == 2
+    assert len(reviewer.calls) == 2
+    events = read_events(writer.trace_path)
+    verifies = [e for e in events if e["event"] == "verify_result"]
+    assert [e["verdict"] for e in verifies] == ["fail", "pass"]
+    assert all(e["mode"] != "contract_cached" for e in verifies)
+
+
 # ---------- B1 PlanStep 契约（续）----------
 
 

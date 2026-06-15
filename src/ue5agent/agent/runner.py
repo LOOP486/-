@@ -609,7 +609,9 @@ class _AutoScreenshotFocusRegistry:
 
 def _visual_step_ready_for_review(step: PlanStep, facts: list[dict]) -> bool:
     """白盒视觉步骤拿到必要工具证据后，应交还 runner 做 vision_review。"""
-    if not any(item in step.required_evidence for item in ("screenshot", "vision_review")):
+    if not _step_mentions_visual_review(step):
+        return False
+    if not step.required_evidence and not step.success_checks:
         return False
     if not _latest_fact_passed(facts, "screenshot", require_framing=True):
         return False
@@ -622,6 +624,21 @@ def _visual_step_ready_for_review(step: PlanStep, facts: list[dict]) -> bool:
         if contract is None or contract.verdict != "pass":
             return False
     return True
+
+
+def _step_mentions_visual_review(step: PlanStep) -> bool:
+    text = " ".join(
+        [
+            step.intent,
+            step.acceptance,
+            *step.allowed_tools,
+            *step.required_evidence,
+        ]
+    ).lower()
+    return any(
+        token in text
+        for token in ("viewport_screenshot", "vision_review", "screenshot", "截图", "视觉")
+    )
 
 
 def _step_allows_tool(step: PlanStep, tool_name: str) -> bool:
@@ -712,6 +729,8 @@ class TaskRunner:
         """工具事实已满足步骤契约时，直接结束本步，避免为一句总结再打 LLM。"""
         if _visual_step_ready_for_review(step, tee.facts):
             return "[工具证据已满足视觉审查前置] 白盒搭建、校验和截图已完成，进入视觉审查。"
+        if _step_mentions_visual_review(step):
+            return None
         if step.required_evidence or not step.success_checks:
             return None
         check_kinds = {
@@ -862,6 +881,8 @@ class TaskRunner:
 
     def _contract_pass_summary_from_facts(self, step: PlanStep, facts: list[dict]) -> str | None:
         """历史客观 facts 已满足纯契约步骤时，直接本地收口，避免重复问模型。"""
+        if _step_mentions_visual_review(step):
+            return None
         if step.required_evidence or not step.success_checks:
             return None
         check_kinds = {
