@@ -92,14 +92,16 @@
   `wb_build` 派发前轻量 guardrail（删除共享墙窗、补齐单侧共享门洞、收拢越界楼梯 footprint）、
   `viewport_screenshot` clean view/focus_prefix/margin 与按最新 `folder_root` 自动聚焦截图、
   视觉 high-only gate，以及 blockout 视觉清单（不因门窗框、楼梯踏步/扶手、房间标签扣分）。
-  离线回归已更新到 479 个单测全绿；标准结构档
+  离线回归已更新到 480 个单测全绿；标准结构档
   `evals/baselines/ue/space-agent-test-20260615-205313.json` 已归档，SPC/DST 6/6 通过，
   pass_rate=1.0，first_try_pass_rate=0.8333，平均迭代 3.0，人工干预 0。后续重点继续放在
   白盒搭建 agent 的自主构型稳定性。视觉档复跑时暴露编辑器无活动视口导致截图不可用，已归类为
   `env_unready` 并快速终止，避免模型反复换参数刷大 history；视觉 baseline 待编辑器恢复正常关卡视口后
   作为后续验证项保留，不再通过反复改测试题面收敛。2026-06-15 追加修复 MCP SDK
   `McpError: Connection closed` 透明重连，以及白盒视觉步骤在 `wb_build`/`wb_validate`/截图证据齐备后
-  立即交还 runner 做 `vision_review` 的早停逻辑，避免断链重试外包给模型和步骤内漂移。
+  立即交还 runner 做 `vision_review` 的早停逻辑，避免断链重试外包给模型和步骤内漂移。随后小步
+  复核又发现 focus 取景在宽屏下仍可能带入相邻旧结构；`viewport_screenshot` 已在 `focus_prefix`
+  场景追加本地前景连通域裁剪，只保留当前居中的白盒主体，继续把修复点放在 agent 取证链路而非测试题面。
 - [ ] C. 平面图输入：从手绘/平面图/草图识别房间、门窗与连通关系，生成布局 DSL；透视图仅作风格/
   语义参考。（剩余的"图→布局 DSL 结构化识别"尚未做。）
 

@@ -93,6 +93,27 @@ def _make_gradient_viewport_shot(path: Path, rect: tuple[int, int, int, int]) ->
     img.save(path)
 
 
+def test_screenshot_focus_crops_adjacent_foreground_pollution(monkeypatch, tmp_path):
+    """focus_prefix 聚焦后，宽屏视口仍可能拍到旁边旧批次；wrapper 应裁掉邻近主体。"""
+    _record_bridge(monkeypatch)
+    path = tmp_path / "polluted.png"
+    img = Image.new("RGB", (480, 160), (55, 90, 135))
+    draw = ImageDraw.Draw(img)
+    draw.rectangle((165, 35, 245, 125), fill=(120, 118, 110))
+    draw.rectangle((355, 25, 470, 135), fill=(35, 35, 35))
+    img.save(path)
+
+    out = ed_server.viewport_screenshot(file_path=str(path), focus_prefix="SPC1V/batch")
+    facts = json.loads(out.split("[facts]", 1)[1].strip())
+
+    with Image.open(path) as cropped:
+        assert cropped.width < 260
+    assert facts["ok"] is True
+    assert facts["crop_applied"] is True
+    assert facts["crop_bbox"][2] < 320
+    assert facts["foreground_bbox"][2] < 260
+
+
 def test_screenshot_facts_include_frame_quality_for_visible_subject(monkeypatch, tmp_path):
     """截图文件要有本地可检的主体覆盖，避免“只截到天空/边角”也算硬证据。"""
     _record_bridge(monkeypatch)

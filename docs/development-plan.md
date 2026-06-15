@@ -23,7 +23,7 @@
 | P2 白盒核心三件套 | 资产 manifest、布局 DSL 编译器（几何/门图连通校验，ADR-0004）、wb_build/wb_clear 批量落地与前缀回滚；spawn 运行唯一名根治编辑器崩溃（踩坑史第 7 条）；三房间 agent 端到端核验通过（run 20260611-222536） | 06-11 |
 | 环境自愈三件套 | editor_status 探测、ue_lifecycle/editor_launch 幂等启动、环境未就绪 fail-fast（`[env:unready]` 错误类别先例） | 06-11 |
 
-当前：128+ 单测全绿；5 个自带 MCP server（ue_build / repo_tools / ue_editor / ue_whitebox / ue_lifecycle）；模型 DeepSeek 单一供给，vision 角色未配。
+当时状态：128+ 单测全绿；5 个自带 MCP server（ue_build / repo_tools / ue_editor / ue_whitebox / ue_lifecycle）；模型 DeepSeek 单一供给，vision 角色未配。当前状态以 [roadmap.md](roadmap.md) 与 [worklog.md](worklog.md) 为准。
 
 ## 外部评审吸收（2026-06-12）
 

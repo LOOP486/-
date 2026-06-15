@@ -318,6 +318,12 @@ Expected: high blocking 仍失败，medium/low 不阻断。
 > 导致导航验证阶段漂移成继续调用截图工具。已停止长跑视觉评测，改为修 agent 侧：MCP client 把
 > `Connection closed` 纳入可重连断链；runner 对白盒视觉步骤在 build/validate/screenshot 证据齐备后早停，
 > 交还 runner 执行 `vision_review`，不再让 coder 在当前步继续推进下一阶段。
+>
+> 2026-06-15 后续小步复核：`focus_prefix` 已让当前白盒居中，但宽屏视口仍可能把相邻旧测试结构拍进
+> 同张图，导致 vision 把旧批次误判成本次布局缺陷。已在 `viewport_screenshot` wrapper 增加仅限
+> `focus_prefix` 场景的本地前景连通域裁剪，保留居中的当前白盒主体；探针图
+> `runs/screenshots/focus_crop_probe.png` 已确认旧结构被裁出。该修复仍属于 agent 截图取证链路，
+> 不改变 SPC/DST 题面。
 
 - [x] **Step 1: 跑结构测试**
 
@@ -335,8 +341,9 @@ Attempt: `space-agent-test-visual-20260615-211212.json` 未产出正式 baseline
 暴露 `viewport_screenshot` 环境错误（无活动编辑器视口），已改为 `env_unready` 快速分类。
 
 Follow-up: UE 恢复正常视口后未继续完整长跑；首个视觉任务暴露 agent 执行链缺陷（MCP SDK
-`Connection closed` 未透明重连、视觉步骤完成后仍让 coder 在同一步推进下一阶段），已转为小范围修复
-与回归验证。视觉 baseline 继续作为后续验证项保留，不作为本轮完成条件。
+`Connection closed` 未透明重连、视觉步骤完成后仍让 coder 在同一步推进下一阶段），随后又发现
+focus 截图在宽屏下仍可能包含相邻旧结构。上述问题均已转为 agent 侧小范围修复与回归验证；
+视觉 baseline 继续作为后续验证项保留，不作为本轮完成条件。
 
 - [x] **Step 3: 更新文档**
 
@@ -351,10 +358,11 @@ Follow-up: UE 恢复正常视口后未继续完整长跑；首个视觉任务暴
 ## 当前结论
 
 现有 DSL 方向是成立的，不需要因为这两轮问题推翻。代码侧 P0/P1 修复已完成，离线回归已覆盖墙体、
-楼梯、LLM timeout、MCP session 重启、截图聚焦、视觉 high-only gate、
+楼梯、LLM timeout、MCP session 重启、截图聚焦与前景裁剪、视觉 high-only gate、
 `path_test.total/count/path_test_result` 与 `wb_validate.is_valid` 验收别名、白盒搭建 agent 的通用构型守则/
 错误恢复提示，以及 `wb_build` 派发前轻量布局 guardrail（删除共享墙窗、补齐单侧共享门洞、收拢越界
 楼梯 footprint）和 UE eval `failure_type` 报告分类。结构档正式 baseline 已归档并 6/6 通过；视觉档当前
 先后暴露编辑器无活动视口、MCP SDK 断链重连缺口与步骤漂移问题；已快速分类/修复，不再让模型空转或把
-断链重试外包给模型。下一步应优先继续提升 agent 自主布局稳定性，而不是靠反复收窄或反复运行测试题面。
+断链重试外包给模型；focus 截图的相邻旧结构污染也已在取证 wrapper 侧裁掉。下一步应优先继续提升
+agent 自主布局稳定性，而不是靠反复收窄或反复运行测试题面。
 视觉档作为后续验证项保留。

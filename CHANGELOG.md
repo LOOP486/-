@@ -39,6 +39,8 @@
 - `viewport_screenshot` 新增 `clean_view`、`focus_prefix` 与 `margin`；runner 会在模型未显式传参时
   用最新 `wb_build.folder_root` 自动聚焦本批白盒，UE 侧按 Actor/Outliner 前缀计算 bbox、隐藏
   grid/选中描边/轴标并俯拍，减少旧批次和邻近结构污染视觉判断。
+- `viewport_screenshot` 在传入 `focus_prefix` 时会对截图做本地前景连通域裁剪；当宽屏视口仍拍到
+  相邻旧测试结构时，仅保留居中的当前白盒主体，避免视觉模型把旁边旧批次误判为本次布局缺陷。
 - 要求截图/视觉硬证据的白盒步骤在拿到 `wb_build`、`wb_validate` 与合格截图后会立即交还 runner
   执行 `vision_review`，不再让 coder 在同一步内自行推进到下一阶段，避免导航验证阶段漂移成继续截图。
 - `viewport_screenshot` 在编辑器桥在线但没有活动 Level Editor 视口时，会把

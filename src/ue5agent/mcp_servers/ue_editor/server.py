@@ -182,17 +182,54 @@ def viewport_screenshot(
     out = _call("viewport_screenshot", params)
     if out.startswith("[error]") or is_env_unready(out):
         return out
+    crop = _crop_screenshot_to_primary_component(Path(params["file_path"])) if focus_prefix else {}
     # screenshot 事实：runner 据此发现本步截图并触发 A4 视觉审查（路径 = 实际落盘路径）
     frame = _analyze_screenshot_frame(Path(params["file_path"]))
     facts = {
         "kind": "screenshot",
         "ok": frame["framing_ok"],
         "path": params["file_path"],
+        **crop,
         **frame,
     }
     verdict = "PASS" if frame["framing_ok"] else "FAIL"
     note = f"截图取景{verdict}：{frame['framing_reason']}"
     return f"{out}\n{note}\n[facts] {json.dumps(facts, ensure_ascii=False)}"
+
+
+def _crop_screenshot_to_primary_component(path: Path) -> dict[str, Any]:
+    """focus_prefix 只负责 UE 侧取景，宽屏视口仍可能拍到邻近旧测试结构。
+
+    本地按前景连通域做一次保守裁剪：多个主体簇同时出现时，保留最靠近画面中心的簇。
+    这能把并排 eval 旧批次裁掉，避免视觉模型把邻近结构当作当前白盒缺陷。
+    """
+    if not path.exists():
+        return {}
+    try:
+        from PIL import Image
+    except ImportError:
+        return {}
+    try:
+        with Image.open(path) as opened:
+            original = opened.convert("RGB")
+            analyzed = original.copy()
+            analyzed.thumbnail((768, 768), Image.Resampling.BILINEAR)
+            components = _foreground_components(analyzed)
+            selected = _select_primary_component(components, analyzed.size)
+            if selected is None:
+                return {}
+            union = _bbox_union([component["bbox"] for component in components])
+            if union is None:
+                return {}
+            if not _component_crop_worthwhile(selected["bbox"], union, analyzed.size):
+                return {}
+            scaled_box = _scale_bbox(selected["bbox"], analyzed.size, original.size)
+            crop_box = _expand_crop_box(scaled_box, original.size, margin_ratio=0.12)
+            cropped = original.crop(crop_box)
+            cropped.save(path)
+    except Exception:
+        return {}
+    return {"crop_applied": True, "crop_bbox": list(crop_box)}
 
 
 def _analyze_screenshot_frame(path: Path) -> dict[str, Any]:
@@ -291,6 +328,112 @@ def _foreground_stats(img: Any) -> tuple[list[int] | None, float, tuple[float, f
     return [x0, y0, x1, y1], ratio, centroid
 
 
+def _foreground_components(img: Any) -> list[dict[str, Any]]:
+    width, height = img.size
+    pixels = img.load()
+    bg = _corner_background_rgb(img)
+    threshold = 70
+    mask = bytearray(width * height)
+    for y in range(height):
+        row = y * width
+        for x in range(width):
+            rgb = pixels[x, y]
+            delta = abs(rgb[0] - bg[0]) + abs(rgb[1] - bg[1]) + abs(rgb[2] - bg[2])
+            if not _looks_like_editor_blue_background(rgb) and delta > threshold:
+                mask[row + x] = 1
+
+    visited = bytearray(width * height)
+    components: list[dict[str, Any]] = []
+    min_pixels = max(24, int(width * height * 0.002))
+    for index, present in enumerate(mask):
+        if not present or visited[index]:
+            continue
+        stack = [index]
+        visited[index] = 1
+        count = 0
+        sum_x = 0
+        sum_y = 0
+        x0, y0 = width, height
+        x1 = y1 = -1
+        while stack:
+            current = stack.pop()
+            x = current % width
+            y = current // width
+            count += 1
+            sum_x += x
+            sum_y += y
+            x0 = min(x0, x)
+            y0 = min(y0, y)
+            x1 = max(x1, x)
+            y1 = max(y1, y)
+            for neighbor in _mask_neighbors(x, y, width, height):
+                if mask[neighbor] and not visited[neighbor]:
+                    visited[neighbor] = 1
+                    stack.append(neighbor)
+        if count >= min_pixels:
+            components.append(
+                {
+                    "bbox": [x0, y0, x1, y1],
+                    "count": count,
+                    "centroid": (sum_x / count, sum_y / count),
+                }
+            )
+    return components
+
+
+def _mask_neighbors(x: int, y: int, width: int, height: int) -> tuple[int, ...]:
+    out: list[int] = []
+    if x > 0:
+        out.append(y * width + x - 1)
+    if x + 1 < width:
+        out.append(y * width + x + 1)
+    if y > 0:
+        out.append((y - 1) * width + x)
+    if y + 1 < height:
+        out.append((y + 1) * width + x)
+    return tuple(out)
+
+
+def _select_primary_component(
+    components: list[dict[str, Any]], size: tuple[int, int]
+) -> dict[str, Any] | None:
+    if len(components) < 2:
+        return None
+    width, height = size
+    cx, cy = (width - 1) / 2, (height - 1) / 2
+
+    def score(component: dict[str, Any]) -> float:
+        x, y = component["centroid"]
+        distance = (((x - cx) / max(width, 1)) ** 2 + ((y - cy) / max(height, 1)) ** 2) ** 0.5
+        return float(component["count"]) / (0.08 + distance)
+
+    return max(components, key=score)
+
+
+def _bbox_union(boxes: list[list[int]]) -> list[int] | None:
+    if not boxes:
+        return None
+    return [
+        min(box[0] for box in boxes),
+        min(box[1] for box in boxes),
+        max(box[2] for box in boxes),
+        max(box[3] for box in boxes),
+    ]
+
+
+def _component_crop_worthwhile(
+    selected: list[int], union: list[int], size: tuple[int, int]
+) -> bool:
+    width, height = size
+    selected_area = max(selected[2] - selected[0] + 1, 1) * max(selected[3] - selected[1] + 1, 1)
+    union_area = max(union[2] - union[0] + 1, 1) * max(union[3] - union[1] + 1, 1)
+    if union_area < selected_area * 1.35:
+        return False
+    selected_width = (selected[2] - selected[0] + 1) / max(width, 1)
+    selected_height = (selected[3] - selected[1] + 1) / max(height, 1)
+    return selected_width >= 0.12 and selected_height >= 0.12
+
+
 def _looks_like_editor_blue_background(rgb: tuple[int, int, int]) -> bool:
     r, g, b = rgb
     return b > 70 and b > r + 20 and b > g + 5
@@ -318,10 +461,12 @@ def _corner_background_rgb(img: Any) -> tuple[int, int, int]:
 
 
 def _scale_bbox(
-    bbox: list[int], analyzed_size: tuple[int, int], original_size: tuple[int, int]
+    bbox: list[int] | tuple[int, int, int, int],
+    analyzed_size: tuple[int, int],
+    original_size: tuple[int, int],
 ) -> list[int]:
     if analyzed_size == original_size:
-        return bbox
+        return list(bbox)
     sx = original_size[0] / analyzed_size[0]
     sy = original_size[1] / analyzed_size[1]
     return [
@@ -330,6 +475,20 @@ def _scale_bbox(
         round(bbox[2] * sx),
         round(bbox[3] * sy),
     ]
+
+
+def _expand_crop_box(
+    bbox: list[int], image_size: tuple[int, int], *, margin_ratio: float
+) -> tuple[int, int, int, int]:
+    width, height = image_size
+    x0, y0, x1, y1 = bbox
+    margin = max(12, round(max(x1 - x0 + 1, y1 - y0 + 1) * margin_ratio))
+    return (
+        max(0, x0 - margin),
+        max(0, y0 - margin),
+        min(width, x1 + margin + 1),
+        min(height, y1 + margin + 1),
+    )
 
 
 def _screenshot_frame_fail(
