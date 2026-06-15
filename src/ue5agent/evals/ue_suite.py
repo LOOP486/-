@@ -218,12 +218,23 @@ def summarize_trace(path: Path) -> dict[str, Any]:
     tool_calls: list[str] = []
     facts: list[dict[str, Any]] = []
     tool_errors: list[str] = []
+    run_errors: list[str] = []
     if not path.exists():
-        return {"tool_calls": tool_calls, "facts": facts, "tool_errors": tool_errors}
+        return {
+            "tool_calls": tool_calls,
+            "facts": facts,
+            "tool_errors": tool_errors,
+            "run_errors": run_errors,
+        }
     for event in read_events(path):
         fact = event.get("facts")
         if isinstance(fact, dict):
             facts.append(fact)
+        if event.get("event") == "run_error":
+            failure_type = str(event.get("failure_type") or "execution_error")
+            error = str(event.get("error") or "").strip()
+            run_errors.append(f"{failure_type}: {error}" if error else failure_type)
+            continue
         if event.get("event") != "tool_call":
             continue
         tool = str(event.get("tool", ""))
@@ -232,7 +243,12 @@ def summarize_trace(path: Path) -> dict[str, Any]:
         preview = str(event.get("result_preview", ""))
         if preview.startswith(("[error]", "[denied]", "Error executing tool")):
             tool_errors.append(f"{tool}: {preview}")
-    return {"tool_calls": tool_calls, "facts": facts, "tool_errors": tool_errors}
+    return {
+        "tool_calls": tool_calls,
+        "facts": facts,
+        "tool_errors": tool_errors,
+        "run_errors": run_errors,
+    }
 
 
 def _tool_matches(actual: str, expected: str) -> bool:

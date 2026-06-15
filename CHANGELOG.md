@@ -4,6 +4,21 @@
 
 ## [未发布]
 
+### 修复（SPC/DST 白盒评测稳定性）
+
+- slab 墙体编译新增外角半墙厚端点补偿，避免水平/垂直墙都冲到轴线交点造成亮边、错位或视觉重叠。
+- 楼梯间护墙生成会跳过不足一格的侧边窄缝，`wb_validate` 新增
+  `stairwell_overlap_count`、`stairwell_out_of_bounds_count` 与 `stairwell_sliver_count`，
+  并按旋转后 AABB 识别重复墙，减少楼梯井误报和小夹缝漏检。
+- UE eval 的 coder 超时从直接 abort 调整为分类记录 `llm_timeout` 并同 step 重试一次；LLM 请求开始前新增
+  `llm_request_start` 事件，trace 可见 role、turn、消息数、估算字符量与工具数。
+- 白盒 `wb_build` 执行提示改为少解释、优先直接调工具且不重复粘贴完整 JSON；视觉失败重试只携带目标、
+  最新 folder/screenshot 与 high 问题摘要，避免长 history 放大超时概率。
+- `viewport_screenshot` 新增 `clean_view`、`focus_prefix` 与 `margin` 参数透传，默认启用 clean view，
+  为 UE 侧隐藏编辑器叠加物和按测试前缀自动聚焦截图留出稳定接口。
+- 视觉审查 gate 改为 high-only：`VisionReviewResult.passed` 与视觉评测任务只让
+  `high_count > 0` 或解析失败阻断自动收口，medium/low 继续作为报告字段保留。
+
 ### 新增（关卡尺度 metrics）
 
 - 新增 `config/whitebox/level_metrics.yaml` 与 `scale_profile="realistic"`：第一版按真实室内空间

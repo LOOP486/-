@@ -31,6 +31,8 @@ def test_screenshot_default_path_is_absolute_png(monkeypatch):
     assert file_path.suffix == ".png"
     assert "screenshots" in file_path.parts
     assert "location" not in params and "rotation" not in params
+    assert params["clean_view"] is True
+    assert params["margin"] == 1.25
 
 
 def test_screenshot_camera_params_passthrough(monkeypatch):
@@ -42,6 +44,21 @@ def test_screenshot_camera_params_passthrough(monkeypatch):
     assert params["location"] == [100, 200, 3000]
     assert params["rotation"] == [-90, 0, 0]
     assert Path(params["file_path"]).is_absolute()
+
+
+def test_screenshot_focus_params_passthrough(monkeypatch):
+    """白盒截图可要求 UE 侧隐藏干扰元素，并按命名前缀自动聚焦取景。"""
+    calls = _record_bridge(monkeypatch)
+    ed_server.viewport_screenshot(
+        file_path="shot.png",
+        clean_view=False,
+        focus_prefix="SPC3V_",
+        margin=1.5,
+    )
+    _, params = calls[0]
+    assert params["clean_view"] is False
+    assert params["focus_prefix"] == "SPC3V_"
+    assert params["margin"] == 1.5
 
 
 def test_screenshot_success_emits_screenshot_facts(monkeypatch, tmp_path):

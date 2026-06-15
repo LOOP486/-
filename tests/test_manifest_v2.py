@@ -118,7 +118,9 @@ class TestCubeEquivalence:
         spec = LayoutSpec(name="t", rooms=[Room(name="a", rect=(0, 0, 4, 3))])
         south = by_name(compile_layout(spec, V1), "a_south_0")
         assert south.location == (200.0, 0.0, 150.0)  # slab 中心线：x心200/y边界0/高心150
-        assert south.scale == (4.0, 0.2, 3.0)
+        assert south.scale == (4.2, 0.2, 3.0)
+        assert south.target_min == (-10.0, -10.0, 0.0)
+        assert south.target_size == (420.0, 20.0, 300.0)
 
 
 class TestPivotCompensation:

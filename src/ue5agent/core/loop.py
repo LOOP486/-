@@ -98,8 +98,18 @@ class AgentLoop:
                     f"墙钟预算 {self._max_wall_seconds:.0f}s 耗尽（第 {turn} 轮前）"
                 )
             view = compact_history(messages, self._compact_budget_chars)
+            tools = self._registry.specs()
+            if self._log:
+                self._log.write(
+                    "llm_request_start",
+                    role=role,
+                    turn=turn,
+                    message_count=len(view),
+                    estimated_chars=_estimate_messages_chars(view),
+                    tool_count=len(tools),
+                )
             started = time.monotonic()
-            assistant = await self._llm.acomplete(role, view, tools=self._registry.specs())
+            assistant = await self._llm.acomplete(role, view, tools=tools)
             llm_duration_ms = round((time.monotonic() - started) * 1000)
             if assistant.usage:
                 prompt_tokens += assistant.usage.prompt_tokens
@@ -233,6 +243,20 @@ def _is_whitebox_layout_tool(tool_name: str) -> bool:
 def _safe_filename(value: str) -> str:
     text = re.sub(r"[^0-9A-Za-z_.-]+", "_", value.strip())
     return text.strip("._") or "layout"
+
+
+def _estimate_messages_chars(messages: list[dict[str, Any]]) -> int:
+    total = 0
+    for message in messages:
+        content = message.get("content")
+        if isinstance(content, str):
+            total += len(content)
+        elif content is not None:
+            total += len(str(content))
+        tool_calls = message.get("tool_calls")
+        if tool_calls:
+            total += len(str(tool_calls))
+    return total
 
 
 def _assistant_message(turn: AssistantTurn) -> dict[str, Any]:

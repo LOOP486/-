@@ -84,8 +84,8 @@ class VisionReviewResult:
 
     @property
     def passed(self) -> bool:
-        """无任何问题且解析成功才算视觉审查通过。"""
-        return self.parsed and not self.issues
+        """解析成功且没有 high 问题才算视觉审查通过；medium/low 仅报告。"""
+        return self.parsed and not self.high_severity
 
     def to_facts(self) -> dict:
         """转 A3 证据信封事实：存在 high 问题或解析失败 → ok=False。"""

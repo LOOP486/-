@@ -63,6 +63,69 @@ _ABORT_HINTS: dict[ErrorCategory, str] = {
 }
 
 
+def _execution_failure_type(exc: Exception) -> str:
+    text = f"{type(exc).__name__}: {exc}"
+    if "TimeoutError" in text and (
+        type(exc).__name__ == "LLMUnavailable" or "全部模型不可用" in text
+    ):
+        return "llm_timeout"
+    if isinstance(exc, BudgetExhausted):
+        return "step_budget_exhausted"
+    return "execution_error"
+
+
+def _is_whitebox_build_step(step: PlanStep) -> bool:
+    text = f"{step.intent} {step.acceptance}".lower()
+    allows_build = any(
+        tool == "wb_build" or tool.endswith("__wb_build") for tool in step.allowed_tools
+    )
+    build_intent = "wb_build" in text or (
+        "白盒" in text and any(word in text for word in ("搭", "创建", "生成", "落地"))
+    )
+    return build_intent or (allows_build and "build" in text)
+
+
+def _compact_vision_retry_history(
+    history: list[dict[str, Any]],
+    *,
+    goal: str,
+    facts: list[dict],
+    vision_result: VisionReviewResult,
+    retry_note: str,
+) -> list[dict[str, Any]]:
+    """视觉失败后只保留系统提示与可行动摘要，避免前一轮长 JSON/说明继续膨胀。"""
+    system = next((msg for msg in history if msg.get("role") == "system"), None)
+    compacted = [system] if system is not None else []
+    folder_root = _latest_fact_field(facts, "wb_build", "folder_root") or _latest_fact_field(
+        facts, "wb_build", "outliner_folder_root"
+    )
+    shot = _latest_fact_field(facts, "screenshot", "path")
+    high_issues = vision_result.high_severity
+    issue_lines = (
+        [f"- {issue.area}: {issue.issue}" for issue in high_issues]
+        if high_issues
+        else [f"- {vision_result.summary()}"]
+    )
+    lines = [
+        "视觉失败重试摘要：",
+        f"原目标：{goal}",
+        f"最新 wb_build.folder_root：{folder_root or '未知'}",
+        f"最新截图路径：{shot or '未知'}",
+        "vision high issues：",
+        *issue_lines,
+        retry_note,
+    ]
+    compacted.append({"role": "user", "content": "\n".join(lines)})
+    return compacted
+
+
+def _latest_fact_field(facts: list[dict], kind: str, field: str) -> Any:
+    for fact in reversed(facts):
+        if fact.get("kind") == kind and fact.get(field) is not None:
+            return fact[field]
+    return None
+
+
 @dataclass
 class RunOutcome:
     success: bool
@@ -404,21 +467,45 @@ class TaskRunner:
                     f"总目标：{goal}\n当前步骤（{step.id}）：{step.intent}\n"
                     f"验收标准：{step.acceptance or '无'}"
                 )
+                if _is_whitebox_build_step(step):
+                    prompt += (
+                        "\n[白盒执行约束] 不要在工具调用前展开完整设计说明；"
+                        "优先一次性调用 wb_build，再按验收要求调用验证/截图工具；"
+                        "layout_json 已由 trace artifact 保存，回复中不要重复粘贴完整 JSON，"
+                        "最终报告再简短总结。"
+                    )
                 precondition_hint = await self._check_preconditions(step)
                 if precondition_hint:
                     prompt += f"\n[前置条件未满足] {precondition_hint}——请先恢复环境再做本步骤。"
                 loop = self._build_step_loop(step, tee)
                 execution_verdict: VerifyResult | None = None
+                execution_failure_type: str | None = None
                 try:
                     result = await loop.run(prompt, role="coder", history=history)
                     summaries[step.id] = result.final_text
                 except BudgetExhausted as exc:
+                    execution_failure_type = _execution_failure_type(exc)
                     summaries[step.id] = f"[步内预算耗尽] {exc}"
                     execution_verdict = VerifyResult("fail", f"步内预算耗尽：{exc}")
+                    self._writer.event(
+                        "run_error",
+                        step_id=step.id,
+                        failure_type=execution_failure_type,
+                        error=str(exc),
+                    )
                 except Exception as exc:  # LLM/工具底层故障：记为步骤失败，不炸整个会话
+                    execution_failure_type = _execution_failure_type(exc)
                     reason = f"步骤执行异常：{type(exc).__name__}: {exc}"
+                    if execution_failure_type != "execution_error":
+                        reason = f"{execution_failure_type}: {reason}"
                     summaries[step.id] = f"[{reason}]"
                     execution_verdict = VerifyResult("fail", reason)
+                    self._writer.event(
+                        "run_error",
+                        step_id=step.id,
+                        failure_type=execution_failure_type,
+                        error=f"{type(exc).__name__}: {exc}",
+                    )
                 self._writer.event("phase_exit", phase="execute", step_id=step.id)
 
                 # A4：对本步截图做视觉审查，结果并入 tee.facts（驱动下方确定性验收）
@@ -478,6 +565,27 @@ class TaskRunner:
                     step.status = "done"
                     break
                 if mode == "execution":
+                    if (
+                        execution_failure_type == "llm_timeout"
+                        and step.attempts < 2
+                        and step.attempts < self._max_step_attempts
+                    ):
+                        self._writer.event(
+                            "recover_action",
+                            step_id=step.id,
+                            action="retry",
+                            reason=verdict.reason,
+                        )
+                        history.append(
+                            {
+                                "role": "user",
+                                "content": (
+                                    f"步骤 {step.id} 执行时发生 llm_timeout：{verdict.reason}。"
+                                    "请压缩输出，直接调用必要工具后再总结。"
+                                ),
+                            }
+                        )
+                        continue
                     step.status = "failed"
                     aborted = True
                     self._writer.event(
@@ -543,7 +651,15 @@ class TaskRunner:
                             f"请重点修正这些区域（{areas}）的布局，再用 wb_build 重新落地"
                             "（wb_build 会先整批清理同前缀旧构件再重建）。"
                         )
-                history.append({"role": "user", "content": retry_note})
+                    history = _compact_vision_retry_history(
+                        history,
+                        goal=goal,
+                        facts=tee.facts,
+                        vision_result=vision_result,
+                        retry_note=retry_note,
+                    )
+                else:
+                    history.append({"role": "user", "content": retry_note})
             self._writer.save_session()
             self._writer.write_progress(self._render_progress(session))
 

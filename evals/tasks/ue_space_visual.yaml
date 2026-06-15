@@ -44,7 +44,6 @@
     - { type: fact_equals, kind: vision_review, path: ok, equals: true }
     - { type: fact_equals, kind: vision_review, path: parsed, equals: true }
     - { type: fact_lte, kind: vision_review, path: high_count, value: 0 }
-    - { type: fact_lte, kind: vision_review, path: issue_count, value: 0 }
     - type: fact_any
       kind: path_test
       where:
@@ -90,7 +89,6 @@
     - { type: fact_equals, kind: vision_review, path: ok, equals: true }
     - { type: fact_equals, kind: vision_review, path: parsed, equals: true }
     - { type: fact_lte, kind: vision_review, path: high_count, value: 0 }
-    - { type: fact_lte, kind: vision_review, path: issue_count, value: 0 }
     - type: fact_any
       kind: path_test
       where:
@@ -137,7 +135,6 @@
     - { type: fact_equals, kind: vision_review, path: ok, equals: true }
     - { type: fact_equals, kind: vision_review, path: parsed, equals: true }
     - { type: fact_lte, kind: vision_review, path: high_count, value: 0 }
-    - { type: fact_lte, kind: vision_review, path: issue_count, value: 0 }
     - type: fact_any
       kind: path_test
       where:
@@ -182,7 +179,6 @@
     - { type: fact_equals, kind: vision_review, path: ok, equals: true }
     - { type: fact_equals, kind: vision_review, path: parsed, equals: true }
     - { type: fact_lte, kind: vision_review, path: high_count, value: 0 }
-    - { type: fact_lte, kind: vision_review, path: issue_count, value: 0 }
     - type: fact_any
       kind: path_test
       where:
@@ -227,7 +223,6 @@
     - { type: fact_equals, kind: vision_review, path: ok, equals: true }
     - { type: fact_equals, kind: vision_review, path: parsed, equals: true }
     - { type: fact_lte, kind: vision_review, path: high_count, value: 0 }
-    - { type: fact_lte, kind: vision_review, path: issue_count, value: 0 }
     - type: fact_any
       kind: path_test
       where:
@@ -272,7 +267,6 @@
     - { type: fact_equals, kind: vision_review, path: ok, equals: true }
     - { type: fact_equals, kind: vision_review, path: parsed, equals: true }
     - { type: fact_lte, kind: vision_review, path: high_count, value: 0 }
-    - { type: fact_lte, kind: vision_review, path: issue_count, value: 0 }
     - type: fact_any
       kind: path_test
       where:

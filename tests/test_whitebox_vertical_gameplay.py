@@ -150,13 +150,13 @@ def test_multilevel_rooms_use_z_offset_and_upper_stairwell_has_no_floor():
             "structure_mode": "modular",
             "wall_height": 400,
             "rooms": [
-                {"name": "Lower", "rect": [0, 0, 6, 8], "level": 0},
-                {"name": "Upper", "rect": [0, 0, 6, 8], "level": 1},
+                {"name": "Lower", "rect": [0, 0, 8, 8], "level": 0},
+                {"name": "Upper", "rect": [0, 0, 8, 8], "level": 1},
             ],
             "stairs": [
                 {
                     "room": "Lower",
-                    "at": [1, 1],
+                    "at": [2, 1],
                     "from_level": 0,
                     "to_level": 1,
                     "facing": "north",
@@ -174,7 +174,7 @@ def test_multilevel_rooms_use_z_offset_and_upper_stairwell_has_no_floor():
     assert upper_wall.target_min is not None and upper_wall.target_min[2] == 400.0
     assert stair.scale == (1.0, 1.0, 1.0)
 
-    hole_xy = ((100.0, 400.0), (100.0, 650.0))
+    hole_xy = ((200.0, 500.0), (100.0, 650.0))
     upper_floors = [p for p in placements if p.name.startswith("Upper_floor")]
     assert upper_floors
     assert not [_aabb(p) for p in upper_floors if _overlaps_xy(_aabb(p), hole_xy)]
@@ -187,13 +187,13 @@ def test_stair_generates_stairwell_guards_and_metrics():
             "structure_mode": "modular",
             "wall_height": 400,
             "rooms": [
-                {"name": "Lower", "rect": [0, 0, 6, 8], "level": 0},
-                {"name": "Upper", "rect": [0, 0, 6, 8], "level": 1},
+                {"name": "Lower", "rect": [0, 0, 8, 8], "level": 0},
+                {"name": "Upper", "rect": [0, 0, 8, 8], "level": 1},
             ],
             "stairs": [
                 {
                     "room": "Lower",
-                    "at": [1, 1],
+                    "at": [2, 1],
                     "from_level": 0,
                     "to_level": 1,
                     "facing": "north",
@@ -209,6 +209,74 @@ def test_stair_generates_stairwell_guards_and_metrics():
     assert len(guards) >= 2
     assert all(p.target_min is not None and p.target_size is not None for p in guards)
     assert report.metrics["stairwell_count"] == len(guards)
+
+
+def test_slab_stairwell_rotated_side_guards_are_not_duplicate_walls():
+    spec = layout_from_dict(
+        {
+            "name": "slab-stairwell-rotated-guards",
+            "structure_mode": "slab",
+            "wall_height": 400,
+            "rooms": [{"name": "Hall", "rect": [0, 0, 8, 10], "level": 0}],
+            "stairs": [
+                {
+                    "room": "Hall",
+                    "at": [2, 2],
+                    "from_level": 0,
+                    "to_level": 1,
+                    "facing": "north",
+                    "key": "stair_2",
+                }
+            ],
+        }
+    )
+
+    placements = compile_layout(spec, KIT)
+    report = validate_layout(spec, KIT, _perfect_actors(placements))
+
+    assert report.ok, report.violations
+    assert report.metrics["parallel_wall_duplicate_count"] == 0
+    assert report.metrics["stairwell_overlap_count"] == 0
+    assert report.metrics["stairwell_out_of_bounds_count"] == 0
+    assert report.metrics["stairwell_sliver_count"] == 0
+
+
+def test_stairwell_guards_do_not_leave_sub_grid_side_slivers():
+    spec = layout_from_dict(
+        {
+            "name": "stairwell-no-side-sliver",
+            "structure_mode": "slab",
+            "wall_height": 400,
+            "rooms": [{"name": "Hall", "rect": [0, 0, 6, 8], "level": 0}],
+            "stairs": [
+                {
+                    "room": "Hall",
+                    "at": [1, 1],
+                    "from_level": 0,
+                    "to_level": 1,
+                    "facing": "north",
+                    "key": "stair_2",
+                }
+            ],
+        }
+    )
+
+    placements = compile_layout(spec, KIT)
+    guards = [p for p in placements if p.kind == "stairwell"]
+
+    assert guards
+    for guard in guards:
+        assert guard.target_min is not None and guard.target_size is not None
+        side = guard.metadata["side"]
+        if side == "west":
+            gap = guard.target_min[0]
+        elif side == "east":
+            gap = 600.0 - (guard.target_min[0] + guard.target_size[0])
+        elif side == "south":
+            gap = guard.target_min[1]
+        else:
+            gap = 800.0 - (guard.target_min[1] + guard.target_size[1])
+        assert gap == 0.0 or gap >= 100.0
 
 
 def test_multilevel_structural_laps_are_legal_but_stairs_still_cannot_cross_walls():

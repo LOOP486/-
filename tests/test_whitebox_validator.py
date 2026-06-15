@@ -59,6 +59,83 @@ def test_perfect_layout_passes():
     assert report.metrics["floor_area_m2"] == 32.0  # 两个 4x4 格房间 = 2 * 16m²
     assert report.metrics["scale_profile"] == "realistic"
     assert report.metrics["scale_warning_count"] == 0
+    assert report.metrics["stairwell_overlap_count"] == 0
+    assert report.metrics["stairwell_out_of_bounds_count"] == 0
+    assert report.metrics["stairwell_sliver_count"] == 0
+
+
+def test_stairwell_metrics_detect_overlap_out_of_bounds_and_sliver():
+    spec = layout_from_dict(
+        {
+            "name": "bad-stairwell-metrics",
+            "structure_mode": "slab",
+            "rooms": [{"name": "Hall", "rect": [0, 0, 8, 10]}],
+            "stairs": [
+                {
+                    "room": "Hall",
+                    "at": [2, 2],
+                    "from_level": 0,
+                    "to_level": 1,
+                    "facing": "north",
+                    "key": "stair_2_001",
+                }
+            ],
+        }
+    )
+    manifest = load_manifest(wb_server._MANIFEST)
+    placements = compile_layout(spec, manifest)
+    actors = [
+        ActorView(
+            name=f"WB_abc123_{p.name}",
+            location=p.location,
+            scale=p.scale,
+            rotation=p.rotation,
+        )
+        for p in placements
+    ]
+    guards = [p for p in placements if p.kind == "stairwell"]
+    sliver_guard = guards[0]
+    sliver_actor = next(a for a in actors if a.name.endswith(sliver_guard.name))
+    moved_sliver_guard = ActorView(
+        name=sliver_actor.name,
+        location=(
+            sliver_actor.location[0] - 150.0,
+            sliver_actor.location[1],
+            sliver_actor.location[2],
+        ),
+        scale=sliver_actor.scale,
+        rotation=sliver_actor.rotation,
+    )
+    actors[actors.index(sliver_actor)] = moved_sliver_guard
+    outside_guard = guards[1]
+    outside_actor = next(a for a in actors if a.name.endswith(outside_guard.name))
+    moved_outside_guard = ActorView(
+        name=outside_actor.name,
+        location=(
+            outside_actor.location[0] + 400.0,
+            outside_actor.location[1],
+            outside_actor.location[2],
+        ),
+        scale=outside_actor.scale,
+        rotation=outside_actor.rotation,
+    )
+    actors[actors.index(outside_actor)] = moved_outside_guard
+    actors.append(
+        ActorView(
+            name="WB_abc123_Debug_stairwell_overlap",
+            location=moved_sliver_guard.location,
+            scale=moved_sliver_guard.scale,
+            rotation=moved_sliver_guard.rotation,
+        )
+    )
+
+    report = validate_layout(spec, manifest, actors)
+
+    assert not report.ok
+    assert report.metrics["stairwell_overlap_count"] >= 1
+    assert report.metrics["stairwell_out_of_bounds_count"] >= 1
+    assert report.metrics["stairwell_sliver_count"] >= 1
+    assert any("楼梯井护墙" in violation for violation in report.violations)
 
 
 def test_realistic_scale_metrics_warn_without_failing_geometry():

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from itertools import pairwise
+from itertools import pairwise, product
 from typing import Any
 
 from ue5agent.whitebox.compiler import LayoutSpec, Placement, compile_layout
@@ -93,7 +93,8 @@ def validate_layout(
     _check_visual_alignment(expected, report)
     _check_structural_coverage(expected, actors, prefix, manifest.grid, report)
     _check_overlaps(expected, actors, prefix, report)
-    _check_parallel_duplicate_walls(actors, prefix, report)
+    _check_parallel_duplicate_walls(expected, actors, prefix, report)
+    _check_stairwell_integrity(spec, expected, actors, prefix, manifest.grid, report)
     _check_route_blockers(expected, actors, prefix, report)
     _check_foreign_residue(expected, actors, prefix, report)
     _fill_metrics(spec, expected, actors, prefix, manifest.grid, report, level_metrics)
@@ -221,14 +222,15 @@ def _check_overlaps(
 
 
 def _check_parallel_duplicate_walls(
-    actors: list[ActorView], prefix: str, report: ValidationReport
+    expected: list[Placement], actors: list[ActorView], prefix: str, report: ValidationReport
 ) -> None:
     """实际场景里近距离同向薄墙不能并列；这是共享墙重复/错轴的强信号。"""
+    expected_by_name = {p.name: p for p in expected}
     wall_runs: list[tuple[str, int, float, tuple[float, float], tuple[float, float]]] = []
     for actor in actors:
         if strip_batch_name(actor.name, prefix) is None:
             continue
-        box = _aabb(actor)
+        box = _actor_box(actor, expected_by_name, prefix)
         size = (
             box[0][1] - box[0][0],
             box[1][1] - box[1][0],
@@ -259,6 +261,95 @@ def _check_parallel_duplicate_walls(
                 f"重叠长度 {long_overlap:.0f}uu"
             )
     report.metrics["parallel_wall_duplicate_count"] = duplicate_count
+
+
+def _check_stairwell_integrity(
+    spec: LayoutSpec,
+    expected: list[Placement],
+    actors: list[ActorView],
+    prefix: str,
+    grid: float,
+    report: ValidationReport,
+) -> None:
+    """楼梯井护墙不应重叠、越界，或在房间边界旁切出一格内夹缝。"""
+    expected_by_name = {p.name: p for p in expected}
+    entries: list[tuple[str, tuple[tuple[float, float], ...], Placement | None]] = []
+    for actor in actors:
+        stripped = strip_batch_name(actor.name, prefix)
+        if not stripped:
+            continue
+        placement = expected_by_name.get(stripped)
+        if placement is not None and placement.kind == "stairwell":
+            entries.append((actor.name, _actor_box(actor, expected_by_name, prefix), placement))
+            continue
+        if "stairwell" in stripped.lower():
+            entries.append((actor.name, _aabb(actor), None))
+
+    overlap_count = 0
+    for index, (name_a, box_a, _placement_a) in enumerate(entries):
+        for name_b, box_b, _placement_b in entries[index + 1 :]:
+            laps = _overlap_axes(box_a, box_b)
+            if laps is None or sum(1 for lap in laps if lap > _LAP_TOLERANCE) < 2:
+                continue
+            overlap_count += 1
+            dims = "×".join(f"{lap:.0f}" for lap in laps)
+            report.violations.append(f"楼梯井护墙重叠：{name_a} 与 {name_b} 重叠区域 {dims}uu")
+
+    rooms = {room.name: room for room in spec.rooms}
+    out_of_bounds_count = 0
+    sliver_count = 0
+    for name, box, placement in entries:
+        if placement is None:
+            continue
+        room = rooms.get(str(placement.metadata.get("room", "")))
+        if room is None:
+            continue
+        bounds = _room_xy_bounds(spec, room, grid)
+        if (
+            box[0][0] < bounds[0][0] - _LOCATION_TOL
+            or box[0][1] > bounds[0][1] + _LOCATION_TOL
+            or box[1][0] < bounds[1][0] - _LOCATION_TOL
+            or box[1][1] > bounds[1][1] + _LOCATION_TOL
+        ):
+            out_of_bounds_count += 1
+            report.violations.append(f"楼梯井护墙越界：{name} 超出房间 {room.name} 边界")
+        side = str(placement.metadata.get("side", ""))
+        gap = _stairwell_side_gap(side, box, bounds)
+        if gap is not None and _LOCATION_TOL < gap < grid:
+            sliver_count += 1
+            report.violations.append(
+                f"楼梯井护墙夹缝：{name} 与房间 {room.name} {side} 侧边界仅 {gap:.0f}uu"
+            )
+
+    report.metrics["stairwell_overlap_count"] = overlap_count
+    report.metrics["stairwell_out_of_bounds_count"] = out_of_bounds_count
+    report.metrics["stairwell_sliver_count"] = sliver_count
+
+
+def _room_xy_bounds(
+    spec: LayoutSpec, room: Any, grid: float
+) -> tuple[tuple[float, float], tuple[float, float]]:
+    x, y, w, d = room.rect
+    return (
+        (spec.origin[0] + x * grid, spec.origin[0] + (x + w) * grid),
+        (spec.origin[1] + y * grid, spec.origin[1] + (y + d) * grid),
+    )
+
+
+def _stairwell_side_gap(
+    side: str,
+    box: tuple[tuple[float, float], ...],
+    bounds: tuple[tuple[float, float], tuple[float, float]],
+) -> float | None:
+    if side == "west":
+        return box[0][0] - bounds[0][0]
+    if side == "east":
+        return bounds[0][1] - box[0][1]
+    if side == "south":
+        return box[1][0] - bounds[1][0]
+    if side == "north":
+        return bounds[1][1] - box[1][1]
+    return None
 
 
 def _looks_like_wall_box(size: tuple[float, float, float]) -> bool:
@@ -346,10 +437,44 @@ def _coverage_units(placement: Placement, grid: float) -> int:
 
 def _aabb(actor: ActorView) -> tuple[tuple[float, float], ...]:
     """构件的世界 AABB：((x_lo, x_hi), (y_lo, y_hi), (z_lo, z_hi))。"""
+    extents = tuple(s * _CUBE_HALF for s in actor.scale)
+    yaw = round(actor.rotation[1]) % 360
+    corners = [
+        _rotate_yaw((x, y, z), yaw)
+        for x, y, z in product(
+            (-extents[0], extents[0]),
+            (-extents[1], extents[1]),
+            (-extents[2], extents[2]),
+        )
+    ]
     return tuple(
-        (c - s * _CUBE_HALF, c + s * _CUBE_HALF)
-        for c, s in zip(actor.location, actor.scale, strict=False)
+        (
+            actor.location[axis] + min(corner[axis] for corner in corners),
+            actor.location[axis] + max(corner[axis] for corner in corners),
+        )
+        for axis in range(3)
     )
+
+
+def _rotate_yaw(point: tuple[float, float, float], yaw: int) -> tuple[float, float, float]:
+    x, y, z = point
+    yaw = yaw % 360
+    if yaw == 90:
+        return (-y, x, z)
+    if yaw == 180:
+        return (-x, -y, z)
+    if yaw == 270:
+        return (y, -x, z)
+    return point
+
+
+def _actor_box(
+    actor: ActorView, expected_by_name: dict[str, Placement], prefix: str
+) -> tuple[tuple[float, float], ...]:
+    placement = _placement_for_actor(actor.name, expected_by_name, prefix)
+    if placement is not None and _actor_matches_placement(actor, placement):
+        return _placement_aabb(placement)
+    return _aabb(actor)
 
 
 def _placement_for_actor(

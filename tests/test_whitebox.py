@@ -73,6 +73,24 @@ class TestGeometry:
         assert floor.location == (200.0, 150.0, -10.0)
         assert floor.scale == (4.0, 3.0, 0.2)
 
+    def test_slab_wall_endpoints_compensate_half_thickness_at_corners(self):
+        spec = LayoutSpec(name="t", rooms=[Room(name="a", rect=(0, 0, 4, 3))])
+        placements = compile_layout(spec, MANIFEST)
+
+        south = by_name(placements, "a_south_0")
+        north = by_name(placements, "a_north_0")
+        west = by_name(placements, "a_west_0")
+        east = by_name(placements, "a_east_0")
+
+        assert south.target_min == (-10.0, -10.0, 0.0)
+        assert south.target_size == (420.0, 20.0, 300.0)
+        assert north.target_min == (-10.0, 290.0, 0.0)
+        assert north.target_size == (420.0, 20.0, 300.0)
+        assert west.target_min == (-10.0, 10.0, 0.0)
+        assert west.target_size == (20.0, 280.0, 300.0)
+        assert east.target_min == (390.0, 10.0, 0.0)
+        assert east.target_size == (20.0, 280.0, 300.0)
+
     def test_door_splits_wall_into_segments(self):
         spec = LayoutSpec(
             name="t",
@@ -83,8 +101,10 @@ class TestGeometry:
         seg0 = by_name(placements, "a_south_0")
         seg1 = by_name(placements, "a_south_1")
         # 段0：格 0..1，段1：格 3..4
-        assert seg0.location[0] == 50.0 and seg0.scale[0] == 1.0
-        assert seg1.location[0] == 350.0 and seg1.scale[0] == 1.0
+        assert seg0.target_min == (-10.0, -10.0, 0.0)
+        assert seg0.target_size == (110.0, 20.0, 300.0)
+        assert seg1.target_min == (300.0, -10.0, 0.0)
+        assert seg1.target_size == (110.0, 20.0, 300.0)
         assert seg0.location[2] == 150.0  # 墙心高 = wall_height/2
 
     def test_door_at_wall_start_no_zero_segment(self):

@@ -76,7 +76,15 @@ class TestRunWriter:
         loop = AgentLoop(model, make_registry(), session_log=writer)
         await loop.run("测试")
         kinds = [e["event"] for e in read_events(writer.trace_path)]
-        assert kinds == ["run_start", "llm_turn", "tool_call", "llm_turn", "run_end"]
+        assert kinds == [
+            "run_start",
+            "llm_request_start",
+            "llm_turn",
+            "tool_call",
+            "llm_request_start",
+            "llm_turn",
+            "run_end",
+        ]
         assert all(kind in EVENT_TYPES for kind in kinds)
 
 

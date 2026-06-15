@@ -141,12 +141,13 @@ class TestRunner:
 
 UE_TASKS = Path(__file__).parent.parent / "evals" / "tasks" / "ue.yaml"
 UE_SPACE_TASKS = Path(__file__).parent.parent / "evals" / "tasks" / "ue_space.yaml"
+UE_SPACE_VISUAL_TASKS = Path(__file__).parent.parent / "evals" / "tasks" / "ue_space_visual.yaml"
 
 
 class TestUeSuite:
     """E3/C3 UE 在线档：编排/指标/检查器离线单测（用替身 run_one，不碰真编辑器）。"""
 
-    def test_ue_eval_llm_client_is_fail_fast(self):
+    def test_ue_eval_llm_client_retries_coder_timeout_once(self):
         from ue5agent.cli import _build_ue_eval_llm
         from ue5agent.config import ModelsConfig
 
@@ -159,8 +160,8 @@ class TestUeSuite:
 
         client = _build_ue_eval_llm(config)
 
-        assert client._max_retries == 1
-        assert client._request_timeout == 120.0
+        assert client._max_retries == 2
+        assert client._request_timeout == 180.0
 
     def test_ue_eval_builds_vision_reviewer_when_vision_role_exists(self):
         from ue5agent.cli import _build_vision_reviewer
@@ -306,6 +307,36 @@ class TestUeSuite:
             if condition.get("path") == "path_length"
         ]
         assert loop_path_lengths and max(loop_path_lengths) <= 600
+
+    def test_ue_space_visual_gate_blocks_only_high_vision_issues(self):
+        from ue5agent.evals.ue_suite import UeRunRecord, evaluate_ue_check, load_ue_tasks
+
+        tasks = load_ue_tasks(UE_SPACE_VISUAL_TASKS)
+        assert tasks and all(task.checks for task in tasks)
+        for task in tasks:
+            vision_checks = [check for check in task.checks if check.get("kind") == "vision_review"]
+            assert {
+                "type": "fact_lte",
+                "kind": "vision_review",
+                "path": "high_count",
+                "value": 0,
+            } in vision_checks
+            assert all(check.get("path") != "issue_count" for check in vision_checks)
+
+        rec = UeRunRecord(
+            success=True,
+            facts=[
+                {
+                    "kind": "vision_review",
+                    "ok": True,
+                    "parsed": True,
+                    "high_count": 0,
+                    "issue_count": 2,
+                }
+            ],
+        )
+        for check in [c for c in tasks[0].checks if c.get("kind") == "vision_review"]:
+            assert evaluate_ue_check(check, rec) is None
 
     def test_checks_cover_success_and_text(self):
         from ue5agent.evals.ue_suite import UeRunRecord, evaluate_ue_check
@@ -501,6 +532,11 @@ class TestUeSuite:
                 "tool": "ue_whitebox__wb_build",
                 "result_preview": "Error executing tool wb_build: manifest 中没有资产",
             },
+            {
+                "event": "run_error",
+                "failure_type": "llm_timeout",
+                "error": "coder TimeoutError",
+            },
         ]
         trace.write_text(
             "\n".join(json.dumps(e, ensure_ascii=False) for e in events),
@@ -528,6 +564,7 @@ class TestUeSuite:
             "ue_whitebox__wb_validate: [error] 布局校验未通过",
             "ue_whitebox__wb_build: Error executing tool wb_build: manifest 中没有资产",
         ]
+        assert summary["run_errors"] == ["llm_timeout: coder TimeoutError"]
 
     async def test_run_ue_suite_aggregates_metrics(self):
         from ue5agent.evals.ue_suite import UeEvalTask, UeRunRecord, run_ue_suite

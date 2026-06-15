@@ -19,6 +19,7 @@ EVENT_TYPES = frozenset(
         "run_start",
         "phase_enter",
         "phase_exit",
+        "llm_request_start",
         "llm_turn",
         "tool_call",
         "verify_result",

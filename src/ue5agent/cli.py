@@ -310,6 +310,7 @@ async def _run_ue_eval(
                         iteration_count=sum(s.attempts for s in plan),
                         max_step_attempts=max((s.attempts for s in plan), default=0),
                         human_intervention=0,  # 无人值守 eval 不触发确认器
+                        error="；".join(summary["run_errors"]) if not outcome.success else "",
                         trace_path=str(writer.trace_path),
                         run_dir=str(writer.dir),
                         tool_calls=summary["tool_calls"],
@@ -354,10 +355,10 @@ async def _run_ue_eval(
 
 
 def _build_ue_eval_llm(config: ModelsConfig) -> Any:
-    """UE 在线评测用 fail-fast LLM：一次请求超时即让该任务失败，避免静默长重试。"""
+    """UE 在线评测用较短预算 LLM：超时快速分类，但给文本模型一次重试机会。"""
     from ue5agent.llm.client import LiteLLMClient
 
-    return LiteLLMClient(config, max_retries=1, request_timeout_seconds=120.0)
+    return LiteLLMClient(config, max_retries=2, request_timeout_seconds=180.0)
 
 
 def _build_vision_reviewer(llm: Any) -> Any:

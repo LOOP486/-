@@ -141,25 +141,39 @@ def viewport_screenshot(
     file_path: str = "",
     location: list[float] | None = None,
     rotation: list[float] | None = None,
+    clean_view: bool = True,
+    focus_prefix: str | None = None,
+    margin: float = 1.25,
 ) -> str:
     """对编辑器视口截图存为 PNG，返回保存路径与尺寸。
 
     俯视白盒布局：location=[中心x, 中心y, 高度]、rotation=[-90, 0, 0]（pitch/yaw/roll，
     高度建议为布局对角线长度量级）。不传相机参数则按当前视口视角截图。
+    clean_view=True 时由 UE 侧临时隐藏坐标轴、选中描边等编辑器干扰；focus_prefix 用于
+    让 UE 侧按 Actor 命名前缀计算目标 bbox 并自动聚焦，margin 为 bbox 外扩倍率。
 
     Args:
         file_path: 保存路径（.png）；留空自动存到 runs/screenshots/ 下的时间戳文件
         location: 可选，截图前把视口相机移到此位置 [x, y, z]
         rotation: 可选，视口相机旋转 [pitch, yaw, roll]
+        clean_view: 截图时是否隐藏编辑器辅助显示元素
+        focus_prefix: 可选，按 Actor 名称前缀自动聚焦取景
+        margin: focus_prefix 自动取景时的 bbox 外扩倍率
     """
     if not file_path:
         stamp = time.strftime("%Y%m%d-%H%M%S")
         file_path = str(Path("runs") / "screenshots" / f"viewport_{stamp}.png")
-    params: dict[str, Any] = {"file_path": str(Path(file_path).resolve())}
+    params: dict[str, Any] = {
+        "file_path": str(Path(file_path).resolve()),
+        "clean_view": clean_view,
+        "margin": margin,
+    }
     if location is not None:
         params["location"] = location
     if rotation is not None:
         params["rotation"] = rotation
+    if focus_prefix:
+        params["focus_prefix"] = focus_prefix
     out = _call("viewport_screenshot", params)
     if out.startswith("[error]") or is_env_unready(out):
         return out

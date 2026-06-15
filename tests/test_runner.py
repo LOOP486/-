@@ -17,6 +17,7 @@ from ue5agent.agent.verifier import (
 from ue5agent.agent.vision_review import parse_review
 from ue5agent.core.errors import ErrorCategory, mark_env_unready, mark_error
 from ue5agent.core.permissions import PermissionGate, PermissionLevel
+from ue5agent.llm.client import LLMUnavailable
 from ue5agent.llm.types import AssistantTurn
 from ue5agent.tools.registry import ScopedRegistry, ToolRegistry, ToolSpec
 
@@ -44,6 +45,17 @@ def make_runner(tmp_path, script) -> tuple[TaskRunner, FakeModel, RunWriter]:
     model = FakeModel(script)
     writer = RunWriter(tmp_path, TaskSession.new("测试任务"))
     return TaskRunner(model, make_registry(), writer), model, writer
+
+
+class RaisingFakeModel(FakeModel):
+    """FakeModel 变体：脚本项为异常时直接抛出，用于覆盖 LLM 故障路径。"""
+
+    async def acomplete(self, role, messages, tools=None) -> AssistantTurn:
+        self.seen_messages.append([dict(m) for m in messages])
+        action = self._script.pop(0)
+        if isinstance(action, Exception):
+            raise action
+        return action
 
 
 async def test_trivial_fast_path(tmp_path):
@@ -79,6 +91,107 @@ async def test_two_steps_with_judge(tmp_path):
     assert outcome.success
     assert [s.status for s in writer.session.plan] == ["done", "done"]
     assert writer.session.status == "done"
+
+
+async def test_llm_request_start_event_records_request_shape(tmp_path):
+    runner, _, writer = make_runner(
+        tmp_path,
+        [
+            plan("standard", ("回答", "回答完成")),
+            AssistantTurn(content="完成"),
+            judge("pass"),
+        ],
+    )
+
+    await runner.run("做点事")
+
+    events = read_events(writer.trace_path)
+    start = next(e for e in events if e["event"] == "llm_request_start")
+    assert start["role"] == "coder"
+    assert start["turn"] == 1
+    assert start["message_count"] >= 2
+    assert start["estimated_chars"] > 0
+    assert start["tool_count"] >= 1
+    assert events.index(start) < next(i for i, e in enumerate(events) if e["event"] == "llm_turn")
+
+
+async def test_coder_llm_timeout_is_classified_and_retried_once(tmp_path):
+    model = RaisingFakeModel(
+        [
+            plan("standard", ("生成白盒布局", "完成")),
+            LLMUnavailable("角色 coder 的全部模型不可用：deepseek/deepseek-v4-pro（TimeoutError）"),
+            AssistantTurn(content="重试完成"),
+            judge("pass"),
+        ]
+    )
+    writer = RunWriter(tmp_path, TaskSession.new("LLM 超时"))
+    runner = TaskRunner(model, make_registry(), writer, max_step_attempts=3)
+
+    outcome = await runner.run("搭建空间")
+
+    assert outcome.success
+    assert writer.session.plan[0].attempts == 2
+    events = read_events(writer.trace_path)
+    errors = [e for e in events if e["event"] == "run_error"]
+    assert errors and errors[0]["failure_type"] == "llm_timeout"
+    retries = [e for e in events if e["event"] == "recover_action"]
+    assert retries and retries[0]["action"] == "retry"
+    assert "llm_timeout" in retries[0]["reason"]
+
+
+async def test_whitebox_build_step_prompt_discourages_long_preamble(tmp_path):
+    model = FakeModel(
+        [
+            plan_raw(
+                "standard",
+                [
+                    {
+                        "intent": "使用 wb_build 搭建白盒结构",
+                        "acceptance": "完成落地",
+                        "allowed_tools": ["ue_whitebox__wb_build"],
+                    }
+                ],
+            ),
+            AssistantTurn(content="完成"),
+            judge("pass"),
+        ]
+    )
+    writer = RunWriter(tmp_path, TaskSession.new("白盒提示"))
+    runner = TaskRunner(model, make_registry(), writer)
+
+    await runner.run("搭建一个默认 slab 白盒空间")
+
+    prompt = model.seen_messages[1][-1]["content"]
+    assert "不要在工具调用前展开完整设计说明" in prompt
+    assert "优先一次性调用 wb_build" in prompt
+    assert "不要重复粘贴完整 JSON" in prompt
+
+
+async def test_whitebox_validate_step_does_not_get_build_prompt(tmp_path):
+    model = FakeModel(
+        [
+            plan_raw(
+                "standard",
+                [
+                    {
+                        "intent": "用 wb_validate 校验整个白盒场景",
+                        "acceptance": "校验通过",
+                        "allowed_tools": ["ue_whitebox__wb_build", "ue_whitebox__wb_validate"],
+                    }
+                ],
+            ),
+            AssistantTurn(content="完成"),
+            judge("pass"),
+        ]
+    )
+    writer = RunWriter(tmp_path, TaskSession.new("白盒校验提示"))
+    runner = TaskRunner(model, make_registry(), writer)
+
+    await runner.run("校验一个默认 slab 白盒空间")
+
+    prompt = model.seen_messages[1][-1]["content"]
+    assert "优先一次性调用 wb_build" not in prompt
+    assert "不要重复粘贴完整 JSON" not in prompt
 
 
 async def test_fail_then_retry_then_pass(tmp_path):
@@ -980,6 +1093,13 @@ async def test_vision_high_issue_fails_then_regenerates_and_passes(tmp_path):
     assert reviewer.calls[0][1] == "搭一个两房间连通的关卡"
     # 视觉问题（区域名）回灌进了执行方上下文
     assert any(any("房间A" in str(m.get("content")) for m in view) for view in model.seen_messages)
+    retry_views = [
+        view for view in model.seen_messages if any("房间A" in str(m.get("content")) for m in view)
+    ]
+    assert retry_views
+    retry_context = "\n".join(str(m.get("content", "")) for m in retry_views[0])
+    assert "房间A" in retry_context
+    assert "截了俯视图" not in retry_context
     events = read_events(writer.trace_path)
     vis = [e for e in events if e["event"] == "vision_review"]
     assert [e["passed"] for e in vis] == [False, True]

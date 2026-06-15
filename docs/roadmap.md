@@ -2,7 +2,7 @@
 
 阶段定义与验收标准的完整版见 [architecture/design.md §11](architecture/design.md)。本页是工作清单，随进展勾选。
 
-## Phase 0：核心骨架 + C++ 编译闭环（进行中）
+## Phase 0：核心骨架 + C++ 编译闭环（已完成）
 
 - [x] 仓库工程化：uv + ruff + pytest + mypy，setup/check 脚本
 - [x] 配置体系：models.yaml（角色路由）/ agent.yaml / .env，校验与 CLI
@@ -85,8 +85,10 @@
   `reachable`，并清理未请求视觉时幻觉出的截图/视觉硬门禁。后续需把楼梯间阻断主通路提升为硬约束。
 - [ ] B7. SPC/DST 第二轮复盘优化：问题列表与执行计划见
   [2026-06-15-whitebox-eval-optimization.md](superpowers/plans/2026-06-15-whitebox-eval-optimization.md)。
-  优先修墙体端点半墙厚补偿、楼梯间开口/护墙小夹缝、coder LLM 超时分类与重试；随后优化
-  `viewport_screenshot` clean view、视觉 high-only gate 和视觉失败重试的 history 压缩。
+  2026-06-15 已完成代码侧修复：墙体端点半墙厚补偿、楼梯间护墙小夹缝与 validator metrics、
+  coder LLM 超时分类/请求开始事件/同 step 重试、白盒执行提示与视觉失败重试 history 压缩、
+  `viewport_screenshot` clean view/focus_prefix/margin 参数、视觉 high-only gate。剩余为 UE 在线
+  标准结构/视觉两档复跑与 baseline 归档。
 - [ ] C. 平面图输入：从手绘/平面图/草图识别房间、门窗与连通关系，生成布局 DSL；透视图仅作风格/
   语义参考。（剩余的"图→布局 DSL 结构化识别"尚未做。）
 

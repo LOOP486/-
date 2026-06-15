@@ -185,7 +185,7 @@ def test_slab_shared_partial_wall_runs_are_centered_and_merged():
     ]
 
     assert any(
-        p.target_min == (590.0, 200.0, 0.0) and p.target_size == (20.0, 200.0, 400.0)
+        p.target_min == (590.0, 200.0, 0.0) and p.target_size == (20.0, 190.0, 400.0)
         for p in shared_axis_walls
     )
     assert not any(

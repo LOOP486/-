@@ -917,14 +917,18 @@ def _compile_stairwell_guards_with_grid(
         ]
     ] = []
     if facing in {"north", "south"}:
-        if x0 - t >= room_x0:
+        west_gap = x0 - t - room_x0
+        east_gap = room_x1 - (x1 + t)
+        if west_gap >= g:
             segments.append(("west", (x0 - t, y0, z), (t, fd * g, h), (0.0, 90.0, 0.0)))
-        if x1 + t <= room_x1:
+        if east_gap >= g:
             segments.append(("east", (x1, y0, z), (t, fd * g, h), (0.0, 90.0, 0.0)))
     else:
-        if y0 - t >= room_y0:
+        south_gap = y0 - t - room_y0
+        north_gap = room_y1 - (y1 + t)
+        if south_gap >= g:
             segments.append(("south", (x0, y0 - t, z), (fw * g, t, h), (0.0, 0.0, 0.0)))
-        if y1 + t <= room_y1:
+        if north_gap >= g:
             segments.append(("north", (x0, y1, z), (fw * g, t, h), (0.0, 0.0, 0.0)))
 
     out: list[Placement] = []
@@ -2181,21 +2185,29 @@ def _compile_room(
         for index, (s, e) in enumerate(_segments(length, openings_by_wall[wall], room.name, wall)):
             run = (e - s) * g
             if wall == "south":
+                start_offset = -t / 2 if center_walls and s == 0 else 0.0
+                end_offset = t / 2 if center_walls and e == length else 0.0
                 wall_y = oy + y * g - t / 2 if center_walls else oy + y * g
-                tmin = (ox + (x + s) * g, wall_y, base_z)
-                tsize = (run, t, h)
+                tmin = (ox + (x + s) * g + start_offset, wall_y, base_z)
+                tsize = (run - start_offset + end_offset, t, h)
             elif wall == "north":
+                start_offset = -t / 2 if center_walls and s == 0 else 0.0
+                end_offset = t / 2 if center_walls and e == length else 0.0
                 wall_y = oy + (y + d) * g - t / 2 if center_walls else oy + (y + d) * g - t
-                tmin = (ox + (x + s) * g, wall_y, base_z)
-                tsize = (run, t, h)
+                tmin = (ox + (x + s) * g + start_offset, wall_y, base_z)
+                tsize = (run - start_offset + end_offset, t, h)
             elif wall == "west":
+                start_offset = t / 2 if center_walls and s == 0 else 0.0
+                end_offset = -t / 2 if center_walls and e == length else 0.0
                 wall_x = ox + x * g - t / 2 if center_walls else ox + x * g
-                tmin = (wall_x, oy + (y + s) * g, base_z)
-                tsize = (t, run, h)
+                tmin = (wall_x, oy + (y + s) * g + start_offset, base_z)
+                tsize = (t, run - start_offset + end_offset, h)
             else:  # east
+                start_offset = t / 2 if center_walls and s == 0 else 0.0
+                end_offset = -t / 2 if center_walls and e == length else 0.0
                 wall_x = ox + (x + w) * g - t / 2 if center_walls else ox + (x + w) * g - t
-                tmin = (wall_x, oy + (y + s) * g, base_z)
-                tsize = (t, run, h)
+                tmin = (wall_x, oy + (y + s) * g + start_offset, base_z)
+                tsize = (t, run - start_offset + end_offset, h)
             out.append(
                 _fit_placement(
                     f"{room.name}_{wall}_{index}",

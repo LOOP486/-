@@ -140,6 +140,22 @@ def test_parse_issues_with_fence_and_severity():
     assert facts["issue_count"] == 3
 
 
+def test_medium_and_low_issues_are_report_only_not_blocking():
+    result = parse_review(
+        """{"issues": [
+          {"area": "走廊", "issue": "比例偏窄", "severity": "medium"},
+          {"area": "角落", "issue": "轻微遮挡", "severity": "low"}
+        ]}"""
+    )
+
+    assert result.parsed is True
+    assert result.passed is True
+    facts = result.to_facts()
+    assert facts["ok"] is True
+    assert facts["high_count"] == 0
+    assert facts["issue_count"] == 2
+
+
 def test_parse_unparseable_is_conservative():
     result = parse_review("我没看清楚，建议人工检查。")
     assert result.parsed is False

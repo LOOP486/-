@@ -89,18 +89,18 @@
 - Modify: `src/ue5agent/whitebox/compiler.py`
 - Test: `tests/test_whitebox.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 在 `tests/test_whitebox.py` 中新增一个 slab L/T 字墙交接测试，断言相交墙段的目标 AABB 只互补半墙厚，不都冲到轴线交点。
 
 Run: `uv run pytest tests/test_whitebox.py -q`
 Expected: 新测试失败，暴露当前端点补偿错误。
 
-- [ ] **Step 2: 实现端点补偿**
+- [x] **Step 2: 实现端点补偿**
 
 在 slab wall run 编译阶段区分同一交点上的水平/垂直墙：一个方向延伸 `wall_thickness / 2`，另一个方向缩回 `wall_thickness / 2`，保持外轮廓闭合。
 
-- [ ] **Step 3: 验证**
+- [x] **Step 3: 验证**
 
 Run: `uv run pytest tests/test_whitebox.py tests/test_whitebox_validator.py -q`
 Expected: 新测试和既有墙体/并列墙测试全部通过。
@@ -113,21 +113,21 @@ Expected: 新测试和既有墙体/并列墙测试全部通过。
 - Test: `tests/test_whitebox_vertical_gameplay.py`
 - Test: `tests/test_whitebox_validator.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 新增一个 SPC3V 等价布局测试：楼梯 facing east/west 时，楼梯井护墙不得互相重叠、不得越界、不得在楼梯侧边留下小于 `wall_thickness` 或小于 1 格的夹缝空间。
 
 Run: `uv run pytest tests/test_whitebox_vertical_gameplay.py -q`
 Expected: 当前楼梯间生成策略无法满足新增断言。
 
-- [ ] **Step 2: 修正护墙生成**
+- [x] **Step 2: 修正护墙生成**
 
 在 `_compile_stairwell_guards_with_grid` 中按楼梯朝向明确：
 - 楼梯上下通行方向两端保持开口。
 - 两侧护墙只沿楼梯 footprint 两侧生成。
 - 护墙端点按墙厚补偿，不能把楼梯外侧切成无法通行的小空间。
 
-- [ ] **Step 3: 增加 validator 诊断**
+- [x] **Step 3: 增加 validator 诊断**
 
 为楼梯间增加 metrics：
 - `stairwell_overlap_count`
@@ -148,25 +148,25 @@ Expected: 楼梯类测试全部通过，SPC3V 类问题能被结构化 facts 暴
 - Test: `tests/test_runner.py`
 - Test: `tests/test_evals.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 新增测试覆盖：coder 阶段 `LLMUnavailable(...TimeoutError...)` 应记录为 `llm_timeout`，UE eval 报告应显示失败类型，而不是只写“验收未通过”。
 
 Run: `uv run pytest tests/test_runner.py tests/test_evals.py -q`
 Expected: 新测试失败。
 
-- [ ] **Step 2: 增加请求开始事件**
+- [x] **Step 2: 增加请求开始事件**
 
 在 `AgentLoop` 调用 `llm.acomplete` 前写入 `llm_request_start`，包含 role、turn、message_count、estimated_chars、tool_count。超时后 trace 仍能看到请求规模。
 
-- [ ] **Step 3: 调整 eval fail-fast 策略**
+- [x] **Step 3: 调整 eval fail-fast 策略**
 
 UE eval 保留总时长可控，但把 coder 文本模型超时从“一次 abort”改为可配置：
 - 默认 `request_timeout_seconds=180`
 - `max_retries=2`
 - 只对 `LLMUnavailable` 且 reason 含 `TimeoutError` 的情况允许同 step 重试一次
 
-- [ ] **Step 4: 验证**
+- [x] **Step 4: 验证**
 
 Run: `uv run pytest tests/test_llm_client.py tests/test_runner.py tests/test_evals.py -q`
 Expected: timeout 分类和 retry 行为测试通过。
@@ -178,21 +178,21 @@ Expected: timeout 分类和 retry 行为测试通过。
 - Modify: `src/ue5agent/agent/planner.py`
 - Test: `tests/test_runner.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 新增测试：白盒 `wb_build` 步骤提示应明确“少写解释，直接调用工具；最终报告再总结”，并在视觉重试时只注入视觉问题摘要。
 
 Run: `uv run pytest tests/test_runner.py -q`
 Expected: 新测试失败。
 
-- [ ] **Step 2: 调整白盒执行提示**
+- [x] **Step 2: 调整白盒执行提示**
 
 对含 `wb_build` 的步骤追加执行约束：
 - 不要在工具调用前展开完整设计说明。
 - 优先一次性调用 `wb_build`。
 - layout_json 已由 trace artifact 保存，回复中不要重复粘贴完整 JSON。
 
-- [ ] **Step 3: 调整视觉重试 history**
+- [x] **Step 3: 调整视觉重试 history**
 
 视觉失败后重试时，不继续携带完整前一轮 assistant 长文本；保留：
 - 原目标
@@ -207,14 +207,14 @@ Expected: 新测试失败。
 - Modify: `src/ue5agent/mcp_servers/ue_editor/server.py`
 - Test: `tests/test_ue_editor_tools.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 新增 `viewport_screenshot` 参数解析测试，覆盖 `clean_view=true`、隐藏坐标轴/选中高亮的参数透传。
 
 Run: `uv run pytest tests/test_ue_editor_tools.py -q`
 Expected: 新参数尚未实现，测试失败。
 
-- [ ] **Step 2: 实现 clean view 参数**
+- [x] **Step 2: 实现 clean view 参数**
 
 为 `viewport_screenshot` 增加可选参数：
 - `clean_view: bool = true`
@@ -223,7 +223,7 @@ Expected: 新参数尚未实现，测试失败。
 
 截图前根据 `focus_prefix` 计算目标 bbox，自动调整相机高度，尽量排除邻近测试体。
 
-- [ ] **Step 3: 验证**
+- [x] **Step 3: 验证**
 
 Run: `uv run pytest tests/test_ue_editor_tools.py -q`
 Expected: 参数与 facts 均通过。
@@ -235,20 +235,20 @@ Expected: 参数与 facts 均通过。
 - Modify: `src/ue5agent/evals/ue_suite.py`
 - Test: `tests/test_evals.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 新增 eval check 测试：`vision_review.high_count <= 0` 作为硬门禁，`issue_count` 只作为报告字段，不让 medium/low 直接失败。
 
 Run: `uv run pytest tests/test_evals.py -q`
 Expected: 当前 `issue_count <= 0` 规则导致测试失败。
 
-- [ ] **Step 2: 更新视觉任务检查**
+- [x] **Step 2: 更新视觉任务检查**
 
 从 `evals/tasks/ue_space_visual.yaml` 移除或降级 `fact_lte vision_review.issue_count <= 0`，保留：
 - `vision_review.parsed == true`
 - `vision_review.high_count <= 0`
 
-- [ ] **Step 3: 验证**
+- [x] **Step 3: 验证**
 
 Run: `uv run pytest tests/test_evals.py -q`
 Expected: high blocking 仍失败，medium/low 不阻断。
@@ -259,6 +259,11 @@ Expected: high blocking 仍失败，medium/low 不阻断。
 - Update: `evals/baselines/ue/*.json`
 - Update: `docs/roadmap.md`
 - Update: `CHANGELOG.md`
+
+> 2026-06-15 尝试跑结构档：`SPC1` 已完成 `wb_build` 与 `wb_validate`，但进入
+> `navmesh_rebuild/path_test` 时本次 eval 拉起的 `ue_editor` MCP 子进程断线并连续返回
+> `ClosedResourceError`；直接调用 `ue_editor.navmesh_rebuild` 可成功，说明 UE bridge 本体在线。
+> 本次未归档新的 UE baseline，Task 7 保持待复跑。
 
 - [ ] **Step 1: 跑结构测试**
 
