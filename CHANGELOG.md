@@ -41,6 +41,9 @@
   grid/选中描边/轴标并俯拍，减少旧批次和邻近结构污染视觉判断。
 - `viewport_screenshot` 在传入 `focus_prefix` 时会对截图做本地前景连通域裁剪；当宽屏视口仍拍到
   相邻旧测试结构时，仅保留居中的当前白盒主体，避免视觉模型把旁边旧批次误判为本次布局缺陷。
+- runner 为截图自动补 `focus_prefix` 时会丢弃模型手写的 `location`/`rotation`，以 UE 侧
+  bbox/margin 自动取景为准，避免手写相机高度过低导致白盒主体上下贴边或被截断；截图本地快检也会把
+  居中但贴近画面边缘的图片判为不可审查。
 - 要求截图/视觉硬证据的白盒步骤在拿到 `wb_build`、`wb_validate` 与合格截图后会立即交还 runner
   执行 `vision_review`，不再让 coder 在同一步内自行推进到下一阶段，避免导航验证阶段漂移成继续截图。
 - `viewport_screenshot` 在编辑器桥在线但没有活动 Level Editor 视口时，会把
@@ -49,6 +52,8 @@
 - 视觉审查 gate 改为 high-only：`VisionReviewResult.passed` 与视觉评测任务只让
   `high_count > 0` 或解析失败阻断自动收口，medium/low 继续作为报告字段保留。
 - 默认视觉审查清单明确按 blockout 阶段评价，不因缺少门框/窗框、楼梯踏步/扶手或房间文字标签扣分。
+- 视觉审查只判断截图可见的 blockout 空间问题，不再把 `path_length`、`path_test`、NavMesh
+  或工具日志指标当作 high 阻断；这些指标继续由确定性 facts 验收，视觉侧只保留为报告项。
 
 ### 新增（关卡尺度 metrics）
 

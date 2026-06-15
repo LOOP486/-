@@ -92,7 +92,7 @@
   `wb_build` 派发前轻量 guardrail（删除共享墙窗、补齐单侧共享门洞、收拢越界楼梯 footprint）、
   `viewport_screenshot` clean view/focus_prefix/margin 与按最新 `folder_root` 自动聚焦截图、
   视觉 high-only gate，以及 blockout 视觉清单（不因门窗框、楼梯踏步/扶手、房间标签扣分）。
-  离线回归已更新到 480 个单测全绿；标准结构档
+  离线回归已更新到 483 个单测全绿；标准结构档
   `evals/baselines/ue/space-agent-test-20260615-205313.json` 已归档，SPC/DST 6/6 通过，
   pass_rate=1.0，first_try_pass_rate=0.8333，平均迭代 3.0，人工干预 0。后续重点继续放在
   白盒搭建 agent 的自主构型稳定性。视觉档复跑时暴露编辑器无活动视口导致截图不可用，已归类为
@@ -102,6 +102,9 @@
   立即交还 runner 做 `vision_review` 的早停逻辑，避免断链重试外包给模型和步骤内漂移。随后小步
   复核又发现 focus 取景在宽屏下仍可能带入相邻旧结构；`viewport_screenshot` 已在 `focus_prefix`
   场景追加本地前景连通域裁剪，只保留当前居中的白盒主体，继续把修复点放在 agent 取证链路而非测试题面。
+  后续受控视觉重跑确认 crop 生效，但暴露 vision 把 `path_length`/NavMesh/path_test 等非视觉指标提前
+  判为 high，以及自动 focus 未覆盖模型手写相机导致截图贴边；已改为视觉 high 只看截图可见的 blockout
+  空间问题，确定性导航指标仍交给 facts 验收，自动 focus 也会丢弃手写 `location`/`rotation`。
 - [ ] C. 平面图输入：从手绘/平面图/草图识别房间、门窗与连通关系，生成布局 DSL；透视图仅作风格/
   语义参考。（剩余的"图→布局 DSL 结构化识别"尚未做。）
 

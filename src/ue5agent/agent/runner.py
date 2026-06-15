@@ -239,6 +239,9 @@ def _with_auto_screenshot_focus(name: str, arguments_json: str, facts: list[dict
     if isinstance(focus, str) and focus.strip():
         arguments["focus_prefix"] = focus.strip()
         arguments.setdefault("clean_view", True)
+        # 自动聚焦时以 UE 侧 bbox/margin 为准，避免模型手写相机高度把白盒主体截到画面外。
+        arguments.pop("location", None)
+        arguments.pop("rotation", None)
         return json.dumps(arguments, ensure_ascii=False)
     return arguments_json
 

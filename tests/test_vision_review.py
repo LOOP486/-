@@ -157,6 +157,36 @@ def test_medium_and_low_issues_are_report_only_not_blocking():
     assert facts["issue_count"] == 2
 
 
+def test_non_visual_path_metrics_are_not_blocking_high_issues():
+    """路径长度/NavMesh 这类指标由确定性工具验收，不应被截图审查提前判 high。"""
+    result = parse_review(
+        """{"issues": [
+          {
+            "area": "整体布局",
+            "issue": "其中至少一条路径长度没有达到至少1500单位的要求。",
+            "severity": "high"
+          },
+          {"area": "入口", "issue": "入口和中心厅之间缺少可见门洞", "severity": "high"}
+        ]}"""
+    )
+
+    assert result.parsed is True
+    assert result.issues[0].severity == "medium"
+    assert result.issues[1].severity == "high"
+    assert result.passed is False
+    assert result.to_facts()["high_count"] == 1
+
+
+def test_review_prompt_excludes_non_visual_metrics(tmp_path):
+    p = _make_png(tmp_path)
+    messages = build_review_messages("需要 path_test 达到 1500uu", [p])
+    system_text = messages[0]["content"]
+    user_text = messages[1]["content"][0]["text"]
+
+    assert "不要判断 path_length、NavMesh、path_test" in system_text
+    assert "不要根据截图判断导航网格、path_test、path_length" in user_text
+
+
 def test_parse_unparseable_is_conservative():
     result = parse_review("我没看清楚，建议人工检查。")
     assert result.parsed is False

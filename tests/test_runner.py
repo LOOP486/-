@@ -1557,9 +1557,17 @@ async def test_viewport_screenshot_auto_focus_uses_latest_wb_build_folder(tmp_pa
         file_path: str = "",
         focus_prefix: str = "",
         clean_view: bool = False,
+        location: list[float] | None = None,
+        rotation: list[float] | None = None,
     ) -> str:
         screenshot_args.append(
-            {"file_path": file_path, "focus_prefix": focus_prefix, "clean_view": clean_view}
+            {
+                "file_path": file_path,
+                "focus_prefix": focus_prefix,
+                "clean_view": clean_view,
+                "location": location,
+                "rotation": rotation,
+            }
         )
         return 'saved\n[facts] {"kind": "screenshot", "ok": true, "path": "/tmp/shot.png"}'
 
@@ -1582,6 +1590,8 @@ async def test_viewport_screenshot_auto_focus_uses_latest_wb_build_folder(tmp_pa
                     "file_path": {"type": "string"},
                     "focus_prefix": {"type": "string"},
                     "clean_view": {"type": "boolean"},
+                    "location": {"type": "array"},
+                    "rotation": {"type": "array"},
                 },
             },
             level=PermissionLevel.READ,
@@ -1592,7 +1602,10 @@ async def test_viewport_screenshot_auto_focus_uses_latest_wb_build_folder(tmp_pa
         [
             plan("standard", ("搭建并截图", "完成")),
             tool_turn("ue_whitebox__wb_build", '{"prefix": "SPC1"}'),
-            tool_turn("ue_editor__viewport_screenshot", "{}"),
+            tool_turn(
+                "ue_editor__viewport_screenshot",
+                '{"location": [20600, -13800, 5000], "rotation": [-90, 0, 0]}',
+            ),
             AssistantTurn(content="完成"),
             judge("pass"),
         ]
@@ -1603,7 +1616,15 @@ async def test_viewport_screenshot_auto_focus_uses_latest_wb_build_folder(tmp_pa
     outcome = await runner.run("搭建 SPC1 并截图")
 
     assert outcome.success
-    assert screenshot_args == [{"file_path": "", "focus_prefix": "SPC1/abc123", "clean_view": True}]
+    assert screenshot_args == [
+        {
+            "file_path": "",
+            "focus_prefix": "SPC1/abc123",
+            "clean_view": True,
+            "location": None,
+            "rotation": None,
+        }
+    ]
 
 
 async def test_viewport_screenshot_auto_focus_keeps_explicit_focus_prefix(tmp_path):

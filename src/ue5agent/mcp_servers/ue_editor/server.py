@@ -286,6 +286,13 @@ def _analyze_screenshot_frame(path: Path) -> dict[str, Any]:
             foreground_bbox=original_bbox,
             foreground_centroid=centroid_out,
         )
+    if _foreground_touches_frame_edge(bbox, img.size):
+        return _screenshot_frame_fail(
+            "截图主体贴近画面边缘",
+            foreground_ratio=ratio,
+            foreground_bbox=original_bbox,
+            foreground_centroid=centroid_out,
+        )
     return {
         "framing_ok": True,
         "framing_reason": "主体取景正常",
@@ -326,6 +333,18 @@ def _foreground_stats(img: Any) -> tuple[list[int] | None, float, tuple[float, f
         sum_y / count / max(height - 1, 1),
     )
     return [x0, y0, x1, y1], ratio, centroid
+
+
+def _foreground_touches_frame_edge(bbox: list[int], size: tuple[int, int]) -> bool:
+    width, height = size
+    edge_margin = max(2, round(min(width, height) * 0.02))
+    x0, y0, x1, y1 = bbox
+    return (
+        x0 <= edge_margin
+        or y0 <= edge_margin
+        or x1 >= width - 1 - edge_margin
+        or y1 >= height - 1 - edge_margin
+    )
 
 
 def _foreground_components(img: Any) -> list[dict[str, Any]]:

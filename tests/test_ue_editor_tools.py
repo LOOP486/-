@@ -144,6 +144,20 @@ def test_screenshot_facts_fail_when_subject_is_out_of_frame(monkeypatch, tmp_pat
     assert "主体不在画面中心" in facts["framing_reason"]
 
 
+def test_screenshot_facts_fail_when_centered_subject_touches_frame_edge(monkeypatch, tmp_path):
+    """主体居中但上下贴边也不可审查，通常表示相机高度太低或裁剪过满。"""
+    _record_bridge(monkeypatch)
+    path = tmp_path / "tight.png"
+    _make_viewport_shot(path, (90, 0, 150, 159))
+
+    out = ed_server.viewport_screenshot(file_path=str(path))
+    facts = json.loads(out.split("[facts]", 1)[1].strip())
+
+    assert facts["ok"] is False
+    assert facts["framing_ok"] is False
+    assert "主体贴近画面边缘" in facts["framing_reason"]
+
+
 def test_screenshot_frame_quality_ignores_editor_sky_gradient(monkeypatch, tmp_path):
     _record_bridge(monkeypatch)
     path = tmp_path / "gradient-edge.png"

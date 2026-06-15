@@ -31,6 +31,8 @@ VISION_PROMPT = """\
 - 没发现问题时返回 {"issues": []}；
 - area 必须用房间名/构件名定位，禁止用像素坐标；
 - 只报与需求或清单明确相关的问题，不臆测、不报轻微美观问题；
+- 只判断截图中可直接看到的 blockout 空间问题；不要判断 path_length、NavMesh、path_test、
+  token、工具调用次数或其它需要确定性工具/日志才能确认的指标；
 - severity：high=阻断（布局与需求不符/明显穿插或悬空/应连通处不通），
   medium=偏差（比例失调、位置可疑），low=轻微。
 """
@@ -42,7 +44,15 @@ DEFAULT_CHECKLIST = """\
 4. 无意义孤立墙：不要出现不围合、不遮挡、不导向的孤立墙段；
 5. 不要因缺少门框/窗框、楼梯踏步/扶手、房间文字标签扣分；
    默认 slab 白盒的门窗只表现为空间开口，楼梯只需表达可通行体量。
+6. 不要根据截图判断导航网格、path_test、path_length 或最短路径长度是否达标；
+   这些由 navmesh_rebuild/path_test 的确定性事实验收，视觉审查最多报告可见的门洞/连通口缺失。
 """
+
+_NON_VISUAL_METRIC_RE = re.compile(
+    r"path[_ -]?length|path[_ -]?test|navmesh|导航网格|路径长度|最短路径|可达性数值|"
+    r"token|工具调用次数|至少\s*\d+\s*(?:uu|单位)",
+    re.IGNORECASE,
+)
 
 _FENCE = re.compile(r"^```(?:json)?\s*(?P<body>.*?)\s*```\s*$", re.DOTALL)
 _VALID_SEVERITY = ("high", "medium", "low")
@@ -191,8 +201,19 @@ def parse_review(text: str) -> VisionReviewResult:
         severity = str(item.get("severity", "medium")).strip().lower()
         if severity not in _VALID_SEVERITY:
             severity = "medium"
+        if severity == "high" and _is_non_visual_metric_issue(desc):
+            severity = "medium"
         issues.append(VisionIssue(area=area, issue=desc, severity=severity))
     return VisionReviewResult(issues=issues, raw=text, parsed=True)
+
+
+def _is_non_visual_metric_issue(desc: str) -> bool:
+    """视觉模型偶尔会把后续确定性验收指标当成截图 high 问题。
+
+    这类问题可以进报告，但不应阻断白盒视觉步骤；真正的路径长度、NavMesh
+    或可达性由 path_test facts 判断。
+    """
+    return bool(_NON_VISUAL_METRIC_RE.search(desc))
 
 
 async def review_screenshots(
