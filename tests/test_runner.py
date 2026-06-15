@@ -1239,6 +1239,47 @@ async def test_contract_success_checks_drive_retry_then_pass(tmp_path):
     assert verifies[1]["mode"] == "contract" and verifies[1]["verdict"] == "pass"
 
 
+async def test_contract_can_reuse_successful_fact_from_previous_step(tmp_path):
+    """planner 拆出重复验证步时，后续步骤可复用已通过步骤产生的客观 fact。"""
+    registry = _facts_tool_registry(
+        "wb_validate", '校验PASS\n[facts] {"kind": "wb_validate", "ok": true, "violations": 0}'
+    )
+    model = FakeModel(
+        [
+            plan_raw(
+                "standard",
+                [
+                    {
+                        "intent": "构建并校验",
+                        "acceptance": "wb_validate 通过",
+                        "allowed_tools": ["wb_validate"],
+                        "success_checks": [{"kind": "wb_validate", "field": "ok", "equals": True}],
+                    },
+                    {
+                        "intent": "确认结构验证结果",
+                        "acceptance": "wb_validate 返回 ok=true",
+                        "allowed_tools": ["wb_validate"],
+                        "success_checks": [{"kind": "wb_validate", "field": "ok", "equals": True}],
+                    },
+                ],
+            ),
+            tool_turn("wb_validate", "{}"),
+            AssistantTurn(content="上一阶段已完成结构校验"),
+        ]
+    )
+    writer = RunWriter(tmp_path, TaskSession.new("复用事实"))
+    runner = TaskRunner(model, registry, writer, max_step_attempts=1)
+
+    outcome = await runner.run("构建白盒并校验两次")
+
+    assert outcome.success
+    events = read_events(writer.trace_path)
+    verifies = [e for e in events if e["event"] == "verify_result"]
+    assert [e["verdict"] for e in verifies] == ["pass", "pass"]
+    tool_calls = [e for e in events if e["event"] == "tool_call"]
+    assert len(tool_calls) == 1
+
+
 async def test_contract_pass_stops_after_tool_without_summary_turn(tmp_path):
     """工具事实已经满足 step 契约时，runner 不再额外请求模型做收口总结。
 

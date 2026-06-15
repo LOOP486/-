@@ -638,6 +638,11 @@ def _latest_fact_passed(facts: list[dict], kind: str, *, require_framing: bool =
     return False
 
 
+def _carry_forward_facts(facts: list[dict]) -> list[dict]:
+    """跨 attempt/step 复用已经成功的客观事实；失败事实只留在当前现场。"""
+    return [fact for fact in facts if fact.get("ok") is not False]
+
+
 class TaskRunner:
     def __init__(
         self,
@@ -960,6 +965,7 @@ class TaskRunner:
         if brief:
             self._writer.event("context_brief", brief=brief)
         tee = _EvidenceTee(self._writer)
+        session_facts: list[dict] = []
         history: list[dict[str, Any]] = [{"role": "system", "content": system_content}]
         summaries: dict[str, str] = {}
         aborted = False
@@ -984,6 +990,7 @@ class TaskRunner:
                 )
                 continue
             step.status = "running"
+            step_facts: list[dict] = []
             while True:
                 if time.monotonic() >= deadline:
                     step.status = "failed"
@@ -993,6 +1000,9 @@ class TaskRunner:
                     break
                 step.attempts += 1
                 tee.reset()
+                tee.facts.extend(session_facts)
+                tee.facts.extend(step_facts)
+                seeded_fact_count = len(tee.facts)
                 self._writer.event("phase_enter", phase="execute", step_id=step.id)
                 prompt = (
                     f"{self._progress_line(session.plan, index)}\n"
@@ -1063,6 +1073,7 @@ class TaskRunner:
                 vision_result = None
                 if execution_verdict is None:
                     vision_result = await self._run_vision_review(step, goal, tee)
+                new_carry_facts = _carry_forward_facts(tee.facts[seeded_fact_count:])
 
                 # 验收优先级：硬证据门禁 → 步骤契约 success_checks（B1）
                 # → 通用确定性规则（A3）→ LLM judge
@@ -1113,6 +1124,8 @@ class TaskRunner:
                     mode=mode,
                 )
                 if verdict.verdict == "pass":
+                    session_facts.extend(step_facts)
+                    session_facts.extend(new_carry_facts)
                     step.status = "done"
                     break
                 if mode == "execution":
@@ -1183,6 +1196,7 @@ class TaskRunner:
                     )
                     await self._apply_rollback(step, tee.facts)
                     break
+                step_facts.extend(new_carry_facts)
                 if recovery == "rollback_retry":
                     # 部分副作用（如 spawn 落了一半）：重试前先回滚清理，避免残留叠加
                     await self._apply_rollback(step, tee.facts)

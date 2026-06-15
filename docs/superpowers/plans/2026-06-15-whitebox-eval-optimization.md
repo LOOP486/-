@@ -380,6 +380,11 @@ tool_calls。`wb_validate` 先满足步骤契约后触发 early-stop，导致同
 已停止该轮 eval，改为修 core loop：同一 assistant 消息里的所有 tool_calls 必须全部写入 tool 回包后，
 才允许 early-stop。
 
+Follow-up 7: 后续复跑确认同轮 tool 回包已完整，`vision_review` high=0 通过；随后 s2 被 planner
+拆成独立 `wb_validate` 步，但 s1 已产生的 `wb_validate` fact 不在 s2 的 tee facts 中，模型口头复用旧
+结果却被 verifier 判定缺证据并触发重试。已停止该轮 eval，修 TaskRunner 证据作用域：已通过步骤与
+同步骤重试中产生的成功 facts 可参与后续步骤契约验收，失败 facts 仍只保留在当前现场。
+
 - [x] **Step 3: 更新文档**
 
 把复跑结论写入 `docs/roadmap.md` 的 B6/B7 条目，并在 `CHANGELOG.md` 的 `[未发布]` 记录行为变化。
@@ -402,6 +407,6 @@ tool_calls。`wb_validate` 先满足步骤契约后触发 early-stop，导致同
 断链重试外包给模型；focus 截图的相邻旧结构污染已在取证 wrapper 侧裁掉，手写相机导致的贴边图也会
 交还 UE 侧自动聚焦或被本地快检拦住；视觉硬证据已改为挂到实际截图/视觉步骤，避免 build/validate
 步骤被后续视觉门禁拖回循环；early-stop 也已改成所有同轮 tool_calls 回包后才可触发，避免污染
-后续 LLM history。下一步应优先继续提升 agent 自主布局稳定性，而不是靠反复收窄
+后续 LLM history；跨步骤成功 facts 也会被后续契约验收复用，避免重复校验步制造无效重试。下一步应优先继续提升 agent 自主布局稳定性，而不是靠反复收窄
 或反复运行测试题面。
 视觉档作为后续验证项保留。

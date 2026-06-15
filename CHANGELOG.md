@@ -63,6 +63,8 @@
 - `AgentLoop` 的 early-stop 现在会等同一轮 assistant 消息里的所有 `tool_calls` 都写入 tool 回包后
   再结束步骤，避免 `wb_validate` 先满足契约时跳过同轮 `viewport_screenshot` 回包，污染后续 LLM
   history 并触发 `insufficient tool messages following tool_calls`。
+- TaskRunner 会把已通过步骤与当前步骤重试中产生的成功 facts 带入后续契约验收，避免 planner 把
+  `wb_validate` 拆成独立步骤时，前一步已经 PASS 的客观校验证据在下一步失效并触发重复验证/重试。
 
 ### 新增（关卡尺度 metrics）
 
