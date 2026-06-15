@@ -7,7 +7,7 @@ from tests.test_loop import FakeModel, make_registry, tool_turn
 from ue5agent.agent.events import RunWriter, read_events
 from ue5agent.agent.planner import make_plan
 from ue5agent.agent.report import build_report
-from ue5agent.agent.runner import TaskRunner
+from ue5agent.agent.runner import TaskRunner, _whitebox_recovery_hint
 from ue5agent.agent.state import PlanStep, TaskSession
 from ue5agent.agent.verifier import (
     deterministic_verdict,
@@ -421,6 +421,9 @@ async def test_whitebox_build_step_prompt_discourages_long_preamble(tmp_path):
     assert "不要在工具调用前展开完整设计说明" in prompt
     assert "优先一次性调用 wb_build" in prompt
     assert "不要重复粘贴完整 JSON" in prompt
+    assert "先在脑中按整数格画 room.rect 邻接表" in prompt
+    assert "共享墙门洞必须两侧成对且 at/width 对齐" in prompt
+    assert "不确定某面墙是否是外墙就不要写 windows" in prompt
 
 
 async def test_whitebox_validate_step_does_not_get_build_prompt(tmp_path):
@@ -972,6 +975,27 @@ def test_evaluate_success_checks_treats_path_test_total_as_latest_fact_count():
     )
 
     assert result is not None and result.verdict == "pass"
+
+
+def test_required_evidence_accepts_path_test_result_alias():
+    result = evaluate_required_evidence(
+        ["path_test_result"],
+        [{"kind": "path_test", "ok": True, "reachable": True}],
+    )
+
+    assert result is None
+
+
+def test_whitebox_recovery_hint_guides_common_layout_errors():
+    step = PlanStep(id="s1", intent="使用 wb_build 搭建白盒结构", acceptance="wb_build 成功")
+    hint = _whitebox_recovery_hint(
+        step,
+        "房间 upper_path 的窗只能开在外墙；房间 central 的内部共享墙门洞必须两侧对齐",
+    )
+
+    assert "删除所有非必要 windows" in hint
+    assert "at/width 完全相同" in hint
+    assert "不要猜共享墙" in hint
 
 
 def test_required_evidence_fails_when_screenshot_frame_fact_is_false():

@@ -16,10 +16,16 @@
   `ClosedResourceError`。
 - MCP 客户端在 stdio session 已关闭、损坏或 end-of-stream 后会自动重启对应 server session，
   避免单个断链工具把后续调用全部污染成同类错误。
-- 声明式验收支持 `path_test.total` / `path_test.count` 作为最新 `path_test` 事实存在别名：
+- 声明式验收支持 `path_test.total` / `path_test.count` 以及 `path_test_result` 作为最新
+  `path_test` 事实存在别名：
   只要最终导航事实没有显式 `ok=false`，即可计为 1，避免 `path_test` 已成功但报告误判失败。
-- 白盒 `wb_build` 执行提示改为少解释、优先直接调工具且不重复粘贴完整 JSON；视觉失败重试只携带目标、
-  最新 folder/screenshot 与 high 问题摘要，避免长 history 放大超时概率。
+- 白盒 `wb_build` 执行提示改为少解释、优先直接调工具且不重复粘贴完整 JSON；同时新增通用
+  构型守则：先按整数格推导 room.rect 邻接表，共享墙门洞必须双侧成对且 at/width 对齐，
+  不确定外墙时宁可不写 windows，结构/导航任务可完全省略窗。
+- 白盒布局失败重试会把常见 `wb_build` LayoutError 翻译成可执行恢复提示：外墙窗错误时删除
+  非必要 windows，共享墙门洞错误时退回更简单的矩形邻接并重新成对校准，楼梯错误时优先保证
+  footprint 在大房间内部且不切断门到门路线；视觉失败重试只携带目标、最新 folder/screenshot 与
+  high 问题摘要，避免长 history 放大超时概率。
 - `viewport_screenshot` 新增 `clean_view`、`focus_prefix` 与 `margin`；runner 会在模型未显式传参时
   用最新 `wb_build.folder_root` 自动聚焦本批白盒，UE 侧按 Actor/Outliner 前缀计算 bbox、隐藏
   grid/选中描边/轴标并俯拍，减少旧批次和邻近结构污染视觉判断。

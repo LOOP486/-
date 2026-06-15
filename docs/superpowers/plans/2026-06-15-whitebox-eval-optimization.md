@@ -191,6 +191,10 @@ Expected: 新测试失败。
 - 不要在工具调用前展开完整设计说明。
 - 优先一次性调用 `wb_build`。
 - layout_json 已由 trace artifact 保存，回复中不要重复粘贴完整 JSON。
+- 先按整数格推导 `room.rect` 邻接表；共享墙门洞必须双侧成对且 `at/width` 对齐。
+- `windows` 只写在明确外轮廓墙；不确定时宁可不写，结构/导航任务可完全省略窗。
+- `wb_build` 报布局校验错误时，退回更简单的正交连通布局，删除非必要窗并重新成对校准共享墙门洞，
+  而不是质疑 validator 或反复微调同一复杂布局。
 
 - [x] **Step 3: 调整视觉重试 history**
 
@@ -287,6 +291,11 @@ Expected: high blocking 仍失败，medium/low 不阻断。
 > 但评测 Python 进程被外部终止并留下 stale `runs/.runner.lock`；没有 Python traceback，
 > 也没有生成正式 baseline。结构档仍待稳定进程后复跑；视觉档先暂缓，避免在结构评测进程不稳定时
 > 产出不可比报告。
+>
+> 2026-06-15 再次结构档复跑时，SPC1/SPC2/SPC3 均推进通过并进入 DST1；DST1 暴露出 agent
+> 对外墙窗与共享墙门洞仍靠猜，反复把 windows 放到共享墙、把支线房间贴出歧义共享边，最终触发
+> `llm_timeout` 重试。按反馈，本轮停止继续改测试题面，改为优化白盒搭建 agent 的通用构型守则与
+> LayoutError 恢复提示；正式 baseline 仍保持待复跑。
 
 - [ ] **Step 1: 跑结构测试**
 
@@ -311,6 +320,7 @@ Expected: high 问题为 0 的任务通过；medium/low 出现在报告但不压
 ## 当前结论
 
 现有 DSL 方向是成立的，不需要因为这两轮问题推翻。代码侧 P0/P1 修复已完成，离线回归已覆盖墙体、
-楼梯、LLM timeout、MCP session 重启、截图聚焦、视觉 high-only gate 与 `path_test.total/count`
-验收别名。下一步不再扩大代码改动，优先排查 UE 在线 eval 进程被外部终止的问题；结构档稳定后再归档
-正式 baseline，视觉档随后复跑。
+楼梯、LLM timeout、MCP session 重启、截图聚焦、视觉 high-only gate、
+`path_test.total/count/path_test_result` 验收别名，以及白盒搭建 agent 的通用构型守则/错误恢复提示。
+下一步应优先继续提升 agent 自主布局稳定性，而不是靠反复收窄测试题面；结构档稳定后再归档正式
+baseline，视觉档随后复跑。

@@ -39,6 +39,10 @@ _DECISIVE_KINDS = ("compile", "wb_validate", "path_test")
 """可单独支撑 pass 结论的事实类别：均为独立验证动作的客观输出。
 wb_build 这类"操作成功"事实只参与 fail 判定（建好不等于建对）。"""
 
+_KIND_ALIASES = {
+    "path_test_result": "path_test",
+}
+
 
 def deterministic_verdict(facts: list[dict]) -> VerifyResult | None:
     """确定性验收规则：按类别取最新事实，规则可判则返回结论，否则 None。
@@ -51,7 +55,7 @@ def deterministic_verdict(facts: list[dict]) -> VerifyResult | None:
     for fact in facts:
         kind = fact.get("kind")
         if isinstance(kind, str):
-            latest[kind] = fact
+            latest[_canonical_kind(kind)] = fact
     if not latest:
         return None
     failed = {kind: f for kind, f in latest.items() if f.get("ok") is False}
@@ -84,14 +88,15 @@ def evaluate_success_checks(checks: list[dict], facts: list[dict]) -> VerifyResu
     for fact in facts:
         kind = fact.get("kind")
         if isinstance(kind, str):
-            latest[kind] = fact
+            latest[_canonical_kind(kind)] = fact
     missing: list[str] = []
     failed: list[str] = []
     valid = 0
     for check in checks:
         if not isinstance(check, dict):
             continue
-        kind = str(check.get("kind", "")).strip()
+        raw_kind = str(check.get("kind", "")).strip()
+        kind = _canonical_kind(raw_kind)
         if not kind:
             continue
         valid += 1
@@ -144,6 +149,10 @@ def _success_check_value(fact: dict, field_name: str) -> object:
     return None
 
 
+def _canonical_kind(kind: str) -> str:
+    return _KIND_ALIASES.get(kind.strip(), kind.strip())
+
+
 def _first_present(source: dict, keys: tuple[str, ...]) -> object | None:
     for key in keys:
         if key in source:
@@ -159,14 +168,14 @@ def _coerce_float(value: object) -> float:
 
 def evaluate_required_evidence(required: list[str], facts: list[dict]) -> VerifyResult | None:
     """硬证据门禁：required 中列出的 facts kind 必须存在，且最新事实不能 ok=False。"""
-    kinds = [str(kind).strip() for kind in required if str(kind).strip()]
+    kinds = [_canonical_kind(str(kind)) for kind in required if str(kind).strip()]
     if not kinds:
         return None
     latest: dict[str, dict] = {}
     for fact in facts:
         kind = fact.get("kind")
         if isinstance(kind, str):
-            latest[kind] = fact
+            latest[_canonical_kind(kind)] = fact
     missing = [kind for kind in kinds if kind not in latest]
     failed = [kind for kind in kinds if latest.get(kind, {}).get("ok") is False]
     if failed:

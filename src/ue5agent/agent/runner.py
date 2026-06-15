@@ -62,6 +62,19 @@ _ABORT_HINTS: dict[ErrorCategory, str] = {
     ),
 }
 _EARLY_CONTRACT_PASS_KINDS = {"compile", "wb_validate", "path_test"}
+_WHITEBOX_BUILD_PROMPT_SUFFIX = (
+    "\n[白盒执行约束] 不要在工具调用前展开完整设计说明；"
+    "优先一次性调用 wb_build，再按验收要求调用验证/截图工具；"
+    "layout_json 已由 trace artifact 保存，回复中不要重复粘贴完整 JSON，"
+    "最终报告再简短总结。"
+    "\n[白盒构型守则] 先在脑中按整数格画 room.rect 邻接表，再写 layout_json；"
+    "优先使用正交、非重叠、边界完整对齐的矩形房间，先保证连通和可走。"
+    "共享墙门洞必须两侧成对且 at/width 对齐；不确定时使用同尺寸相邻矩形和 width=2 的对称门洞。"
+    "windows 只用于明确的外轮廓墙；不确定某面墙是否是外墙就不要写 windows，"
+    "空间结构/导航任务可以完全省略 windows。"
+    "遇到 wb_build 的布局校验错误时，不要质疑校验器或反复微调同一复杂布局；"
+    "应退回更简单的正交连通布局，删除非必要 windows，并重新成对校准共享墙门洞。"
+)
 
 
 def _execution_failure_type(exc: Exception) -> str:
@@ -86,6 +99,36 @@ def _is_whitebox_build_step(step: PlanStep) -> bool:
         "白盒" in text and any(word in text for word in ("搭", "创建", "生成", "落地"))
     )
     return build_intent or (allows_build and "build" in text)
+
+
+def _whitebox_recovery_hint(step: PlanStep, evidence: str) -> str:
+    if not _is_whitebox_build_step(step):
+        return ""
+    text = evidence.lower()
+    hints: list[str] = []
+    if "窗只能开在外墙" in text or ("window" in text and "外墙" in text):
+        hints.append(
+            "若报 windows/窗只能开在外墙，下一轮先删除所有非必要 windows；"
+            "窗不影响连通和导航，结构任务宁可无窗也不要猜共享墙。"
+        )
+    if "内部共享墙门洞必须两侧对齐" in text or "门洞必须两侧对齐" in text:
+        hints.append(
+            "若报共享墙门洞未对齐，重建为更简单的矩形邻接："
+            "两个相邻房间在同一共享边各写一扇 at/width 完全相同的门，"
+            "避免让支线房间同时贴住多间房形成歧义共享边。"
+        )
+    if "楼梯" in text or "stair" in text:
+        hints.append(
+            "若报楼梯穿墙/越界/楼梯井夹缝，先把楼梯放到大房间内部、离外墙和门洞至少一格，"
+            "使用与朝向一致的 footprint，不要让楼梯切断门到门路线。"
+        )
+    if not hints:
+        hints.append(
+            "下一轮优先简化拓扑：少房间、少窗、少特殊形状；"
+            "先让 wb_build/wb_validate/path_test 通过，"
+            "再考虑表达细节。"
+        )
+    return "\n[白盒错误恢复] " + " ".join(hints)
 
 
 def _is_report_only_step(step: PlanStep) -> bool:
@@ -634,12 +677,7 @@ class TaskRunner:
                     f"验收标准：{step.acceptance or '无'}"
                 )
                 if _is_whitebox_build_step(step):
-                    prompt += (
-                        "\n[白盒执行约束] 不要在工具调用前展开完整设计说明；"
-                        "优先一次性调用 wb_build，再按验收要求调用验证/截图工具；"
-                        "layout_json 已由 trace artifact 保存，回复中不要重复粘贴完整 JSON，"
-                        "最终报告再简短总结。"
-                    )
+                    prompt += _WHITEBOX_BUILD_PROMPT_SUFFIX
                 precondition_hint = await self._check_preconditions(step)
                 if precondition_hint:
                     prompt += f"\n[前置条件未满足] {precondition_hint}——请先恢复环境再做本步骤。"
@@ -832,6 +870,7 @@ class TaskRunner:
                     f"步骤 {step.id} 验收未通过（{verdict.verdict}）：{verdict.reason}。"
                     "请修正并补充验证证据。"
                 )
+                retry_note += _whitebox_recovery_hint(step, tee.evidence())
                 # A4 局部重生成回灌：把视觉问题与问题区域喂回模型，引导其重新落地。
                 # 整批重建（wb_build 先清同前缀再重搭）是兜底路径；模型应优先修问题区域。
                 if vision_result is not None and not vision_result.passed:
