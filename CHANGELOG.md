@@ -58,6 +58,8 @@
 - `navmesh_rebuild` 仍保持 `write_project` 权限，但副作用声明改为不要求 git checkpoint；该工具改的是
   编辑器里的导航体积/NavMesh 运行态，git 快照无法保护，避免视觉/导航评测在 path_test 前被 checkpoint
   钩子误拒并触发模型反复换参数。
+- 白盒视觉门禁现在优先绑定到实际截图/视觉步骤；只有单步白盒视觉计划才回退绑定到 build 步，避免
+  `wb_build`/`wb_validate` 已通过后，因为提前要求 `screenshot`/`vision_review` 而反复重试同一 build 步。
 
 ### 新增（关卡尺度 metrics）
 

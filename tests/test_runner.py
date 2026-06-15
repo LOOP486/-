@@ -1998,12 +1998,87 @@ async def test_planner_reconciles_whitebox_build_with_visual_gate():
     _, steps = await make_plan(model, "搭建白盒并截图视觉审查")
 
     build = steps[0]
+    visual = steps[1]
+    assert build.required_evidence == []
+    assert visual.required_evidence == ["screenshot", "vision_review"]
+    assert "wb_build" in visual.allowed_tools
+    assert "wb_clear" in visual.allowed_tools
+    assert "wb_validate" in visual.allowed_tools
+    assert "viewport_screenshot" in visual.allowed_tools
+    assert visual.preconditions == ["editor_online"]
+    assert visual.rollback_policy == "wb_clear"
+
+
+async def test_planner_keeps_whitebox_visual_gate_on_single_build_step():
+    model = FakeModel(
+        [
+            plan_raw(
+                "standard",
+                [
+                    {
+                        "intent": "使用 wb_build 搭建白盒结构并俯视截图自查",
+                        "acceptance": "视觉审查通过",
+                    }
+                ],
+            )
+        ]
+    )
+
+    _, steps = await make_plan(model, "搭建白盒并截图视觉审查")
+
+    build = steps[0]
     assert build.required_evidence == ["screenshot", "vision_review"]
     assert "wb_build" in build.allowed_tools
     assert "wb_clear" in build.allowed_tools
     assert "viewport_screenshot" in build.allowed_tools
     assert build.preconditions == ["editor_online"]
     assert build.rollback_policy == "wb_clear"
+
+
+async def test_planner_puts_visual_gate_on_split_screenshot_step_not_build_step():
+    """真实视觉评测曾把截图门禁塞进 s1，导致 build/validate 通过后反复重试 s1。"""
+    model = FakeModel(
+        [
+            plan_raw(
+                "standard",
+                [
+                    {
+                        "intent": "使用指定模板搭建白盒训练场并校验结构",
+                        "acceptance": "wb_build 成功落地，wb_validate 返回 ok=true 且无错误",
+                        "allowed_tools": [
+                            "ue_whitebox__wb_build",
+                            "ue_whitebox__wb_validate",
+                        ],
+                    },
+                    {
+                        "intent": "生成俯视截图并触发视觉审查",
+                        "acceptance": "截图主体居中且 vision_review 通过",
+                        "allowed_tools": ["ue_editor__viewport_screenshot"],
+                    },
+                    {
+                        "intent": "构建导航网格并验证入口到尽端房间的路径",
+                        "acceptance": "path_test 可达且长度满足要求",
+                        "allowed_tools": [
+                            "ue_editor__navmesh_rebuild",
+                            "ue_editor__path_test",
+                        ],
+                        "success_checks": [
+                            {"kind": "path_test", "field": "reachable", "equals": True}
+                        ],
+                    },
+                ],
+            )
+        ]
+    )
+
+    _, steps = await make_plan(model, "搭建白盒训练场，必须截图并通过视觉审查")
+
+    assert steps[0].required_evidence == []
+    assert steps[0].success_checks == [{"kind": "wb_build", "field": "ok", "equals": True}]
+    assert steps[1].required_evidence == ["screenshot", "vision_review"]
+    assert "ue_editor__viewport_screenshot" in steps[1].allowed_tools
+    assert "wb_build" in steps[1].allowed_tools
+    assert "wb_validate" in steps[1].allowed_tools
 
 
 async def test_planner_strips_unrequested_whitebox_visual_gate():

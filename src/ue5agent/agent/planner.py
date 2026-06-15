@@ -183,27 +183,61 @@ def _looks_like_whitebox_nav_validation(step: PlanStep) -> bool:
     return any(token in text for token in ("path_test", "navmesh", "导航", "可达"))
 
 
+def _looks_like_whitebox_visual_step(step: PlanStep) -> bool:
+    text = " ".join(
+        [
+            step.intent,
+            step.acceptance,
+            *step.allowed_tools,
+            *step.required_evidence,
+        ]
+    ).lower()
+    return any(
+        token in text
+        for token in ("viewport_screenshot", "vision_review", "screenshot", "截图", "视觉")
+    )
+
+
 def _reconcile_whitebox_visual_gate(goal: str, steps: list[PlanStep]) -> None:
-    """白盒搭建 + 视觉审查必须在同一步形成硬证据闭环。"""
+    """白盒视觉门禁绑定到实际截图步骤；单步计划才回退到 build 步。"""
     if not _needs_whitebox_visual_gate(goal, steps):
         return
-    build_step = next((step for step in steps if _looks_like_whitebox_build(step.intent)), None)
+    build_index, build_step = next(
+        (
+            (index, step)
+            for index, step in enumerate(steps)
+            if _looks_like_whitebox_build(step.intent)
+        ),
+        (-1, None),
+    )
     if build_step is None:
         return
+    target_step = next(
+        (step for step in steps[build_index + 1 :] if _looks_like_whitebox_visual_step(step)),
+        build_step,
+    )
 
+    visual_evidence = {"screenshot", "vision_review"}
+    if target_step is not build_step:
+        build_step.required_evidence = [
+            evidence for evidence in build_step.required_evidence if evidence not in visual_evidence
+        ]
     for evidence in ("screenshot", "vision_review"):
-        if evidence not in build_step.required_evidence:
-            build_step.required_evidence.append(evidence)
-    for tool in ("wb_build", "wb_clear", "viewport_screenshot"):
+        if evidence not in target_step.required_evidence:
+            target_step.required_evidence.append(evidence)
+    tools: tuple[str, ...] = ("wb_build", "wb_clear", "wb_validate", "viewport_screenshot")
+    if target_step is build_step:
+        tools = ("wb_build", "wb_clear", "viewport_screenshot")
+    for tool in tools:
         if not any(
             existing == tool or existing.endswith(f"__{tool}")
-            for existing in build_step.allowed_tools
+            for existing in target_step.allowed_tools
         ):
-            build_step.allowed_tools.append(tool)
-    if "editor_online" not in build_step.preconditions:
-        build_step.preconditions.append("editor_online")
-    if build_step.rollback_policy == "none":
-        build_step.rollback_policy = "wb_clear"
+            target_step.allowed_tools.append(tool)
+    if "editor_online" not in target_step.preconditions:
+        target_step.preconditions.append("editor_online")
+    if target_step.rollback_policy == "none":
+        target_step.rollback_policy = "wb_clear"
 
 
 def _needs_whitebox_visual_gate(goal: str, steps: list[PlanStep]) -> bool:

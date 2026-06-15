@@ -92,7 +92,7 @@
   `wb_build` 派发前轻量 guardrail（删除共享墙窗、补齐单侧共享门洞、收拢越界楼梯 footprint）、
   `viewport_screenshot` clean view/focus_prefix/margin 与按最新 `folder_root` 自动聚焦截图、
   视觉 high-only gate，以及 blockout 视觉清单（不因门窗框、楼梯踏步/扶手、房间标签扣分）。
-  离线回归已更新到 484 个单测全绿；标准结构档
+  离线回归已更新到 486 个单测全绿；标准结构档
   `evals/baselines/ue/space-agent-test-20260615-205313.json` 已归档，SPC/DST 6/6 通过，
   pass_rate=1.0，first_try_pass_rate=0.8333，平均迭代 3.0，人工干预 0。后续重点继续放在
   白盒搭建 agent 的自主构型稳定性。视觉档复跑时暴露编辑器无活动视口导致截图不可用，已归类为
@@ -109,7 +109,9 @@
   checkpoint 前置条件误拒；现已把该工具声明为不要求 git checkpoint 的 `write_project` 工具，
   保留权限分级，同时避免编辑器运行态 NavMesh 副作用被 git 快照机制挡住。
   后续又发现 vision 会把“中心距小于 16 格”这类精确数值约束当成 high；已统一降级精确格数/中心距/
-  距离阈值类视觉误判，让这类约束回到 DSL/path facts 验收。
+  距离阈值类视觉误判，让这类约束回到 DSL/path facts 验收。再次受控重跑发现 planner 会把
+  `screenshot`/`vision_review` 硬证据提前挂到 build/validate 步，导致该步通过后又反复补截图/校验；
+  现已改为优先把视觉门禁绑定到实际截图/视觉步骤，单步白盒视觉计划才回退绑定 build 步。
 - [ ] C. 平面图输入：从手绘/平面图/草图识别房间、门窗与连通关系，生成布局 DSL；透视图仅作风格/
   语义参考。（剩余的"图→布局 DSL 结构化识别"尚未做。）
 
