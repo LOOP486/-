@@ -178,6 +178,17 @@ def test_screenshot_env_unready_emits_no_facts(monkeypatch):
     assert "[facts]" not in out
 
 
+def test_screenshot_no_active_viewport_is_env_unready(monkeypatch):
+    """编辑器桥在线但没有活动视口时，截图不可由模型换参数恢复，应快速归类为环境未就绪。"""
+    _record_bridge(monkeypatch, response={"status": "error", "error": "No active editor viewport"})
+
+    out = ed_server.viewport_screenshot(file_path="shot.png")
+
+    assert ed_server.is_env_unready(out)
+    assert "活动视口" in out
+    assert "[facts]" not in out
+
+
 def test_navmesh_rebuild_composes_ensure_bounds(monkeypatch):
     calls = _record_bridge(monkeypatch)
     ed_server.navmesh_rebuild(bounds_center=[0, 0, 0], bounds_extent=[3000, 3000, 500])

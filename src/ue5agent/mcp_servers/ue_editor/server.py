@@ -32,6 +32,11 @@ def _call(command: str, params: dict[str, Any] | None = None) -> str:
         # 标 bridge_down，由 runner 探活后决定重连或快速终止（避免对死桥空转重试）。
         return mark_error(ErrorCategory.BRIDGE_DOWN, f"编辑器桥通信中断：{exc}")
     if response.get("status") == "error":
+        error = str(response.get("error", response))
+        if command == "viewport_screenshot" and "No active editor viewport" in error:
+            return mark_env_unready(
+                "编辑器当前没有活动视口，无法截图；请打开/激活 Level Editor 视口后重试"
+            )
         return f"[error] {response.get('error', response)}"
     return json.dumps(response.get("result", response), ensure_ascii=False)
 

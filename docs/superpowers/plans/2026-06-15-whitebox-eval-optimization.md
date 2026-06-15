@@ -306,6 +306,11 @@ Expected: high blocking 仍失败，medium/low 不阻断。
 > pass_rate=1.0，first_try_pass_rate=0.8333，avg_iterations=3.0，人工干预 0。复跑期间暴露的
 > `wb_validate.is_valid` 契约别名已补到 verifier，并以回归单测锁住。本轮不继续追着视觉档反复复跑，
 > 后续重点转向提升白盒搭建 agent 的自主构型稳定性。
+>
+> 2026-06-15 视觉档复跑探测：`SPC1V` 已完成 `wb_build` 与 `wb_validate`，但截图阶段连续返回
+> `No active editor viewport`；当时 UE 主窗口处于“恢复包”，没有可读 Level Editor 视口。本问题不是
+> 空间构型失败，已把该截图错误映射为 `env_unready` 并在 runner 侧快速终止，避免模型反复换截图参数
+> 把 history 膨胀到 70k tokens。视觉 baseline 暂不归档，待编辑器恢复到正常关卡视口后重跑。
 
 - [x] **Step 1: 跑结构测试**
 
@@ -318,6 +323,9 @@ Actual: `evals/baselines/ue/space-agent-test-20260615-205313.json`，6/6 通过�
 
 Run: `uv run ue5agent eval --suite ue --tasks evals/tasks/ue_space_visual.yaml --out evals/baselines/ue/space-agent-test-visual-YYYYMMDD-HHMMSS.json`
 Expected: high 问题为 0 的任务通过；medium/low 出现在报告但不压低 pass rate。
+
+Attempt: `space-agent-test-visual-20260615-211212.json` 未产出正式 baseline；首个 `SPC1V`
+暴露 `viewport_screenshot` 环境错误（无活动编辑器视口），已改为 `env_unready` 快速分类。
 
 - [x] **Step 3: 更新文档**
 
@@ -335,5 +343,6 @@ Expected: high 问题为 0 的任务通过；medium/low 出现在报告但不压
 楼梯、LLM timeout、MCP session 重启、截图聚焦、视觉 high-only gate、
 `path_test.total/count/path_test_result` 与 `wb_validate.is_valid` 验收别名、白盒搭建 agent 的通用构型守则/
 错误恢复提示，以及 `wb_build` 派发前轻量布局 guardrail（删除共享墙窗、补齐单侧共享门洞、收拢越界
-楼梯 footprint）和 UE eval `failure_type` 报告分类。结构档正式 baseline 已归档并 6/6 通过；下一步应优先
-继续提升 agent 自主布局稳定性，而不是靠反复收窄或反复运行测试题面。视觉档作为后续验证项保留。
+楼梯 footprint）和 UE eval `failure_type` 报告分类。结构档正式 baseline 已归档并 6/6 通过；视觉档当前
+阻塞在编辑器无活动视口的环境状态，已快速分类为 `env_unready`，不再让模型空转。下一步应优先继续提升
+agent 自主布局稳定性，而不是靠反复收窄或反复运行测试题面。视觉档作为后续验证项保留。

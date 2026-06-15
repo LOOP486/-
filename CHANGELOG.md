@@ -37,6 +37,9 @@
 - `viewport_screenshot` 新增 `clean_view`、`focus_prefix` 与 `margin`；runner 会在模型未显式传参时
   用最新 `wb_build.folder_root` 自动聚焦本批白盒，UE 侧按 Actor/Outliner 前缀计算 bbox、隐藏
   grid/选中描边/轴标并俯拍，减少旧批次和邻近结构污染视觉判断。
+- `viewport_screenshot` 在编辑器桥在线但没有活动 Level Editor 视口时，会把
+  `No active editor viewport` 映射为 `env_unready`；runner 对要求截图/视觉硬证据的步骤会快速终止，
+  不再让模型反复更换截图参数并膨胀 history。
 - 视觉审查 gate 改为 high-only：`VisionReviewResult.passed` 与视觉评测任务只让
   `high_count > 0` 或解析失败阻断自动收口，medium/low 继续作为报告字段保留。
 - 默认视觉审查清单明确按 blockout 阶段评价，不因缺少门框/窗框、楼梯踏步/扶手或房间文字标签扣分。

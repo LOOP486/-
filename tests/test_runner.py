@@ -1738,6 +1738,52 @@ async def test_no_reviewer_keeps_legacy_behavior(tmp_path):
     assert "vision_review" not in events
 
 
+async def test_screenshot_env_unready_aborts_required_vision_without_retry(tmp_path):
+    """活动视口不存在属于环境未就绪，不能让模型反复换截图参数刷大 history。"""
+    registry = ToolRegistry(PermissionGate())
+
+    async def viewport_screenshot() -> str:
+        return mark_env_unready("编辑器当前没有活动视口，无法截图")
+
+    registry.register(
+        ToolSpec(
+            name="ue_editor__viewport_screenshot",
+            description="",
+            parameters={"type": "object", "properties": {}},
+            level=PermissionLevel.READ,
+            handler=viewport_screenshot,
+        )
+    )
+    model = FakeModel(
+        [
+            plan_raw(
+                "standard",
+                [
+                    {
+                        "intent": "截图并做视觉审查",
+                        "acceptance": "截图和视觉审查通过",
+                        "allowed_tools": ["ue_editor__viewport_screenshot"],
+                        "required_evidence": ["screenshot", "vision_review"],
+                    }
+                ],
+            ),
+            tool_turn("ue_editor__viewport_screenshot", "{}"),
+            AssistantTurn(content="截图失败：没有活动视口"),
+        ]
+    )
+    writer = RunWriter(tmp_path, TaskSession.new("无活动视口"))
+    runner = TaskRunner(model, registry, writer, vision_reviewer=None)
+
+    outcome = await runner.run("需要视觉截图")
+
+    assert not outcome.success
+    assert writer.session.plan[0].attempts == 1
+    events = read_events(writer.trace_path)
+    recoveries = [e for e in events if e["event"] == "recover_action"]
+    assert recoveries and recoveries[-1]["action"] == "abort"
+    assert "env_unready" in recoveries[-1]["reason"]
+
+
 async def test_vision_reviewer_failure_does_not_crash_step(tmp_path):
     """视觉审查链路本身故障（vision 模型不可用等）：记 trace、不炸步骤，
     验收照常回落 judge。"""

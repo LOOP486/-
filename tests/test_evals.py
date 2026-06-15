@@ -679,6 +679,7 @@ class TestUeSuite:
 
         tasks = [
             UeEvalTask(name="timeout", prompt="x", checks=[{"type": "run_succeeded"}]),
+            UeEvalTask(name="viewport_env", prompt="x", checks=[{"type": "run_succeeded"}]),
             UeEvalTask(
                 name="vision_high",
                 prompt="x",
@@ -697,6 +698,12 @@ class TestUeSuite:
         ]
         records = {
             "timeout": UeRunRecord(success=False, error="llm_timeout: coder TimeoutError"),
+            "viewport_env": UeRunRecord(
+                success=False,
+                tool_errors=[
+                    "ue_editor__viewport_screenshot: [error][env:unready] 编辑器当前没有活动视口"
+                ],
+            ),
             "vision_high": UeRunRecord(
                 success=True,
                 facts=[
@@ -734,6 +741,7 @@ class TestUeSuite:
 
         assert [result.failure_type for result in report.results] == [
             "llm_timeout",
+            "env_unready",
             "vision_high",
             "vision_medium_low",
             "layout_error",
