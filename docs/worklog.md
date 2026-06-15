@@ -1,6 +1,6 @@
 # 工作日志（对话交接用）
 
-> 最后更新：2026-06-15（B7 白盒 agent 侧布局 guardrail 完成；当前 473 个单测全绿）。
+> 最后更新：2026-06-15（B7 白盒 agent 侧布局 guardrail + UE eval 失败分类完成；当前 474 个单测全绿）。
 > 新对话接手前先读本页 + [development-plan.md](development-plan.md)。
 > 架构权威版：[architecture/design.md](architecture/design.md) + ADR 0001–0006。
 > ✅ 最新结论：**Stage A–D 全收口；Stage E（E1/E2/E3）全部真机收口**。
@@ -12,14 +12,15 @@
 > - **E3 真机出基线**：`eval --suite ue --out evals/baselines/ue/deepseek-2026-06-13.json` →
 >   4/4 通过、一次通过率 100%、平均迭代 1.5、人工干预 0（含 run_functional_test 用例）。
 >   故障注入复核：杀编辑器后单跑 → env_unready → 1 次尝试快速终止（13s，不空转）。
-> 473 单测全绿（`uv run pytest -q`），ruff format/check、mypy 与 check-config 全绿。
+> 474 单测全绿（`uv run pytest -q`），ruff format/check、mypy 与 check-config 全绿。
 > **插件改动尚未提交 agent_test git**（functest 三命令在 EpicUnrealMCPEditorCommands.*/Bridge.cpp）；
 > 本轮追加 viewport_screenshot clean/focus 真机修复并已编译验证；下次可 commit。
 > 编辑器本轮被重启过，结束时已重新拉起在线。
 > B7 UE 在线结构档复跑推进到 DST1，暴露白盒 agent 对外墙窗/共享墙门洞仍会靠猜；已停止继续收窄
 > 测试题面，改为补通用构型守则、LayoutError 恢复提示，以及 `wb_build` 派发前轻量布局
 > guardrail（删除共享墙窗、补齐单侧共享门洞、收拢越界楼梯 footprint）。正式结构/视觉 baseline
-> 待 agent 策略稳定后再跑。
+> 待 agent 策略稳定后再跑；UE eval 表格/JSON 现带 `failure_type`，可直接区分 LLM timeout、视觉、
+> 布局/几何、环境等失败类型。
 
 ## 项目一句话
 
@@ -47,7 +48,7 @@ ue5agent：UE5 游戏开发 agent——C++ 实现功能、蓝图只读理解、�
   `UE_MCP_TOKEN_FILE` 指向它，客户端握手自动出示；裸 `send_command`（不经 cli load_dotenv）会被拒，
   调试时需手动带 `UE_MCP_TOKEN_FILE` 环境变量。插件源码在 agent_test 仓库（独立 git）。
 - 用户入口：双击 ue5agent-chat.bat 或 `uv run ue5agent run "任务" --yes`；trace 回放 `uv run ue5agent trace`；清理旧运行 `uv run ue5agent runs prune`
-- 473 个单测全绿；评测 `uv run ue5agent eval`（basic+hard 双档基线满分，evals/baselines/）；
+- 474 个单测全绿；评测 `uv run ue5agent eval`（basic+hard 双档基线满分，evals/baselines/）；
   UE 在线档 `uv run ue5agent eval --suite ue`（需编辑器在线，离线探活失败即退出不跑分；
   首份基线 evals/baselines/ue/deepseek-2026-06-13.json；B7 SPC/DST 标准结构/视觉新 baseline 待
   UE 在线评测进程稳定后归档）

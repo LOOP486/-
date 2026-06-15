@@ -297,6 +297,10 @@ Expected: high blocking 仍失败，medium/low 不阻断。
 > `llm_timeout` 重试。按反馈，本轮停止继续改测试题面，改为优化白盒搭建 agent 的通用构型守则与
 > LayoutError 恢复提示，并在 `wb_build` 派发前补轻量布局 guardrail：删除共享墙窗、补齐单侧
 > 共享门洞、收拢越界楼梯 footprint；正式 baseline 仍保持待复跑。
+>
+> 2026-06-15 报告侧补强：UE eval 的控制台表格与 JSON baseline 新增 `failure_type`，区分
+> `llm_timeout`、`env_unready`、`vision_high`、`vision_medium_low`、`layout_error`、
+> `geometry_check` 等，后续复跑无需先手读 trace 才能分桶。
 
 - [ ] **Step 1: 跑结构测试**
 
@@ -324,6 +328,6 @@ Expected: high 问题为 0 的任务通过；medium/low 出现在报告但不压
 楼梯、LLM timeout、MCP session 重启、截图聚焦、视觉 high-only gate、
 `path_test.total/count/path_test_result` 验收别名、白盒搭建 agent 的通用构型守则/错误恢复提示，
 以及 `wb_build` 派发前轻量布局 guardrail（删除共享墙窗、补齐单侧共享门洞、收拢越界楼梯
-footprint）。
+footprint）和 UE eval `failure_type` 报告分类。
 下一步应优先继续提升 agent 自主布局稳定性，而不是靠反复收窄测试题面；结构档稳定后再归档正式
 baseline，视觉档随后复跑。

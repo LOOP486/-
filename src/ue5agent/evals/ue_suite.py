@@ -69,6 +69,8 @@ class UeTaskResult:
     name: str
     passed: bool
     failures: list[str]
+    failure_type: str
+    """失败类型：用于 baseline 聚合，不再把 LLM timeout/视觉/几何问题混成一类。"""
     success: bool
     iteration_count: int
     max_step_attempts: int
@@ -293,6 +295,66 @@ def _fact_matches_conditions(fact: dict[str, Any], conditions: list[Any]) -> boo
     return True
 
 
+_ENV_UNREADY_MARKERS = (
+    "[env:unready]",
+    "编辑器桥连接被拒",
+    "连不上编辑器桥",
+    "编辑器桥通信中断",
+    "编辑器桥通信失败",
+    "ConnectionRefusedError",
+    "WinError 10061",
+)
+
+
+def classify_ue_failure_type(record: UeRunRecord, failures: list[str]) -> str:
+    """给 UE eval 失败打稳定分类，便于 baseline 复盘和聚合。"""
+    if not failures:
+        return ""
+    text = "\n".join(
+        [
+            str(record.error or ""),
+            *(str(item) for item in record.tool_errors),
+            *(str(item) for item in failures),
+        ]
+    )
+    if "llm_timeout" in text or "LLM 请求被取消" in text:
+        return "llm_timeout"
+    if any(marker in text for marker in _ENV_UNREADY_MARKERS):
+        return "env_unready"
+
+    vision = _latest_fact(record.facts, "vision_review")
+    if vision is not None:
+        parsed = vision.get("parsed")
+        high_count = _as_number(vision.get("high_count"))
+        issue_count = _as_number(vision.get("issue_count"))
+        if parsed is False:
+            return "vision_parse"
+        if high_count is not None and high_count > 0:
+            return "vision_high"
+        if issue_count is not None and issue_count > 0:
+            return "vision_medium_low"
+
+    validate = _latest_fact(record.facts, "wb_validate")
+    if validate is not None and validate.get("ok") is False:
+        return "geometry_check"
+    if "布局校验" in text or "LayoutError" in text:
+        return "layout_error"
+    if "trace 缺少 facts" in text or "为空或缺失" in text:
+        return "evidence_missing"
+    if record.tool_errors:
+        return "tool_error"
+    if record.error:
+        return "run_error"
+    return "check_failed"
+
+
+def _as_number(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 async def run_ue_suite(
     tasks: list[UeEvalTask],
     run_one: Callable[[UeEvalTask], Awaitable[UeRunRecord]],
@@ -308,11 +370,13 @@ async def run_ue_suite(
             failure = evaluate_ue_check(check, record)
             if failure:
                 failures.append(failure)
+        failure_type = classify_ue_failure_type(record, failures)
         results.append(
             UeTaskResult(
                 name=task.name,
                 passed=not failures,
                 failures=failures,
+                failure_type=failure_type,
                 success=record.success,
                 iteration_count=record.iteration_count,
                 max_step_attempts=record.max_step_attempts,

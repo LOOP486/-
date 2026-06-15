@@ -373,12 +373,14 @@ async def _run_ue_eval(
     table.add_column("任务")
     table.add_column("结果")
     table.add_column("迭代", justify="right")
+    table.add_column("失败类型")
     table.add_column("失败原因")
     for result in report.results:
         table.add_row(
             result.name,
             "[green]通过[/green]" if result.passed else "[red]失败[/red]",
             str(result.iteration_count),
+            getattr(result, "failure_type", ""),
             "；".join(result.failures),
         )
     console.print(table)

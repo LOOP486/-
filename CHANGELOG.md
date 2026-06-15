@@ -19,6 +19,9 @@
 - 声明式验收支持 `path_test.total` / `path_test.count` 以及 `path_test_result` 作为最新
   `path_test` 事实存在别名：
   只要最终导航事实没有显式 `ok=false`，即可计为 1，避免 `path_test` 已成功但报告误判失败。
+- UE eval 报告新增 `failure_type`，并在控制台表格/JSON baseline 中区分 `llm_timeout`、
+  `env_unready`、`vision_high`、`vision_medium_low`、`layout_error`、`geometry_check` 等类型，
+  避免所有失败都混成“验收未通过”。
 - 白盒 `wb_build` 执行提示改为少解释、优先直接调工具且不重复粘贴完整 JSON；同时新增通用
   构型守则：先按整数格推导 room.rect 邻接表，共享墙门洞必须双侧成对且 at/width 对齐，
   不确定外墙时宁可不写 windows，结构/导航任务可完全省略窗。

@@ -673,3 +673,68 @@ class TestUeSuite:
         report = await run_ue_suite([task], run_one)
         assert not report.results[0].passed
         assert any("boom" in f for f in report.results[0].failures)
+
+    async def test_run_ue_suite_classifies_failure_type_for_report(self):
+        from ue5agent.evals.ue_suite import UeEvalTask, UeRunRecord, run_ue_suite
+
+        tasks = [
+            UeEvalTask(name="timeout", prompt="x", checks=[{"type": "run_succeeded"}]),
+            UeEvalTask(
+                name="vision_high",
+                prompt="x",
+                checks=[
+                    {"type": "fact_lte", "kind": "vision_review", "path": "high_count", "value": 0}
+                ],
+            ),
+            UeEvalTask(
+                name="vision_medium_low",
+                prompt="x",
+                checks=[
+                    {"type": "fact_lte", "kind": "vision_review", "path": "issue_count", "value": 0}
+                ],
+            ),
+            UeEvalTask(name="layout_error", prompt="x", checks=[{"type": "no_tool_errors"}]),
+        ]
+        records = {
+            "timeout": UeRunRecord(success=False, error="llm_timeout: coder TimeoutError"),
+            "vision_high": UeRunRecord(
+                success=True,
+                facts=[
+                    {
+                        "kind": "vision_review",
+                        "ok": False,
+                        "parsed": True,
+                        "issue_count": 1,
+                        "high_count": 1,
+                    }
+                ],
+            ),
+            "vision_medium_low": UeRunRecord(
+                success=True,
+                facts=[
+                    {
+                        "kind": "vision_review",
+                        "ok": True,
+                        "parsed": True,
+                        "issue_count": 2,
+                        "high_count": 0,
+                    }
+                ],
+            ),
+            "layout_error": UeRunRecord(
+                success=False,
+                tool_errors=["ue_whitebox__wb_build: [error] 布局校验未通过：楼梯穿墙"],
+            ),
+        }
+
+        async def run_one(task):
+            return records[task.name]
+
+        report = await run_ue_suite(tasks, run_one)
+
+        assert [result.failure_type for result in report.results] == [
+            "llm_timeout",
+            "vision_high",
+            "vision_medium_low",
+            "layout_error",
+        ]
