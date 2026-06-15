@@ -1264,7 +1264,6 @@ async def test_contract_can_reuse_successful_fact_from_previous_step(tmp_path):
                 ],
             ),
             tool_turn("wb_validate", "{}"),
-            AssistantTurn(content="上一阶段已完成结构校验"),
         ]
     )
     writer = RunWriter(tmp_path, TaskSession.new("复用事实"))
@@ -1276,6 +1275,7 @@ async def test_contract_can_reuse_successful_fact_from_previous_step(tmp_path):
     events = read_events(writer.trace_path)
     verifies = [e for e in events if e["event"] == "verify_result"]
     assert [e["verdict"] for e in verifies] == ["pass", "pass"]
+    assert verifies[1]["mode"] == "contract_cached"
     tool_calls = [e for e in events if e["event"] == "tool_call"]
     assert len(tool_calls) == 1
 
@@ -2052,6 +2052,71 @@ async def test_vision_skipped_without_screenshots(tmp_path):
     assert reviewer.calls == []  # 没截图 → 审查未被调用
     events = [e["event"] for e in read_events(writer.trace_path)]
     assert "vision_review" not in events
+
+
+async def test_later_nav_step_does_not_review_carried_screenshot(tmp_path):
+    """后续导航步骤可复用截图事实做上下文，但不能拿旧截图再次触发视觉门禁。"""
+    registry = _vision_registry()
+
+    async def path_test(start=None, end=None) -> str:
+        return (
+            '{"reachable": true, "path_length": 2855.2}\n'
+            '[facts] {"kind": "path_test", "ok": true, "reachable": true, "path_length": 2855.2}'
+        )
+
+    registry.register(
+        ToolSpec(
+            name="ue_editor__path_test",
+            description="",
+            parameters={"type": "object", "properties": {}},
+            level=PermissionLevel.READ,
+            handler=path_test,
+        )
+    )
+    reviewer = _FakeReviewer(
+        [
+            parse_review('{"issues": []}'),
+            parse_review(
+                '{"issues": [{"area": "旧截图", "issue": "不应复审", "severity": "high"}]}'
+            ),
+        ]
+    )
+    model = FakeModel(
+        [
+            plan_raw(
+                "standard",
+                [
+                    {
+                        "intent": "截图并做视觉审查",
+                        "acceptance": "视觉通过",
+                        "allowed_tools": ["ue_editor__viewport_screenshot"],
+                        "required_evidence": ["screenshot", "vision_review"],
+                    },
+                    {
+                        "intent": "验证导航路径",
+                        "acceptance": "path_test 可达且长度足够",
+                        "allowed_tools": ["ue_editor__path_test"],
+                        "success_checks": [
+                            {"kind": "path_test", "field": "path_length", "gte": 1500}
+                        ],
+                    },
+                ],
+            ),
+            tool_turn("ue_editor__viewport_screenshot", "{}"),
+            judge("pass"),
+            tool_turn("ue_editor__path_test", "{}"),
+        ]
+    )
+    writer = RunWriter(tmp_path, TaskSession.new("视觉后导航"))
+    runner = TaskRunner(model, registry, writer, vision_reviewer=reviewer, max_step_attempts=1)
+
+    outcome = await runner.run("白盒空间需要截图通过视觉审查，然后验证导航")
+
+    assert outcome.success
+    assert len(reviewer.calls) == 1
+    events = read_events(writer.trace_path)
+    vis = [e for e in events if e["event"] == "vision_review"]
+    assert [e["step_id"] for e in vis] == ["s1"]
 
 
 # ---------- B1 PlanStep 契约（续）----------

@@ -1,6 +1,6 @@
 # 工作日志（对话交接用）
 
-> 最后更新：2026-06-15（B7 白盒 agent 侧布局 guardrail + MCP 断链重连/视觉步骤早停 + focus 截图前景裁剪；当前 490 个单测全绿）。
+> 最后更新：2026-06-15（B7 白盒 agent 侧布局 guardrail + MCP 断链重连/视觉步骤早停 + focus 截图前景裁剪；当前 491 个单测全绿）。
 > 新对话接手前先读本页 + [development-plan.md](development-plan.md)。
 > 架构权威版：[architecture/design.md](architecture/design.md) + ADR 0001–0006。
 > ✅ 最新结论：**Stage A–D 全收口；Stage E（E1/E2/E3）全部真机收口**。
@@ -12,7 +12,7 @@
 > - **E3 真机出基线**：`eval --suite ue --out evals/baselines/ue/deepseek-2026-06-13.json` →
 >   4/4 通过、一次通过率 100%、平均迭代 1.5、人工干预 0（含 run_functional_test 用例）。
 >   故障注入复核：杀编辑器后单跑 → env_unready → 1 次尝试快速终止（13s，不空转）。
-> 490 单测全绿（`uv run pytest -q`），ruff format/check、mypy 与 check-config 全绿。
+> 491 单测全绿（`uv run pytest -q`），ruff format/check、mypy 与 check-config 全绿。
 > **插件改动尚未提交 agent_test git**（functest 三命令在 EpicUnrealMCPEditorCommands.*/Bridge.cpp）；
 > 本轮追加 viewport_screenshot clean/focus 真机修复并已编译验证；下次可 commit。
 > 编辑器本轮被重启过，结束时已重新拉起在线。
@@ -49,6 +49,9 @@
 > 再次复跑暴露 planner 把 `wb_validate` 拆成独立步骤时，s1 已 PASS 的校验 fact 在 s2 不可见，
 > 导致模型试图口头复用旧结果但 verifier 判缺证据；已让通过步骤/同步骤重试里的成功 facts 进入后续
 > 契约验收。
+> 最新受控复跑又发现非视觉导航步骤继承旧截图后仍会再次触发 `vision_review`，使已经通过的
+> `path_test` 被随机视觉 high 拖回重试；现已改为只审本次 attempt 新截图，并在执行前用历史
+> success-check facts 本地跳过纯重复验证步。
 
 ## 项目一句话
 
@@ -76,7 +79,7 @@ ue5agent：UE5 游戏开发 agent——C++ 实现功能、蓝图只读理解、�
   `UE_MCP_TOKEN_FILE` 指向它，客户端握手自动出示；裸 `send_command`（不经 cli load_dotenv）会被拒，
   调试时需手动带 `UE_MCP_TOKEN_FILE` 环境变量。插件源码在 agent_test 仓库（独立 git）。
 - 用户入口：双击 ue5agent-chat.bat 或 `uv run ue5agent run "任务" --yes`；trace 回放 `uv run ue5agent trace`；清理旧运行 `uv run ue5agent runs prune`
-- 490 个单测全绿；评测 `uv run ue5agent eval`（basic+hard 双档基线满分，evals/baselines/）；
+- 491 个单测全绿；评测 `uv run ue5agent eval`（basic+hard 双档基线满分，evals/baselines/）；
   UE 在线档 `uv run ue5agent eval --suite ue`（需编辑器在线，离线探活失败即退出不跑分；
   首份基线 evals/baselines/ue/deepseek-2026-06-13.json；B7 SPC/DST 标准结构 baseline
   evals/baselines/ue/space-agent-test-20260615-205313.json 已归档 6/6，通过率 100%；视觉 baseline

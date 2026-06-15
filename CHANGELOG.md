@@ -65,6 +65,8 @@
   history 并触发 `insufficient tool messages following tool_calls`。
 - TaskRunner 会把已通过步骤与当前步骤重试中产生的成功 facts 带入后续契约验收，避免 planner 把
   `wb_validate` 拆成独立步骤时，前一步已经 PASS 的客观校验证据在下一步失效并触发重复验证/重试。
+- TaskRunner 现在只会对本次 attempt 新产生的截图触发 `vision_review`，并会在步骤执行前用已通过的
+  success-check facts 本地收口纯重复验证步，避免导航步骤被旧截图视觉审查随机拖回重试。
 
 ### 新增（关卡尺度 metrics）
 

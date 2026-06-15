@@ -385,6 +385,12 @@ Follow-up 7: 后续复跑确认同轮 tool 回包已完整，`vision_review` hig
 结果却被 verifier 判定缺证据并触发重试。已停止该轮 eval，修 TaskRunner 证据作用域：已通过步骤与
 同步骤重试中产生的成功 facts 可参与后续步骤契约验收，失败 facts 仍只保留在当前现场。
 
+Follow-up 8: 再次受控复跑 `SPC1V` 时，s1 已完成 `wb_build`/`wb_validate`/截图且
+`vision_review` high=0，s3 的 `navmesh_rebuild` 与 `path_test` 也已成功（path_length≈2855uu），
+但 runner 把前序截图 fact 带入导航步骤后又触发 `vision_review`，导致非视觉导航步骤被随机 high
+拖回重试。已停止长跑，修 TaskRunner：视觉审查只看本次 attempt 新产生的截图；纯重复验证步若
+success_checks 已被历史成功 facts 满足，则执行前本地收口，不再让 coder 反复确认。
+
 - [x] **Step 3: 更新文档**
 
 把复跑结论写入 `docs/roadmap.md` 的 B6/B7 条目，并在 `CHANGELOG.md` 的 `[未发布]` 记录行为变化。
@@ -407,6 +413,7 @@ Follow-up 7: 后续复跑确认同轮 tool 回包已完整，`vision_review` hig
 断链重试外包给模型；focus 截图的相邻旧结构污染已在取证 wrapper 侧裁掉，手写相机导致的贴边图也会
 交还 UE 侧自动聚焦或被本地快检拦住；视觉硬证据已改为挂到实际截图/视觉步骤，避免 build/validate
 步骤被后续视觉门禁拖回循环；early-stop 也已改成所有同轮 tool_calls 回包后才可触发，避免污染
-后续 LLM history；跨步骤成功 facts 也会被后续契约验收复用，避免重复校验步制造无效重试。下一步应优先继续提升 agent 自主布局稳定性，而不是靠反复收窄
+后续 LLM history；跨步骤成功 facts 也会被后续契约验收复用，避免重复校验步制造无效重试；视觉审查
+现在只消费本次 attempt 新截图，导航等非视觉步骤不会再被旧截图随机 high 拖回。下一步应优先继续提升 agent 自主布局稳定性，而不是靠反复收窄
 或反复运行测试题面。
 视觉档作为后续验证项保留。

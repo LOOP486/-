@@ -860,12 +860,31 @@ class TaskRunner:
             lines.append(f"- {mark} {step.id} {step.intent}（{step.status}，尝试 {step.attempts}）")
         return "\n".join(lines) + "\n"
 
+    def _contract_pass_summary_from_facts(self, step: PlanStep, facts: list[dict]) -> str | None:
+        """历史客观 facts 已满足纯契约步骤时，直接本地收口，避免重复问模型。"""
+        if step.required_evidence or not step.success_checks:
+            return None
+        check_kinds = {
+            str(check.get("kind", "")).strip()
+            for check in step.success_checks
+            if isinstance(check, dict)
+        }
+        if not check_kinds or not check_kinds <= _EARLY_CONTRACT_PASS_KINDS:
+            return None
+        decisive = deterministic_verdict(facts)
+        if decisive is not None and decisive.verdict == "fail":
+            return None
+        contract = evaluate_success_checks(step.success_checks, facts)
+        if contract is None or contract.verdict != "pass":
+            return None
+        return f"[已有工具证据满足步骤契约] {contract.reason}"
+
     async def _run_vision_review(
-        self, step: PlanStep, goal: str, tee: _EvidenceTee
+        self, step: PlanStep, goal: str, tee: _EvidenceTee, *, new_fact_start: int = 0
     ) -> VisionReviewResult | None:
         """A4 子任务3：对本步产出的截图做视觉审查，结果并入 tee.facts 驱动验收。
 
-        触发条件：注入了 vision_reviewer（已配 vision 角色）且本步实际产出了截图
+        触发条件：注入了 vision_reviewer（已配 vision 角色）且本次 attempt 实际产出了截图
         （viewport_screenshot 落地的 screenshot 事实）。两者缺一则跳过——视觉审查是
         增量证据，绝不改变"没截图任务"的既有行为。审查结果以 vision_review 事实并入
         证据通道：存在 high 问题或解析失败 → ok=False，被 deterministic_verdict 判 fail。
@@ -873,8 +892,9 @@ class TaskRunner:
         """
         if self._vision_reviewer is None:
             return None
+        new_facts = tee.facts[new_fact_start:]
         shots = [
-            str(f["path"]) for f in tee.facts if f.get("kind") == "screenshot" and f.get("path")
+            str(f["path"]) for f in new_facts if f.get("kind") == "screenshot" and f.get("path")
         ]
         if not shots:
             return None
@@ -1003,6 +1023,21 @@ class TaskRunner:
                 tee.facts.extend(session_facts)
                 tee.facts.extend(step_facts)
                 seeded_fact_count = len(tee.facts)
+                pre_satisfied = self._contract_pass_summary_from_facts(step, tee.facts)
+                if pre_satisfied is not None:
+                    summaries[step.id] = pre_satisfied
+                    self._writer.event("phase_enter", phase="execute", step_id=step.id)
+                    self._writer.event("phase_exit", phase="execute", step_id=step.id)
+                    self._writer.event(
+                        "verify_result",
+                        step_id=step.id,
+                        verdict="pass",
+                        reason=pre_satisfied,
+                        mode="contract_cached",
+                    )
+                    session_facts.extend(step_facts)
+                    step.status = "done"
+                    break
                 self._writer.event("phase_enter", phase="execute", step_id=step.id)
                 prompt = (
                     f"{self._progress_line(session.plan, index)}\n"
@@ -1072,7 +1107,12 @@ class TaskRunner:
                 # A4：对本步截图做视觉审查，结果并入 tee.facts（驱动下方确定性验收）
                 vision_result = None
                 if execution_verdict is None:
-                    vision_result = await self._run_vision_review(step, goal, tee)
+                    vision_result = await self._run_vision_review(
+                        step,
+                        goal,
+                        tee,
+                        new_fact_start=seeded_fact_count,
+                    )
                 new_carry_facts = _carry_forward_facts(tee.facts[seeded_fact_count:])
 
                 # 验收优先级：硬证据门禁 → 步骤契约 success_checks（B1）
