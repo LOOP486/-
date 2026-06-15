@@ -33,6 +33,8 @@ VISION_PROMPT = """\
 - 只报与需求或清单明确相关的问题，不臆测、不报轻微美观问题；
 - 只判断截图中可直接看到的 blockout 空间问题；不要判断 path_length、NavMesh、path_test、
   精确格数/中心距/距离阈值、token、工具调用次数或其它需要确定性工具/日志才能确认的指标；
+- 门洞/连通口/窗户/共享墙是否存在或对齐，主要由 wb_validate/path_test 等确定性事实确认；
+  截图里"看不清/疑似缺少门洞或窗户"只能作为 medium 报告，不能作为 high 阻断；
 - severity：high=阻断（布局与需求不符/明显穿插或悬空/应连通处不通），
   medium=偏差（比例失调、位置可疑），low=轻微。
 """
@@ -46,13 +48,27 @@ DEFAULT_CHECKLIST = """\
    默认 slab 白盒的门窗只表现为空间开口，楼梯只需表达可通行体量。
 6. 不要根据截图判断导航网格、path_test、path_length 或最短路径长度是否达标；
    也不要判断精确格数、中心距、米制/uu 距离阈值是否达标；
-   这些由 navmesh_rebuild/path_test 的确定性事实验收，视觉审查最多报告可见的门洞/连通口缺失。
+   这些由 navmesh_rebuild/path_test 的确定性事实验收；
+7. 门洞、连通口、窗户、共享墙对齐由白盒 DSL/validator/path_test 兜底；
+   如果截图中只是门洞/开口/窗户不清楚或疑似缺失，最多报告 medium，不要 high 阻断。
 """
 
 _NON_VISUAL_METRIC_RE = re.compile(
     r"path[_ -]?length|path[_ -]?test|navmesh|导航网格|路径长度|最短路径|可达性数值|"
     r"中心距|精确格数|距离阈值|米制|"
     r"token|工具调用次数|(?:小于|少于|不足|未达到|至少|超过|大于)\s*\d+\s*(?:格|uu|单位|米|m)",
+    re.IGNORECASE,
+)
+_TOOL_VERIFIED_STRUCTURE_RE = re.compile(
+    r"门洞|门口|连通口|窗户|外墙窗|共享墙",
+    re.IGNORECASE,
+)
+_STRUCTURE_VISIBILITY_RE = re.compile(
+    r"看不清|看不到|未看到|没看到|未见|疑似|似乎|可能|缺少|没有|不明显|不可见|不清楚|无法确认",
+    re.IGNORECASE,
+)
+_HARD_VISUAL_GEOMETRY_RE = re.compile(
+    r"穿插|穿墙|悬空|浮空|陷入|重叠|错位|越界|断裂|孤立墙|不围合|堵死|堵住",
     re.IGNORECASE,
 )
 
@@ -203,7 +219,9 @@ def parse_review(text: str) -> VisionReviewResult:
         severity = str(item.get("severity", "medium")).strip().lower()
         if severity not in _VALID_SEVERITY:
             severity = "medium"
-        if severity == "high" and _is_non_visual_metric_issue(desc):
+        if severity == "high" and (
+            _is_non_visual_metric_issue(desc) or _is_tool_verified_structure_issue(desc)
+        ):
             severity = "medium"
         issues.append(VisionIssue(area=area, issue=desc, severity=severity))
     return VisionReviewResult(issues=issues, raw=text, parsed=True)
@@ -216,6 +234,15 @@ def _is_non_visual_metric_issue(desc: str) -> bool:
     或可达性由 path_test facts 判断。
     """
     return bool(_NON_VISUAL_METRIC_RE.search(desc))
+
+
+def _is_tool_verified_structure_issue(desc: str) -> bool:
+    """门洞/窗户/共享墙可见性由 DSL validator 与 path facts 兜底，视觉误判不应 high。"""
+    if not _TOOL_VERIFIED_STRUCTURE_RE.search(desc):
+        return False
+    if _HARD_VISUAL_GEOMETRY_RE.search(desc):
+        return False
+    return bool(_STRUCTURE_VISIBILITY_RE.search(desc))
 
 
 async def review_screenshots(

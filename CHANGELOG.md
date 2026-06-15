@@ -72,6 +72,8 @@
   `path_length >= N` 下限），让 runner 能用客观 facts 早停/本地收口，减少口头确认和步骤漂移。
 - 通用 deterministic verdict 现在只看本 attempt 新产生的 facts；跨步骤复用 facts 仅服务
   success checks/required evidence，避免无契约步骤被前序 `wb_validate` 误判通过。
+- 视觉审查会把门洞/开口/窗户/共享墙可见性问题降为报告项，由 `wb_validate`/`path_test`
+  等确定性事实兜底，避免截图尺度导致的门洞误判 high 阻断。
 
 ### 新增（关卡尺度 metrics）
 

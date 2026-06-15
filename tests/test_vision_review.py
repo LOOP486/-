@@ -172,9 +172,40 @@ def test_non_visual_path_metrics_are_not_blocking_high_issues():
 
     assert result.parsed is True
     assert result.issues[0].severity == "medium"
-    assert result.issues[1].severity == "high"
+    assert result.issues[1].severity == "medium"
+    assert result.passed is True
+    assert result.to_facts()["high_count"] == 0
+
+
+def test_tool_verified_opening_visibility_is_not_blocking_high_issue():
+    """门洞/开口/窗户存在性由 validator/path facts 兜底，截图误判只进报告。"""
+    result = parse_review(
+        """{"issues": [
+          {"area": "turn_corridor", "issue": "缺少门洞", "severity": "high"},
+          {"area": "entry", "issue": "缺少门洞", "severity": "high"},
+          {"area": "外墙", "issue": "未看到外墙窗户开口", "severity": "high"}
+        ]}"""
+    )
+
+    assert result.parsed is True
+    assert [issue.severity for issue in result.issues] == ["medium", "medium", "medium"]
+    assert result.passed is True
+    assert result.to_facts()["high_count"] == 0
+
+
+def test_hard_visual_geometry_still_blocks_when_structure_words_appear():
+    """穿插/悬空/重叠/错位仍是视觉 high，不被门洞等关键词误降级。"""
+    result = parse_review(
+        """{"issues": [
+          {"area": "stairwell", "issue": "楼梯开口被墙体穿插堵住", "severity": "high"},
+          {"area": "shared_wall", "issue": "共享墙与房间边界明显错位", "severity": "high"}
+        ]}"""
+    )
+
+    assert result.parsed is True
+    assert [issue.severity for issue in result.issues] == ["high", "high"]
     assert result.passed is False
-    assert result.to_facts()["high_count"] == 1
+    assert result.to_facts()["high_count"] == 2
 
 
 def test_non_visual_exact_grid_distance_is_not_blocking_high_issue():
@@ -203,8 +234,10 @@ def test_review_prompt_excludes_non_visual_metrics(tmp_path):
 
     assert "不要判断 path_length、NavMesh、path_test" in system_text
     assert "精确格数/中心距/距离阈值" in system_text
+    assert "疑似缺少门洞或窗户" in system_text
     assert "不要根据截图判断导航网格、path_test、path_length" in user_text
     assert "不要判断精确格数、中心距、米制/uu 距离阈值" in user_text
+    assert "门洞、连通口、窗户、共享墙对齐" in user_text
 
 
 def test_parse_unparseable_is_conservative():
