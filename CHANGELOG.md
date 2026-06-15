@@ -76,6 +76,8 @@
   success checks/required evidence，避免无契约步骤被前序 `wb_validate` 误判通过。
 - 视觉审查会把门洞/开口/窗户/共享墙可见性问题降为报告项，由 `wb_validate`/`path_test`
   等确定性事实兜底，避免截图尺度导致的门洞误判 high 阻断。
+- UE 视觉标准档已归档 `evals/baselines/ue/space-agent-test-visual-20260616-001231.json`：
+  SPC/DST 视觉 6/6 通过，`pass_rate=1.0`，`first_try_pass_rate=1.0`，人工干预 0。
 
 ### 新增（关卡尺度 metrics）
 

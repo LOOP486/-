@@ -1,6 +1,6 @@
 # 工作日志（对话交接用）
 
-> 最后更新：2026-06-15（B7 白盒 agent 侧布局 guardrail + MCP 断链重连/视觉步骤早停 + focus 截图前景裁剪；当前 497 个单测全绿）。
+> 最后更新：2026-06-15（B7 白盒 agent 侧布局 guardrail + MCP 断链重连/视觉步骤早停 + focus 截图前景裁剪；结构/视觉 UE baseline 均已归档；当前 497 个单测全绿）。
 > 新对话接手前先读本页 + [development-plan.md](development-plan.md)。
 > 架构权威版：[architecture/design.md](architecture/design.md) + ADR 0001–0006。
 > ✅ 最新结论：**Stage A–D 全收口；Stage E（E1/E2/E3）全部真机收口**。
@@ -21,7 +21,9 @@
 > pass_rate=1.0，first_try_pass_rate=0.8333，平均迭代 3.0，人工干预 0。前序复跑暴露白盒
 > agent 对外墙窗/共享墙门洞仍会靠猜；本轮已停止继续收窄测试题面，改为补通用构型守则、
 > LayoutError 恢复提示，以及 `wb_build` 派发前轻量布局 guardrail（删除共享墙窗、补齐单侧共享
-> 门洞、收拢越界楼梯 footprint）。视觉 baseline 后续作为验证项保留；UE eval 表格/JSON 现带
+> 门洞、收拢越界楼梯 footprint）。B7 UE 在线视觉档也已归档：
+> `evals/baselines/ue/space-agent-test-visual-20260616-001231.json`，SPC/DST 视觉 6/6 通过，
+> pass_rate=1.0，first_try_pass_rate=1.0，平均迭代 2.7，人工干预 0。UE eval 表格/JSON 现带
 > `failure_type`，可直接区分 LLM timeout、视觉、布局/几何、环境等失败类型。
 > 视觉档复跑首个 SPC1V 已搭建并 `wb_validate` PASS，但 UE 当前处于“恢复包”窗口、没有活动
 > Level Editor 视口，`viewport_screenshot` 返回 `No active editor viewport`；已改为
@@ -30,7 +32,7 @@
 > coder 在同一步漂移到下一阶段的问题；已修 MCP client 断链重连与 runner 视觉证据齐备早停。
 > 后续聚焦截图探针又发现：即使 `focus_prefix` 已居中当前白盒，宽屏视口仍可能带入相邻旧测试结构；
 > 已在 `viewport_screenshot` wrapper 侧追加前景连通域裁剪，仅在 `focus_prefix` 场景保留居中的当前主体，
-> 避免 vision 把旧批次误判成本次布局问题。视觉 baseline 仍作为后续验证项，不再靠反复长跑测试收敛。
+> 避免 vision 把旧批次误判成本次布局问题。视觉 baseline 后续按 agent 链路验证推进，不靠反复改题面收敛。
 > 后续受控重跑首个视觉任务确认 crop 已生效，但 vision 把 `path_length` 这类非视觉指标提前判 high，
 > 同时自动 focus 未覆盖模型手写相机导致截图上下贴边；已修为视觉审查只阻断截图可见的 blockout
 > 空间问题，导航/path_length 继续由 facts 验收，runner 自动 focus 时会丢弃手写 `location`/`rotation`，
@@ -59,7 +61,8 @@
 > attempt 新 facts。视觉审查也已把门洞/开口/窗户/共享墙可见性问题降为报告项，由
 > `wb_validate`/`path_test` 兜底，避免截图尺度误判 high。受控 SPC1V 单任务探针还暴露
 > `path_test.path_length` 裸契约被当作 `equals=true` 的问题；planner 后处理现在会把同字段契约补成
-> `gte/min` 数值边界，避免路径长度已达标却反复重试。
+> `gte/min` 数值边界，避免路径长度已达标却反复重试。完整视觉档最终 6/6 通过，两个可恢复
+> `wb_build` LayoutError 均由 agent 自行回退重建后收口，没有人工介入。
 
 ## 项目一句话
 
@@ -90,8 +93,8 @@ ue5agent：UE5 游戏开发 agent——C++ 实现功能、蓝图只读理解、�
 - 497 个单测全绿；评测 `uv run ue5agent eval`（basic+hard 双档基线满分，evals/baselines/）；
   UE 在线档 `uv run ue5agent eval --suite ue`（需编辑器在线，离线探活失败即退出不跑分；
   首份基线 evals/baselines/ue/deepseek-2026-06-13.json；B7 SPC/DST 标准结构 baseline
-  evals/baselines/ue/space-agent-test-20260615-205313.json 已归档 6/6，通过率 100%；视觉 baseline
-  后续验证）
+  evals/baselines/ue/space-agent-test-20260615-205313.json 已归档 6/6，通过率 100%；B7 SPC/DST
+  视觉 baseline evals/baselines/ue/space-agent-test-visual-20260616-001231.json 已归档 6/6，通过率 100%）
 - 插件重编译流程：关编辑器（DLL 锁）→ `run_build(engine, uproject, 'agent_testEditor')` → 重启编辑器
   → 轮询 probe_editor。本会话首编 19.8s、增量 9.5s。
 

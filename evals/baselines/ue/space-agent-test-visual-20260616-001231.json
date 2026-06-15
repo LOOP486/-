@@ -1,0 +1,136 @@
+{
+  "suite": "ue",
+  "model": "deepseek/deepseek-v4-pro",
+  "role": "planner",
+  "timestamp": "2026-06-16 00:28:37",
+  "pass_rate": 1.0,
+  "first_try_pass_rate": 1.0,
+  "avg_iterations": 2.6666666666666665,
+  "total_human_intervention": 0,
+  "results": [
+    {
+      "name": "slab_branching_training_space_visual",
+      "passed": true,
+      "failures": [],
+      "failure_type": "",
+      "success": true,
+      "iteration_count": 3,
+      "max_step_attempts": 1,
+      "human_intervention": 0,
+      "trace_path": "runs\\20260616-001236_slab_branching_training_\\trace.jsonl",
+      "tool_calls": [
+        "ue_whitebox__wb_build",
+        "ue_whitebox__wb_validate",
+        "ue_editor__viewport_screenshot",
+        "ue_editor__viewport_screenshot",
+        "ue_editor__navmesh_rebuild",
+        "ue_editor__path_test"
+      ],
+      "tool_errors": []
+    },
+    {
+      "name": "slab_loop_gallery_space_visual",
+      "passed": true,
+      "failures": [],
+      "failure_type": "",
+      "success": true,
+      "iteration_count": 2,
+      "max_step_attempts": 1,
+      "human_intervention": 0,
+      "trace_path": "runs\\20260616-001508_slab_loop_gallery_space_\\trace.jsonl",
+      "tool_calls": [
+        "ue_whitebox__wb_build",
+        "ue_whitebox__wb_build",
+        "ue_whitebox__wb_validate",
+        "ue_editor__viewport_screenshot",
+        "ue_editor__navmesh_rebuild",
+        "ue_editor__path_test"
+      ],
+      "tool_errors": [
+        "ue_whitebox__wb_build: [error] 布局校验未通过：房间 lobby 的 north 墙门洞重叠"
+      ]
+    },
+    {
+      "name": "slab_single_level_stairwell_space_visual",
+      "passed": true,
+      "failures": [],
+      "failure_type": "",
+      "success": true,
+      "iteration_count": 4,
+      "max_step_attempts": 1,
+      "human_intervention": 0,
+      "trace_path": "runs\\20260616-001854_slab_single_level_stairw\\trace.jsonl",
+      "tool_calls": [
+        "ue_whitebox__wb_build",
+        "ue_whitebox__wb_build",
+        "ue_whitebox__wb_validate",
+        "ue_editor__viewport_screenshot",
+        "ue_editor__viewport_screenshot",
+        "ue_editor__navmesh_rebuild",
+        "ue_editor__path_test"
+      ],
+      "tool_errors": [
+        "ue_whitebox__wb_build: [error] 布局校验未通过：房间 Hall 的楼梯 stair_2_001 净空占用门洞"
+      ]
+    },
+    {
+      "name": "slab_arena_space_visual",
+      "passed": true,
+      "failures": [],
+      "failure_type": "",
+      "success": true,
+      "iteration_count": 3,
+      "max_step_attempts": 1,
+      "human_intervention": 0,
+      "trace_path": "runs\\20260616-002134_slab_arena_space_visual\\trace.jsonl",
+      "tool_calls": [
+        "ue_whitebox__wb_build",
+        "ue_whitebox__wb_validate",
+        "ue_editor__viewport_screenshot",
+        "ue_editor__navmesh_rebuild",
+        "ue_editor__path_test"
+      ],
+      "tool_errors": []
+    },
+    {
+      "name": "slab_crossfire_space_visual",
+      "passed": true,
+      "failures": [],
+      "failure_type": "",
+      "success": true,
+      "iteration_count": 2,
+      "max_step_attempts": 1,
+      "human_intervention": 0,
+      "trace_path": "runs\\20260616-002430_slab_crossfire_space_vis\\trace.jsonl",
+      "tool_calls": [
+        "ue_whitebox__wb_build",
+        "ue_whitebox__wb_validate",
+        "ue_editor__viewport_screenshot",
+        "ue_editor__viewport_screenshot",
+        "ue_editor__navmesh_rebuild",
+        "ue_editor__path_test"
+      ],
+      "tool_errors": []
+    },
+    {
+      "name": "slab_ring_space_visual",
+      "passed": true,
+      "failures": [],
+      "failure_type": "",
+      "success": true,
+      "iteration_count": 2,
+      "max_step_attempts": 1,
+      "human_intervention": 0,
+      "trace_path": "runs\\20260616-002642_slab_ring_space_visual\\trace.jsonl",
+      "tool_calls": [
+        "ue_whitebox__wb_build",
+        "ue_whitebox__wb_validate",
+        "ue_editor__viewport_screenshot",
+        "ue_editor__viewport_screenshot",
+        "ue_editor__navmesh_rebuild",
+        "ue_editor__path_test"
+      ],
+      "tool_errors": []
+    }
+  ]
+}

@@ -344,13 +344,17 @@ Expected: SPC/DST 结构与导航通过，LLM timeout 单独分类。
 
 Actual: `evals/baselines/ue/space-agent-test-20260615-205313.json`，6/6 通过，`failure_type` 均为空。
 
-- [ ] **Step 2: 跑视觉检测测试**
+- [x] **Step 2: 跑视觉检测测试**
 
 Run: `uv run ue5agent eval --suite ue --tasks evals/tasks/ue_space_visual.yaml --out evals/baselines/ue/space-agent-test-visual-YYYYMMDD-HHMMSS.json`
 Expected: high 问题为 0 的任务通过；medium/low 出现在报告但不压低 pass rate。
 
 Attempt: `space-agent-test-visual-20260615-211212.json` 未产出正式 baseline；首个 `SPC1V`
 暴露 `viewport_screenshot` 环境错误（无活动编辑器视口），已改为 `env_unready` 快速分类。
+
+Actual: `evals/baselines/ue/space-agent-test-visual-20260616-001231.json`，6/6 通过，
+`failure_type` 均为空，`pass_rate=1.0`，`first_try_pass_rate=1.0`，`avg_iterations=2.7`，
+人工干预 0。报告中两个 `wb_build` LayoutError 均被 agent 自行回退重建后恢复，不构成最终失败。
 
 Follow-up: UE 恢复正常视口后未继续完整长跑；首个视觉任务暴露 agent 执行链缺陷（MCP SDK
 `Connection closed` 未透明重连、视觉步骤完成后仍让 coder 在同一步推进下一阶段），随后又发现
@@ -416,6 +420,10 @@ Follow-up 13: 单任务 `SPC1V` 探针确认门洞可见性误判已降为 mediu
 补入 `gte 1500`，verifier 将 `path_length=2855.2` 按 `equals=true` 判失败并触发重复 path_test。
 已修 planner 契约合并：同一 `kind/field` 会补齐 `gte/min` 数值边界，并移除误写的布尔 equals。
 
+Follow-up 14: 修复契约合并后再次跑单任务 `SPC1V`，1/1 通过；随后完整视觉档
+`space-agent-test-visual-20260616-001231.json` 6/6 通过。该轮没有继续改测试题面，验证的是 agent
+链路：截图贴边能被本地快检拦下并重拍、vision high=0、导航路径 facts 能直接收口。
+
 - [x] **Step 3: 更新文档**
 
 把复跑结论写入 `docs/roadmap.md` 的 B6/B7 条目，并在 `CHANGELOG.md` 的 `[未发布]` 记录行为变化。
@@ -433,7 +441,7 @@ Follow-up 13: 单任务 `SPC1V` 探针确认门洞可见性误判已降为 mediu
 视觉 high 阻断、
 `path_test.total/count/path_test_result` 与 `wb_validate.is_valid` 验收别名、白盒搭建 agent 的通用构型守则/
 错误恢复提示，以及 `wb_build` 派发前轻量布局 guardrail（删除共享墙窗、补齐单侧共享门洞、收拢越界
-楼梯 footprint）和 UE eval `failure_type` 报告分类。结构档正式 baseline 已归档并 6/6 通过；视觉档当前
+楼梯 footprint）和 UE eval `failure_type` 报告分类。结构档正式 baseline 已归档并 6/6 通过；视觉档此前
 先后暴露编辑器无活动视口、MCP SDK 断链重连缺口与步骤漂移问题；已快速分类/修复，不再让模型空转或把
 断链重试外包给模型；focus 截图的相邻旧结构污染已在取证 wrapper 侧裁掉，手写相机导致的贴边图也会
 交还 UE 侧自动聚焦或被本地快检拦住；视觉硬证据已改为挂到实际截图/视觉步骤，避免 build/validate
@@ -444,6 +452,5 @@ Follow-up 13: 单任务 `SPC1V` 探针确认门洞可见性误判已降为 mediu
 success checks，让 runner 用客观 facts 收口；通用 deterministic verdict 已收窄到本 attempt 新 facts，
 避免 carried facts 误放行无契约步骤；门洞/开口/窗户/共享墙可见性由 validator/path facts 兜底，
 不再 high 阻断；`path_test.path_length >= N` 契约合并会保留数值边界，避免达标路径被布尔误判。
-下一步应优先继续提升 agent 自主布局稳定性，而不是靠反复收窄
-或反复运行测试题面。
-视觉档作为后续验证项保留。
+结构档与视觉档正式 baseline 均已归档并 6/6 通过；后续继续提升 agent 自主布局稳定性时，应保持
+验证面不靠反复收窄或改测试题面。
