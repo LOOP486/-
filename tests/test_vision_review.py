@@ -177,6 +177,24 @@ def test_non_visual_path_metrics_are_not_blocking_high_issues():
     assert result.to_facts()["high_count"] == 1
 
 
+def test_non_visual_exact_grid_distance_is_not_blocking_high_issue():
+    """中心距/精确格数这类数字约束不应由截图审查作为 high 阻断。"""
+    result = parse_review(
+        """{"issues": [
+          {
+            "area": "全体布局",
+            "issue": "尽端房间中心距入口小于16格，不符合需求中至少16格的要求。",
+            "severity": "high"
+          }
+        ]}"""
+    )
+
+    assert result.parsed is True
+    assert result.issues[0].severity == "medium"
+    assert result.passed is True
+    assert result.to_facts()["high_count"] == 0
+
+
 def test_review_prompt_excludes_non_visual_metrics(tmp_path):
     p = _make_png(tmp_path)
     messages = build_review_messages("需要 path_test 达到 1500uu", [p])
@@ -184,7 +202,9 @@ def test_review_prompt_excludes_non_visual_metrics(tmp_path):
     user_text = messages[1]["content"][0]["text"]
 
     assert "不要判断 path_length、NavMesh、path_test" in system_text
+    assert "精确格数/中心距/距离阈值" in system_text
     assert "不要根据截图判断导航网格、path_test、path_length" in user_text
+    assert "不要判断精确格数、中心距、米制/uu 距离阈值" in user_text
 
 
 def test_parse_unparseable_is_conservative():

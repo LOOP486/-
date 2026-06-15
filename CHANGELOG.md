@@ -52,8 +52,9 @@
 - 视觉审查 gate 改为 high-only：`VisionReviewResult.passed` 与视觉评测任务只让
   `high_count > 0` 或解析失败阻断自动收口，medium/low 继续作为报告字段保留。
 - 默认视觉审查清单明确按 blockout 阶段评价，不因缺少门框/窗框、楼梯踏步/扶手或房间文字标签扣分。
-- 视觉审查只判断截图可见的 blockout 空间问题，不再把 `path_length`、`path_test`、NavMesh
-  或工具日志指标当作 high 阻断；这些指标继续由确定性 facts 验收，视觉侧只保留为报告项。
+- 视觉审查只判断截图可见的 blockout 空间问题，不再把 `path_length`、`path_test`、NavMesh、
+  精确格数/中心距/距离阈值或工具日志指标当作 high 阻断；这些指标继续由确定性 facts 验收，
+  视觉侧只保留为报告项。
 - `navmesh_rebuild` 仍保持 `write_project` 权限，但副作用声明改为不要求 git checkpoint；该工具改的是
   编辑器里的导航体积/NavMesh 运行态，git 快照无法保护，避免视觉/导航评测在 path_test 前被 checkpoint
   钩子误拒并触发模型反复换参数。

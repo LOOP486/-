@@ -365,6 +365,10 @@ Follow-up 3: 新一轮受控重跑确认首个视觉任务可通过截图/vision
 `navmesh_rebuild` 的 git checkpoint 前置条件挡住。已把 `navmesh_rebuild` 标为无需 git checkpoint
 的 write_project 工具，避免 path_test 前的导航构建被权限链路误拒。
 
+Follow-up 4: 再跑首个视觉任务时，vision 又把“尽端房间中心距入口小于 16 格”作为 high；
+该布局实际使用冻结模板，精确格数/中心距不应由截图模型估算。已把这类精确空间数值约束纳入
+非视觉指标降级规则，仍由 DSL/path facts 验收。
+
 - [x] **Step 3: 更新文档**
 
 把复跑结论写入 `docs/roadmap.md` 的 B6/B7 条目，并在 `CHANGELOG.md` 的 `[未发布]` 记录行为变化。
