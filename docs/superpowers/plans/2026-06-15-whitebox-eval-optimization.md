@@ -301,18 +301,25 @@ Expected: high blocking 仍失败，medium/low 不阻断。
 > 2026-06-15 报告侧补强：UE eval 的控制台表格与 JSON baseline 新增 `failure_type`，区分
 > `llm_timeout`、`env_unready`、`vision_high`、`vision_medium_low`、`layout_error`、
 > `geometry_check` 等，后续复跑无需先手读 trace 才能分桶。
+>
+> 2026-06-15 标准结构档复跑归档：`space-agent-test-20260615-205313.json` 6/6 通过，
+> pass_rate=1.0，first_try_pass_rate=0.8333，avg_iterations=3.0，人工干预 0。复跑期间暴露的
+> `wb_validate.is_valid` 契约别名已补到 verifier，并以回归单测锁住。本轮不继续追着视觉档反复复跑，
+> 后续重点转向提升白盒搭建 agent 的自主构型稳定性。
 
-- [ ] **Step 1: 跑结构测试**
+- [x] **Step 1: 跑结构测试**
 
 Run: `uv run ue5agent eval --suite ue --tasks evals/tasks/ue_space.yaml --out evals/baselines/ue/space-agent-test-YYYYMMDD-HHMMSS.json`
 Expected: SPC/DST 结构与导航通过，LLM timeout 单独分类。
+
+Actual: `evals/baselines/ue/space-agent-test-20260615-205313.json`，6/6 通过，`failure_type` 均为空。
 
 - [ ] **Step 2: 跑视觉检测测试**
 
 Run: `uv run ue5agent eval --suite ue --tasks evals/tasks/ue_space_visual.yaml --out evals/baselines/ue/space-agent-test-visual-YYYYMMDD-HHMMSS.json`
 Expected: high 问题为 0 的任务通过；medium/low 出现在报告但不压低 pass rate。
 
-- [ ] **Step 3: 更新文档**
+- [x] **Step 3: 更新文档**
 
 把复跑结论写入 `docs/roadmap.md` 的 B6/B7 条目，并在 `CHANGELOG.md` 的 `[未发布]` 记录行为变化。
 
@@ -326,8 +333,7 @@ Expected: high 问题为 0 的任务通过；medium/low 出现在报告但不压
 
 现有 DSL 方向是成立的，不需要因为这两轮问题推翻。代码侧 P0/P1 修复已完成，离线回归已覆盖墙体、
 楼梯、LLM timeout、MCP session 重启、截图聚焦、视觉 high-only gate、
-`path_test.total/count/path_test_result` 验收别名、白盒搭建 agent 的通用构型守则/错误恢复提示，
-以及 `wb_build` 派发前轻量布局 guardrail（删除共享墙窗、补齐单侧共享门洞、收拢越界楼梯
-footprint）和 UE eval `failure_type` 报告分类。
-下一步应优先继续提升 agent 自主布局稳定性，而不是靠反复收窄测试题面；结构档稳定后再归档正式
-baseline，视觉档随后复跑。
+`path_test.total/count/path_test_result` 与 `wb_validate.is_valid` 验收别名、白盒搭建 agent 的通用构型守则/
+错误恢复提示，以及 `wb_build` 派发前轻量布局 guardrail（删除共享墙窗、补齐单侧共享门洞、收拢越界
+楼梯 footprint）和 UE eval `failure_type` 报告分类。结构档正式 baseline 已归档并 6/6 通过；下一步应优先
+继续提升 agent 自主布局稳定性，而不是靠反复收窄或反复运行测试题面。视觉档作为后续验证项保留。

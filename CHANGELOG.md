@@ -19,6 +19,8 @@
 - 声明式验收支持 `path_test.total` / `path_test.count` 以及 `path_test_result` 作为最新
   `path_test` 事实存在别名：
   只要最终导航事实没有显式 `ok=false`，即可计为 1，避免 `path_test` 已成功但报告误判失败。
+- 声明式验收支持 `wb_validate.is_valid` 作为 `wb_validate.ok` 的别名，避免 planner 生成的
+  `is_valid=true` 契约在校验事实已 PASS 时被误判。
 - UE eval 报告新增 `failure_type`，并在控制台表格/JSON baseline 中区分 `llm_timeout`、
   `env_unready`、`vision_high`、`vision_medium_low`、`layout_error`、`geometry_check` 等类型，
   避免所有失败都混成“验收未通过”。
@@ -68,6 +70,9 @@
 - 新增 `docs/superpowers/plans/2026-06-15-whitebox-eval-optimization.md`：归档两轮 SPC/DST
   白盒测试问题清单与优化策略，覆盖墙体端点厚度补偿、楼梯间开口/护墙、LLM 超时、截图取证、
   视觉 high-only gate 与 eval 报告分类。
+- 归档 SPC/DST 标准结构 baseline：
+  `evals/baselines/ue/space-agent-test-20260615-205313.json`，6/6 通过，pass_rate=1.0，
+  first_try_pass_rate=0.8333，平均迭代 3.0，人工干预 0。
 
 ### 新增（升级版资产扫描：UE 真值重建 manifest）
 

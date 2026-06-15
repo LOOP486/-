@@ -1,0 +1,129 @@
+{
+  "suite": "ue",
+  "model": "deepseek/deepseek-v4-pro",
+  "role": "planner",
+  "timestamp": "2026-06-15 21:06:46",
+  "pass_rate": 1.0,
+  "first_try_pass_rate": 0.8333333333333334,
+  "avg_iterations": 3.0,
+  "total_human_intervention": 0,
+  "results": [
+    {
+      "name": "slab_branching_training_space",
+      "passed": true,
+      "failures": [],
+      "failure_type": "",
+      "success": true,
+      "iteration_count": 5,
+      "max_step_attempts": 2,
+      "human_intervention": 0,
+      "trace_path": "runs\\20260615-205319_slab_branching_training_\\trace.jsonl",
+      "tool_calls": [
+        "ue_whitebox__wb_build",
+        "ue_whitebox__wb_validate",
+        "ue_editor__navmesh_rebuild",
+        "ue_editor__path_test",
+        "ue_editor__path_test",
+        "ue_editor__path_test",
+        "ue_editor__navmesh_rebuild",
+        "ue_editor__path_test",
+        "ue_editor__path_test"
+      ],
+      "tool_errors": []
+    },
+    {
+      "name": "slab_loop_gallery_space",
+      "passed": true,
+      "failures": [],
+      "failure_type": "",
+      "success": true,
+      "iteration_count": 2,
+      "max_step_attempts": 1,
+      "human_intervention": 0,
+      "trace_path": "runs\\20260615-205622_slab_loop_gallery_space\\trace.jsonl",
+      "tool_calls": [
+        "ue_whitebox__wb_clear",
+        "ue_whitebox__wb_build",
+        "ue_whitebox__wb_validate",
+        "ue_editor__navmesh_rebuild",
+        "ue_editor__path_test"
+      ],
+      "tool_errors": []
+    },
+    {
+      "name": "slab_single_level_stairwell_space",
+      "passed": true,
+      "failures": [],
+      "failure_type": "",
+      "success": true,
+      "iteration_count": 2,
+      "max_step_attempts": 1,
+      "human_intervention": 0,
+      "trace_path": "runs\\20260615-205857_slab_single_level_stairw\\trace.jsonl",
+      "tool_calls": [
+        "ue_whitebox__wb_build",
+        "ue_whitebox__wb_validate",
+        "ue_editor__navmesh_rebuild",
+        "ue_editor__path_test"
+      ],
+      "tool_errors": []
+    },
+    {
+      "name": "slab_arena_space",
+      "passed": true,
+      "failures": [],
+      "failure_type": "",
+      "success": true,
+      "iteration_count": 3,
+      "max_step_attempts": 1,
+      "human_intervention": 0,
+      "trace_path": "runs\\20260615-210040_slab_arena_space\\trace.jsonl",
+      "tool_calls": [
+        "ue_whitebox__wb_build",
+        "ue_whitebox__wb_validate",
+        "ue_whitebox__wb_validate",
+        "ue_editor__navmesh_rebuild",
+        "ue_editor__path_test"
+      ],
+      "tool_errors": []
+    },
+    {
+      "name": "slab_crossfire_space",
+      "passed": true,
+      "failures": [],
+      "failure_type": "",
+      "success": true,
+      "iteration_count": 3,
+      "max_step_attempts": 1,
+      "human_intervention": 0,
+      "trace_path": "runs\\20260615-210306_slab_crossfire_space\\trace.jsonl",
+      "tool_calls": [
+        "ue_whitebox__wb_build",
+        "ue_whitebox__wb_validate",
+        "ue_whitebox__wb_validate",
+        "ue_editor__navmesh_rebuild",
+        "ue_editor__path_test"
+      ],
+      "tool_errors": []
+    },
+    {
+      "name": "slab_ring_space",
+      "passed": true,
+      "failures": [],
+      "failure_type": "",
+      "success": true,
+      "iteration_count": 3,
+      "max_step_attempts": 1,
+      "human_intervention": 0,
+      "trace_path": "runs\\20260615-210451_slab_ring_space\\trace.jsonl",
+      "tool_calls": [
+        "ue_whitebox__wb_build",
+        "ue_whitebox__wb_validate",
+        "ue_editor__navmesh_rebuild",
+        "ue_editor__path_test",
+        "ue_editor__path_test"
+      ],
+      "tool_errors": []
+    }
+  ]
+}

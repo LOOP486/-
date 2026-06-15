@@ -142,10 +142,10 @@ def _success_check_value(fact: dict, field_name: str) -> object:
         return fact[field_name]
     if fact.get("kind") == "path_test" and field_name in ("total", "count"):
         return 0 if fact.get("ok") is False else 1
-    if fact.get("kind") == "wb_validate" and field_name == "valid":
+    if fact.get("kind") == "wb_validate" and field_name in ("valid", "is_valid"):
         return fact.get("ok")
     if fact.get("kind") == "wb_validate" and field_name == "ok":
-        return fact.get("valid")
+        return fact.get("valid", fact.get("is_valid"))
     return None
 
 

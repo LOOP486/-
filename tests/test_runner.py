@@ -1081,6 +1081,15 @@ def test_evaluate_success_checks_treats_wb_validate_valid_as_ok_alias():
     assert passed is not None and passed.verdict == "pass"
 
 
+def test_evaluate_success_checks_treats_wb_validate_is_valid_as_ok_alias():
+    passed = evaluate_success_checks(
+        [{"kind": "wb_validate", "field": "is_valid", "equals": True}],
+        [{"kind": "wb_validate", "ok": True, "violations": 0}],
+    )
+
+    assert passed is not None and passed.verdict == "pass"
+
+
 def test_evaluate_success_checks_supports_numeric_min_max():
     checks = [{"kind": "path_test", "field": "path_length", "min": 1500}]
 
