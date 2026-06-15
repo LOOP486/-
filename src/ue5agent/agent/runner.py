@@ -1134,7 +1134,8 @@ class TaskRunner:
                         tee,
                         new_fact_start=seeded_fact_count,
                     )
-                new_carry_facts = _carry_forward_facts(tee.facts[seeded_fact_count:])
+                attempt_facts = tee.facts[seeded_fact_count:]
+                new_carry_facts = _carry_forward_facts(attempt_facts)
 
                 # 验收优先级：硬证据门禁 → 步骤契约 success_checks（B1）
                 # → 通用确定性规则（A3）→ LLM judge
@@ -1151,7 +1152,7 @@ class TaskRunner:
                         if step.success_checks
                         else None
                     )
-                    decisive = deterministic_verdict(tee.facts)
+                    decisive = deterministic_verdict(attempt_facts)
                     if det is None and decisive is not None and decisive.verdict == "fail":
                         det = decisive
                         mode = "deterministic"

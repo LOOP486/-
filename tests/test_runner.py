@@ -1280,6 +1280,68 @@ async def test_contract_can_reuse_successful_fact_from_previous_step(tmp_path):
     assert len(tool_calls) == 1
 
 
+async def test_carried_fact_does_not_make_unrelated_step_deterministic_pass(tmp_path):
+    """跨步骤 facts 只服务声明式契约；无契约步骤不能被旧 wb_validate 误判通过。"""
+    registry = ToolRegistry(PermissionGate())
+
+    async def wb_validate() -> str:
+        return '校验PASS\n[facts] {"kind": "wb_validate", "ok": true, "violations": 0}'
+
+    async def navmesh_rebuild() -> str:
+        return '{"nav_data_ready": true}'
+
+    registry.register(
+        ToolSpec(
+            name="ue_whitebox__wb_validate",
+            description="",
+            parameters={"type": "object", "properties": {}},
+            level=PermissionLevel.READ,
+            handler=wb_validate,
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="ue_editor__navmesh_rebuild",
+            description="",
+            parameters={"type": "object", "properties": {}},
+            level=PermissionLevel.WRITE_PROJECT,
+            handler=navmesh_rebuild,
+        )
+    )
+    model = FakeModel(
+        [
+            plan_raw(
+                "standard",
+                [
+                    {
+                        "intent": "校验结构",
+                        "acceptance": "wb_validate 通过",
+                        "allowed_tools": ["ue_whitebox__wb_validate"],
+                        "success_checks": [{"kind": "wb_validate", "field": "ok", "equals": True}],
+                    },
+                    {
+                        "intent": "重建导航网格",
+                        "acceptance": "navmesh_rebuild 成功",
+                        "allowed_tools": ["ue_editor__navmesh_rebuild"],
+                    },
+                ],
+            ),
+            tool_turn("ue_whitebox__wb_validate", "{}"),
+            tool_turn("ue_editor__navmesh_rebuild", "{}"),
+            AssistantTurn(content="导航网格已重建"),
+            judge("pass"),
+        ]
+    )
+    writer = RunWriter(tmp_path, TaskSession.new("deterministic 作用域"))
+    runner = TaskRunner(model, registry, writer, max_step_attempts=1)
+
+    outcome = await runner.run("先校验白盒，再重建导航")
+
+    assert outcome.success
+    verifies = [e for e in read_events(writer.trace_path) if e["event"] == "verify_result"]
+    assert [e["mode"] for e in verifies] == ["contract", "judge"]
+
+
 async def test_contract_pass_stops_after_tool_without_summary_turn(tmp_path):
     """工具事实已经满足 step 契约时，runner 不再额外请求模型做收口总结。
 

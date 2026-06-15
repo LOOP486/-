@@ -401,6 +401,11 @@ Follow-up 10: 同一轮 trace 还显示自然语言 `wb_validate`/导航步骤�
 planner 后处理：对白盒 `wb_validate` 步补 `wb_validate.ok=true`，对 `path_test`/可达步骤补
 `path_test.reachable=true`，文本包含 `path_length >= N` 时补长度下限。
 
+Follow-up 11: 后续 `SPC1V` 受控复跑确认 planner 契约生效，s3 用 `path_test` 两项契约收口；
+同时发现无契约的 `navmesh_rebuild` 步骤虽然工具执行成功，但 verifier 用前序 carried
+`wb_validate` fact 给出 deterministic pass，判定依据错误。已修 runner：跨步骤 facts 仍可服务
+success_checks/required_evidence，但通用 deterministic verdict 只看本 attempt 新 facts。
+
 - [x] **Step 3: 更新文档**
 
 把复跑结论写入 `docs/roadmap.md` 的 B6/B7 条目，并在 `CHANGELOG.md` 的 `[未发布]` 记录行为变化。
@@ -426,6 +431,7 @@ planner 后处理：对白盒 `wb_validate` 步补 `wb_validate.ok=true`，对 `
 后续 LLM history；跨步骤成功 facts 也会被后续契约验收复用，避免重复校验步制造无效重试；视觉审查
 现在只消费本次 attempt 新截图，导航等非视觉步骤不会再被旧截图随机 high 拖回；cached contract pass
 也已限定为非视觉纯验证步骤，不能绕过截图/视觉 high；planner 会为自然语言验证/导航步骤补
-success checks，让 runner 用客观 facts 收口。下一步应优先继续提升 agent 自主布局稳定性，而不是靠反复收窄
+success checks，让 runner 用客观 facts 收口；通用 deterministic verdict 已收窄到本 attempt 新 facts，
+避免 carried facts 误放行无契约步骤。下一步应优先继续提升 agent 自主布局稳定性，而不是靠反复收窄
 或反复运行测试题面。
 视觉档作为后续验证项保留。
