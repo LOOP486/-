@@ -37,6 +37,9 @@ _LAP_TOLERANCE = 25.0
 """穿插判定阈值（uu）：同房间相邻墙在角部有约一个墙厚（20uu）的正常搭接，
 重叠区三轴最小边长超过此值才算真穿插。"""
 
+_PARALLEL_WALL_CENTER_TOL = 45.0
+"""并列墙判定阈值（uu）：共享墙重复常表现为两片薄墙中心距约 20uu。"""
+
 _ROUTE_CORRIDOR_HALF_WIDTH = 45.0
 """主路线保留走廊半宽（uu）：自动掩体/柱子不应占用这条通路。"""
 
@@ -90,6 +93,7 @@ def validate_layout(
     _check_visual_alignment(expected, report)
     _check_structural_coverage(expected, actors, prefix, manifest.grid, report)
     _check_overlaps(expected, actors, prefix, report)
+    _check_parallel_duplicate_walls(actors, prefix, report)
     _check_route_blockers(expected, actors, prefix, report)
     _check_foreign_residue(expected, actors, prefix, report)
     _fill_metrics(spec, expected, actors, prefix, manifest.grid, report, level_metrics)
@@ -214,6 +218,54 @@ def _check_overlaps(
                 report.violations.append(
                     f"构件穿插：{name_a} 与 {name_b} 重叠区域 {dims}uu（超过搭接容差）"
                 )
+
+
+def _check_parallel_duplicate_walls(
+    actors: list[ActorView], prefix: str, report: ValidationReport
+) -> None:
+    """实际场景里近距离同向薄墙不能并列；这是共享墙重复/错轴的强信号。"""
+    wall_runs: list[tuple[str, int, float, tuple[float, float], tuple[float, float]]] = []
+    for actor in actors:
+        if strip_batch_name(actor.name, prefix) is None:
+            continue
+        box = _aabb(actor)
+        size = (
+            box[0][1] - box[0][0],
+            box[1][1] - box[1][0],
+            box[2][1] - box[2][0],
+        )
+        if not _looks_like_wall_box(size):
+            continue
+        thin_axis = 0 if size[0] <= size[1] else 1
+        long_axis = 1 - thin_axis
+        center = (box[thin_axis][0] + box[thin_axis][1]) / 2
+        wall_runs.append((actor.name, thin_axis, center, box[long_axis], box[2]))
+
+    duplicate_count = 0
+    for index, left in enumerate(wall_runs):
+        for right in wall_runs[index + 1 :]:
+            if left[1] != right[1]:
+                continue
+            center_gap = abs(left[2] - right[2])
+            if center_gap > _PARALLEL_WALL_CENTER_TOL:
+                continue
+            long_overlap = min(left[3][1], right[3][1]) - max(left[3][0], right[3][0])
+            z_overlap = min(left[4][1], right[4][1]) - max(left[4][0], right[4][0])
+            if long_overlap <= _LAP_TOLERANCE or z_overlap <= _LAP_TOLERANCE:
+                continue
+            duplicate_count += 1
+            report.violations.append(
+                f"并列墙：{left[0]} 与 {right[0]} 中心距 {center_gap:.0f}uu、"
+                f"重叠长度 {long_overlap:.0f}uu"
+            )
+    report.metrics["parallel_wall_duplicate_count"] = duplicate_count
+
+
+def _looks_like_wall_box(size: tuple[float, float, float]) -> bool:
+    x, y, z = size
+    if z < 100.0:
+        return False
+    return min(x, y) <= 50.0 and max(x, y) >= 50.0
 
 
 def _check_visual_alignment(expected: list[Placement], report: ValidationReport) -> None:

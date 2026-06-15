@@ -73,10 +73,20 @@
   结构，米制尺寸由 metrics 表收敛。`wb_validate` 输出 `scale_warnings`、最小房间面积/尺寸、
   最小门洞宽、墙高等诊断；第一版只 warning，不作为硬失败。
 - [x] B6. 空间黑盒 agent eval：新增 `evals/tasks/ue_space.yaml`，用默认 slab、真实尺度、固定
-  `SPC1/SPC2/SPC3` 前缀与并排 origin 评测 agent 自主空间布局能力；评测只旁观 trace，不手写
+  `SPC1/SPC2/SPC3` 与 `DST1/DST2/DST3` 前缀，以 2x3 测试区并排 origin 评测 agent 自主空间布局能力；
+  评测只旁观 trace，不手写
   layout、不手动补救 UE 场景，要求 `wb_build -> wb_validate -> navmesh_rebuild -> path_test`。
   本轮暴露并修复共享墙重叠/轴线不齐、内部共享墙门窗误用、模型超时快速失败与可恢复工具错误
-  判定问题。后续需把 `path_test` 的指定起终点语义收紧，并把楼梯间阻断主通路提升为硬约束。
+  判定问题。2026-06-14 追加：结构层 DSL 拒绝半格门窗/构件坐标，避免静默截断；`wb_validate`
+  能检出近距离同向并列墙，SPC/DST eval 也会硬检查并列墙计数为 0；`wb_build` 会输出
+  `<prefix>/<batch>` Outliner 根文件夹，eval 硬检查 `folder_root` 证据，防止 UE 崩溃/回档后误报。
+  SPC/DST 题面冻结为 `prompt_id=spc-dst-space-v1`，并固定
+  `deepseek/deepseek-v4-pro` + Kimi 轻量视觉模型；planner 会把 `path_test.success` 别名归一化为
+  `reachable`，并清理未请求视觉时幻觉出的截图/视觉硬门禁。后续需把楼梯间阻断主通路提升为硬约束。
+- [ ] B7. SPC/DST 第二轮复盘优化：问题列表与执行计划见
+  [2026-06-15-whitebox-eval-optimization.md](superpowers/plans/2026-06-15-whitebox-eval-optimization.md)。
+  优先修墙体端点半墙厚补偿、楼梯间开口/护墙小夹缝、coder LLM 超时分类与重试；随后优化
+  `viewport_screenshot` clean view、视觉 high-only gate 和视觉失败重试的 history 压缩。
 - [ ] C. 平面图输入：从手绘/平面图/草图识别房间、门窗与连通关系，生成布局 DSL；透视图仅作风格/
   语义参考。（剩余的"图→布局 DSL 结构化识别"尚未做。）
 

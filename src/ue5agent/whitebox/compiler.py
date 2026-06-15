@@ -164,20 +164,32 @@ def layout_from_dict(data: dict) -> LayoutSpec:
             raise LayoutError(f"scale_profile 只支持 {profiles}，收到：{scale_profile}")
         rooms = []
         for raw in data["rooms"]:
-            rect = tuple(int(v) for v in raw["rect"])
+            room_name = str(raw["name"])
+            rect = tuple(
+                _grid_int(v, f"房间 {room_name} 的 rect[{index}]")
+                for index, v in enumerate(raw["rect"])
+            )
             if len(rect) != 4:
                 raise LayoutError(f"房间 {raw.get('name')} 的 rect 必须是 [x, y, 宽, 深]")
             rooms.append(
                 Room(
-                    name=str(raw["name"]),
+                    name=room_name,
                     rect=rect,
                     level=int(raw.get("level", 0)),
                     doors=[
-                        Door(wall=str(d["wall"]), at=int(d["at"]), width=int(d.get("width", 1)))
+                        Door(
+                            wall=str(d["wall"]),
+                            at=_grid_int(d["at"], f"房间 {room_name} 的门 at"),
+                            width=_grid_int(d.get("width", 1), f"房间 {room_name} 的门 width"),
+                        )
                         for d in raw.get("doors", [])
                     ],
                     windows=[
-                        Door(wall=str(w["wall"]), at=int(w["at"]), width=int(w.get("width", 1)))
+                        Door(
+                            wall=str(w["wall"]),
+                            at=_grid_int(w["at"], f"房间 {room_name} 的窗 at"),
+                            width=_grid_int(w.get("width", 1), f"房间 {room_name} 的窗 width"),
+                        )
                         for w in raw.get("windows", [])
                     ],
                     props=[
@@ -186,7 +198,7 @@ def layout_from_dict(data: dict) -> LayoutSpec:
                             category=(
                                 str(p["category"]) if p.get("category") is not None else None
                             ),
-                            at=_xy_int(p["at"]),
+                            at=_xy_int(p["at"], f"房间 {room_name} 的道具 at"),
                             rotation=float(p.get("rotation", 0)),
                             optional=bool(p.get("optional", False)),
                         )
@@ -228,7 +240,7 @@ def layout_from_dict(data: dict) -> LayoutSpec:
             stairs=[
                 StairSpec(
                     room=str(s["room"]),
-                    at=_xy_int(s["at"]),
+                    at=_xy_int(s["at"], f"楼梯 {s.get('room')} 的 at"),
                     from_level=int(s["from_level"]),
                     to_level=int(s["to_level"]),
                     facing=str(s["facing"]),
@@ -242,10 +254,42 @@ def layout_from_dict(data: dict) -> LayoutSpec:
         raise LayoutError(f"布局 JSON 结构不合法：{exc}") from exc
 
 
-def _xy_int(raw: object) -> tuple[int, int]:
+def _xy_int(raw: object, label: str = "坐标") -> tuple[int, int]:
     if not isinstance(raw, (list, tuple)) or len(raw) != 2:
-        raise LayoutError("坐标必须是 [x, y]")
-    return (int(raw[0]), int(raw[1]))
+        raise LayoutError(f"{label} 必须是 [x, y]")
+    return (_grid_int(raw[0], f"{label}[0]"), _grid_int(raw[1], f"{label}[1]"))
+
+
+def _grid_int(raw: object, label: str) -> int:
+    """结构 DSL 的格坐标必须是整数，避免 1.5 被 int() 静默截断成错位墙。"""
+    if isinstance(raw, bool):
+        raise LayoutError(f"{label} 必须是整数格，收到：{raw!r}")
+    if isinstance(raw, int):
+        return raw
+    if isinstance(raw, float):
+        if raw.is_integer():
+            return int(raw)
+        raise LayoutError(f"{label} 必须是整数格，收到：{raw!r}")
+    if isinstance(raw, str):
+        stripped = raw.strip()
+        try:
+            value = int(stripped)
+        except ValueError as exc:
+            raise LayoutError(f"{label} 必须是整数格，收到：{raw!r}") from exc
+        if stripped != str(value):
+            raise LayoutError(f"{label} 必须是整数格，收到：{raw!r}")
+        return value
+    raise LayoutError(f"{label} 必须是整数格，收到：{raw!r}")
+
+
+def _require_grid_int(raw: object, label: str) -> None:
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        raise LayoutError(f"{label} 必须是整数格，收到：{raw!r}")
+
+
+def _require_xy_grid_int(raw: tuple[int, int], label: str) -> None:
+    _require_grid_int(raw[0], f"{label}[0]")
+    _require_grid_int(raw[1], f"{label}[1]")
 
 
 def compile_layout(spec: LayoutSpec, manifest: Manifest) -> list[Placement]:
@@ -1870,12 +1914,16 @@ def _validate(spec: LayoutSpec, manifest: Manifest) -> None:
                 f"默认 slab 模式只支持 room.level=0；房间 {room.name} 的 level={room.level}。"
                 '如需旧多层 room，请显式设置 structure_mode="modular"'
             )
+        for index, value in enumerate(room.rect):
+            _require_grid_int(value, f"房间 {room.name} 的 rect[{index}]")
         _x, _y, w, d = room.rect
         if w < 2 or d < 2:
             raise LayoutError(f"房间 {room.name} 太小（{w}x{d}），至少 2x2 格")
         openings_by_wall: dict[str, list[tuple[int, int, str]]] = {wall: [] for wall in WALLS}
         for label, openings in (("门", room.doors), ("窗", room.windows)):
             for opening in openings:
+                _require_grid_int(opening.at, f"房间 {room.name} 的{label} at")
+                _require_grid_int(opening.width, f"房间 {room.name} 的{label} width")
                 if opening.wall not in WALLS:
                     raise LayoutError(f"房间 {room.name} 的{label}朝向非法：{opening.wall}")
                 length = w if opening.wall in ("north", "south") else d
@@ -1908,6 +1956,7 @@ def _validate(spec: LayoutSpec, manifest: Manifest) -> None:
 
 def _validate_stairs(spec: LayoutSpec, manifest: Manifest) -> None:
     for stair in spec.stairs:
+        _require_xy_grid_int(stair.at, f"楼梯 {stair.room} 的 at")
         room = _room_by_name(spec, stair.room)
         if abs(stair.to_level - stair.from_level) != 1:
             raise LayoutError("楼梯只允许连接相邻楼层")
@@ -2003,6 +2052,7 @@ def _validate_props(spec: LayoutSpec, manifest: Manifest) -> None:
     prop_cells: set[tuple[int, int, int]] = set()
     for room in spec.rooms:
         for prop in room.props:
+            _require_xy_grid_int(prop.at, f"房间 {room.name} 的道具 at")
             try:
                 asset = _prop_asset(manifest, prop)
                 rotation = (0.0, prop.rotation, 0.0)

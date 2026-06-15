@@ -1,0 +1,183 @@
+{
+  "suite": "ue",
+  "model": "deepseek/deepseek-v4-pro",
+  "role": "planner",
+  "timestamp": "2026-06-15 00:10:49",
+  "pass_rate": 0.0,
+  "first_try_pass_rate": 0.0,
+  "avg_iterations": 3.0,
+  "total_human_intervention": 0,
+  "results": [
+    {
+      "name": "slab_branching_training_space_visual",
+      "passed": false,
+      "failures": [
+        "任务应成功收口，实际失败：验收未通过",
+        "trace 应调用工具 navmesh_rebuild 至少 1 次，实际 0 次",
+        "trace 应调用工具 path_test 至少 1 次，实际 0 次",
+        "facts vision_review.ok=False，期望 True",
+        "facts vision_review.high_count=1.0，应 <= 0.0",
+        "facts vision_review.issue_count=3.0，应 <= 0.0",
+        "trace 中没有任何 path_test fact 同时满足 [{'path': 'reachable', 'equals': True}, {'path': 'path_length', 'gte': 1500}]"
+      ],
+      "success": false,
+      "iteration_count": 2,
+      "max_step_attempts": 2,
+      "human_intervention": 0,
+      "trace_path": "runs\\20260614-234313_slab_branching_training_\\trace.jsonl",
+      "tool_calls": [
+        "ue_whitebox__wb_clear",
+        "ue_whitebox__wb_build",
+        "ue_whitebox__wb_validate",
+        "ue_editor__viewport_screenshot"
+      ],
+      "tool_errors": []
+    },
+    {
+      "name": "slab_loop_gallery_space_visual",
+      "passed": false,
+      "failures": [
+        "任务应成功收口，实际失败：验收未通过",
+        "trace 应调用工具 wb_build 至少 1 次，实际 0 次",
+        "trace 缺少 facts kind=wb_build",
+        "trace 应调用工具 wb_validate 至少 1 次，实际 0 次",
+        "trace 应调用工具 viewport_screenshot 至少 1 次，实际 0 次",
+        "trace 应调用工具 navmesh_rebuild 至少 1 次，实际 0 次",
+        "trace 应调用工具 path_test 至少 1 次，实际 0 次",
+        "trace 缺少 facts kind=wb_validate",
+        "trace 缺少 facts kind=wb_validate",
+        "trace 缺少 facts kind=wb_validate",
+        "trace 缺少 facts kind=wb_validate",
+        "trace 缺少 facts kind=wb_validate",
+        "trace 缺少 facts kind=wb_validate",
+        "trace 缺少 facts kind=wb_validate",
+        "trace 缺少 facts kind=wb_validate",
+        "trace 缺少 facts kind=screenshot",
+        "trace 缺少 facts kind=screenshot",
+        "trace 缺少 facts kind=screenshot",
+        "trace 缺少 facts kind=vision_review",
+        "trace 缺少 facts kind=vision_review",
+        "trace 缺少 facts kind=vision_review",
+        "trace 缺少 facts kind=vision_review",
+        "trace 中没有任何 path_test fact 同时满足 [{'path': 'reachable', 'equals': True}, {'path': 'path_length', 'gte': 400}]"
+      ],
+      "success": false,
+      "iteration_count": 1,
+      "max_step_attempts": 1,
+      "human_intervention": 0,
+      "trace_path": "runs\\20260614-234852_slab_loop_gallery_space_\\trace.jsonl",
+      "tool_calls": [],
+      "tool_errors": []
+    },
+    {
+      "name": "slab_single_level_stairwell_space_visual",
+      "passed": false,
+      "failures": [
+        "facts vision_review.issue_count=3.0，应 <= 0.0"
+      ],
+      "success": true,
+      "iteration_count": 2,
+      "max_step_attempts": 1,
+      "human_intervention": 0,
+      "trace_path": "runs\\20260614-235117_slab_single_level_stairw\\trace.jsonl",
+      "tool_calls": [
+        "ue_whitebox__wb_build",
+        "ue_whitebox__wb_build",
+        "ue_whitebox__wb_validate",
+        "ue_editor__viewport_screenshot",
+        "ue_whitebox__wb_clear",
+        "ue_whitebox__wb_build",
+        "ue_whitebox__wb_build",
+        "ue_whitebox__wb_validate",
+        "ue_whitebox__wb_clear",
+        "ue_whitebox__wb_build",
+        "ue_whitebox__wb_build",
+        "ue_whitebox__wb_validate",
+        "ue_editor__viewport_screenshot",
+        "ue_editor__navmesh_rebuild",
+        "ue_editor__path_test"
+      ],
+      "tool_errors": [
+        "ue_whitebox__wb_build: [error] 布局校验未通过：房间 hall 的楼梯 stair_2_001 穿墙",
+        "ue_whitebox__wb_build: [error] 布局校验未通过：房间 hall 的楼梯 stair_2_001 穿墙",
+        "ue_whitebox__wb_build: [error] 布局校验未通过：房间 hall 的楼梯井越界"
+      ]
+    },
+    {
+      "name": "slab_arena_space_visual",
+      "passed": false,
+      "failures": [
+        "facts vision_review.issue_count=2.0，应 <= 0.0"
+      ],
+      "success": true,
+      "iteration_count": 6,
+      "max_step_attempts": 2,
+      "human_intervention": 0,
+      "trace_path": "runs\\20260614-235611_slab_arena_space_visual\\trace.jsonl",
+      "tool_calls": [
+        "ue_whitebox__wb_build",
+        "ue_whitebox__wb_validate",
+        "ue_editor__viewport_screenshot",
+        "ue_whitebox__wb_build",
+        "ue_whitebox__wb_validate",
+        "ue_editor__viewport_screenshot",
+        "ue_whitebox__wb_validate",
+        "ue_editor__viewport_screenshot",
+        "ue_editor__viewport_screenshot",
+        "ue_whitebox__wb_build",
+        "ue_whitebox__wb_validate",
+        "ue_editor__viewport_screenshot",
+        "ue_editor__navmesh_rebuild",
+        "ue_editor__path_test"
+      ],
+      "tool_errors": []
+    },
+    {
+      "name": "slab_crossfire_space_visual",
+      "passed": false,
+      "failures": [
+        "facts vision_review.issue_count=1.0，应 <= 0.0"
+      ],
+      "success": true,
+      "iteration_count": 5,
+      "max_step_attempts": 3,
+      "human_intervention": 0,
+      "trace_path": "runs\\20260615-000210_slab_crossfire_space_vis\\trace.jsonl",
+      "tool_calls": [
+        "ue_whitebox__wb_build",
+        "ue_whitebox__wb_validate",
+        "ue_editor__viewport_screenshot",
+        "ue_whitebox__wb_build",
+        "ue_whitebox__wb_validate",
+        "ue_editor__viewport_screenshot",
+        "ue_whitebox__wb_build",
+        "ue_whitebox__wb_validate",
+        "ue_editor__viewport_screenshot",
+        "ue_editor__navmesh_rebuild",
+        "ue_editor__path_test"
+      ],
+      "tool_errors": []
+    },
+    {
+      "name": "slab_ring_space_visual",
+      "passed": false,
+      "failures": [
+        "facts vision_review.issue_count=3.0，应 <= 0.0"
+      ],
+      "success": true,
+      "iteration_count": 2,
+      "max_step_attempts": 1,
+      "human_intervention": 0,
+      "trace_path": "runs\\20260615-000858_slab_ring_space_visual\\trace.jsonl",
+      "tool_calls": [
+        "ue_whitebox__wb_build",
+        "ue_whitebox__wb_validate",
+        "ue_editor__viewport_screenshot",
+        "ue_editor__navmesh_rebuild",
+        "ue_editor__path_test",
+        "ue_editor__path_test"
+      ],
+      "tool_errors": []
+    }
+  ]
+}

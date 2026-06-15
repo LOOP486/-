@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import re
 import time
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -132,6 +134,9 @@ class AgentLoop:
             for call in assistant.tool_calls:
                 started = time.monotonic()
                 facts: dict[str, Any] | None = None
+                layout_artifact = _save_whitebox_layout_artifact(
+                    self._log, tool_call_count + 1, call.name, call.arguments
+                )
                 try:
                     outcome = await self._registry.run(call.name, call.arguments)
                     tool_result: str = outcome.text
@@ -144,7 +149,9 @@ class AgentLoop:
                 tool_duration_ms = round((time.monotonic() - started) * 1000)
                 tool_call_count += 1
                 if self._log:
-                    extra = {"facts": facts} if facts else {}
+                    extra: dict[str, Any] = {"facts": facts} if facts else {}
+                    if layout_artifact:
+                        extra["layout_artifact"] = layout_artifact
                     self._log.write(
                         "tool_call",
                         tool=call.name,
@@ -166,6 +173,66 @@ class AgentLoop:
                     }
                 )
         raise BudgetExhausted(f"迭代 {self._max_iterations} 轮仍未产出最终答复")
+
+
+def _save_whitebox_layout_artifact(
+    log: TraceSink | None,
+    sequence: int,
+    tool_name: str,
+    arguments: str,
+) -> str | None:
+    """把白盒 DSL 从工具参数中完整落盘；trace 仍只保留短预览。"""
+    if log is None or not _is_whitebox_layout_tool(tool_name):
+        return None
+    save_artifact = getattr(log, "save_artifact", None)
+    if not callable(save_artifact):
+        return None
+    try:
+        parsed_args = json.loads(arguments)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(parsed_args, dict):
+        return None
+    layout_raw = parsed_args.get("layout_json")
+    if not isinstance(layout_raw, str) or not layout_raw.strip():
+        return None
+    prefix = str(parsed_args.get("prefix") or "")
+    try:
+        layout = json.loads(layout_raw)
+    except json.JSONDecodeError:
+        content = layout_raw
+        suffix = "txt"
+        layout_name = ""
+    else:
+        content = json.dumps(layout, ensure_ascii=False, indent=2) + "\n"
+        suffix = "json"
+        layout_name = str(layout.get("name") or "") if isinstance(layout, dict) else ""
+
+    label_parts = [f"{sequence:03d}", _safe_filename(tool_name)]
+    if prefix:
+        label_parts.append(_safe_filename(prefix))
+    if layout_name:
+        label_parts.append(_safe_filename(layout_name))
+    artifact = save_artifact(
+        "whitebox_layout",
+        f"layouts/{'_'.join(label_parts)}.{suffix}",
+        content,
+        tool=tool_name,
+        prefix=prefix,
+        layout_name=layout_name,
+    )
+    return getattr(artifact, "path", None)
+
+
+def _is_whitebox_layout_tool(tool_name: str) -> bool:
+    return any(
+        tool_name == name or tool_name.endswith(f"__{name}") for name in ("wb_build", "wb_validate")
+    )
+
+
+def _safe_filename(value: str) -> str:
+    text = re.sub(r"[^0-9A-Za-z_.-]+", "_", value.strip())
+    return text.strip("._") or "layout"
 
 
 def _assistant_message(turn: AssistantTurn) -> dict[str, Any]:

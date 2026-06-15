@@ -86,6 +86,7 @@ class RunWriter:
 
     def save_artifact(self, kind: str, name: str, content: str | bytes, **meta: Any) -> Artifact:
         path = self.artifacts_dir / name
+        path.parent.mkdir(parents=True, exist_ok=True)
         if isinstance(content, bytes):
             path.write_bytes(content)
         else:

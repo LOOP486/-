@@ -340,13 +340,15 @@ class TaskRunner:
                 error=f"{type(exc).__name__}: {exc}",
             )
             return None
-        tee.facts.append(result.to_facts())
+        facts = result.to_facts()
+        tee.facts.append(facts)
         self._writer.event(
             "vision_review",
             step_id=step.id,
             passed=result.passed,
             high_count=len(result.high_severity),
             summary=result.summary(),
+            facts=facts,
         )
         return result
 

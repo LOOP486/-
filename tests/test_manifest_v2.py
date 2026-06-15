@@ -117,7 +117,7 @@ class TestCubeEquivalence:
     def test_wall_unchanged(self):
         spec = LayoutSpec(name="t", rooms=[Room(name="a", rect=(0, 0, 4, 3))])
         south = by_name(compile_layout(spec, V1), "a_south_0")
-        assert south.location == (200.0, 10.0, 150.0)  # 中心放置：x心200/y心10/高心150
+        assert south.location == (200.0, 0.0, 150.0)  # slab 中心线：x心200/y边界0/高心150
         assert south.scale == (4.0, 0.2, 3.0)
 
 

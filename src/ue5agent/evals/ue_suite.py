@@ -28,6 +28,14 @@ class UeEvalTask(BaseModel):
     prompt: str
     checks: list[dict[str, Any]] = Field(min_length=1)
     max_iterations: int = 40
+    prompt_id: str | None = None
+    """标准评测的提示词版本；用于固定 SPC/DST 初始题面。"""
+    prompt_locked: bool = False
+    """为 True 表示该任务已作为标准题面冻结，后续只追加新版本不原地改写。"""
+    planner_model: str | None = None
+    """该任务固定使用的文本规划模型；为空则沿用 CLI/config。"""
+    vision_model: str | None = None
+    """该任务固定使用的视觉角色模型；为空则沿用 CLI/config。"""
 
 
 @dataclass
@@ -162,12 +170,16 @@ def evaluate_ue_check(check: dict[str, Any], record: UeRunRecord) -> str | None:
         if count == 0:
             return None
         return f"trace 不应调用工具 {tool}，实际 {count} 次"
-    if kind in {"fact_equals", "fact_lte", "fact_gte"}:
+    if kind in {"fact_equals", "fact_lte", "fact_gte", "fact_nonempty"}:
         fact = _latest_fact(record.facts, str(check["kind"]))
         if fact is None:
             return f"trace 缺少 facts kind={check['kind']}"
         path = str(check.get("path", "ok"))
         actual = _field_path(fact, path)
+        if kind == "fact_nonempty":
+            if actual:
+                return None
+            return f"facts {check['kind']}.{path} 为空或缺失"
         if kind == "fact_equals":
             expected = check.get("equals")
             if actual == expected:
@@ -209,14 +221,14 @@ def summarize_trace(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {"tool_calls": tool_calls, "facts": facts, "tool_errors": tool_errors}
     for event in read_events(path):
+        fact = event.get("facts")
+        if isinstance(fact, dict):
+            facts.append(fact)
         if event.get("event") != "tool_call":
             continue
         tool = str(event.get("tool", ""))
         if tool:
             tool_calls.append(tool)
-        fact = event.get("facts")
-        if isinstance(fact, dict):
-            facts.append(fact)
         preview = str(event.get("result_preview", ""))
         if preview.startswith(("[error]", "[denied]", "Error executing tool")):
             tool_errors.append(f"{tool}: {preview}")

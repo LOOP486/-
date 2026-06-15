@@ -472,7 +472,7 @@ async def test_planner_parses_contract_fields():
             )
         ]
     )
-    _, steps = await make_plan(model, "目标")
+    _, steps = await make_plan(model, "目标：截图视觉审查")
     step = steps[0]
     assert step.allowed_tools == ["wb_build", "wb_validate"]
     assert step.permission_ceiling == "write_safe"
@@ -507,6 +507,33 @@ async def test_planner_garbage_contract_falls_back_to_defaults():
     assert step.success_checks == []
     assert step.step_budget == {}
     assert step.rollback_policy == "none"
+
+
+async def test_planner_normalizes_path_test_success_alias():
+    """弱模型常把 path_test.reachable 写成 success；规划器应在契约层纠正。"""
+    model = FakeModel(
+        [
+            plan_raw(
+                "standard",
+                [
+                    {
+                        "intent": "搭建白盒空间并验证 path_test 可达",
+                        "acceptance": "导航可达",
+                        "allowed_tools": ["wb_build"],
+                        "success_checks": [
+                            {"kind": "path_test", "field": "success", "equals": True}
+                        ],
+                    }
+                ],
+            )
+        ]
+    )
+
+    _, steps = await make_plan(model, "搭建白盒空间，然后验证导航可达")
+
+    step = steps[0]
+    assert {"kind": "path_test", "field": "reachable", "equals": True} in step.success_checks
+    assert "path_test" in step.allowed_tools
 
 
 def test_plan_step_loads_old_session_without_contract_fields():
@@ -956,6 +983,11 @@ async def test_vision_high_issue_fails_then_regenerates_and_passes(tmp_path):
     events = read_events(writer.trace_path)
     vis = [e for e in events if e["event"] == "vision_review"]
     assert [e["passed"] for e in vis] == [False, True]
+    assert vis[0]["facts"]["kind"] == "vision_review"
+    assert vis[0]["facts"]["ok"] is False
+    assert vis[0]["facts"]["high_count"] == 1
+    assert vis[1]["facts"]["kind"] == "vision_review"
+    assert vis[1]["facts"]["ok"] is True
     verifies = [e for e in events if e["event"] == "verify_result"]
     assert verifies[0]["verdict"] == "fail" and verifies[0]["mode"] == "deterministic"
     assert verifies[1]["verdict"] == "pass"
@@ -1136,6 +1168,29 @@ async def test_planner_strips_unrequested_whitebox_visual_gate():
     build = steps[0]
     assert build.required_evidence == []
     assert "ue_editor__viewport_screenshot" not in build.allowed_tools
+
+
+async def test_planner_strips_unrequested_visual_evidence_without_screenshot_tool():
+    """即使 planner 只幻觉硬证据、没开放截图工具，也不能让白盒步骤卡死。"""
+    model = FakeModel(
+        [
+            plan_raw(
+                "standard",
+                [
+                    {
+                        "intent": "使用 wb_build 搭建白盒结构并运行 wb_validate",
+                        "acceptance": "wb_validate 返回 ok: true",
+                        "allowed_tools": ["ue_whitebox__wb_build", "ue_whitebox__wb_validate"],
+                        "required_evidence": ["screenshot", "vision_review"],
+                    }
+                ],
+            )
+        ]
+    )
+
+    _, steps = await make_plan(model, "搭建一个默认 slab 白盒空间，并用 wb_validate 校验")
+
+    assert steps[0].required_evidence == []
 
 
 async def test_planner_respects_explicit_no_viewport_screenshot():

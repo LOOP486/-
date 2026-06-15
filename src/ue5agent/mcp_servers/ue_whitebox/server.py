@@ -23,7 +23,12 @@ from ue5agent.whitebox.scanner import (
     emit_yaml,
     records_from_bounds_payload,
 )
-from ue5agent.whitebox.spawner import clear_layout, spawn_layout
+from ue5agent.whitebox.spawner import (
+    batch_from_actor_name,
+    clear_layout,
+    folder_root_from_actor_name,
+    spawn_layout,
+)
 from ue5agent.whitebox.validator import ActorView, validate_layout
 
 mcp = FastMCP("ue-whitebox")
@@ -46,6 +51,8 @@ def wb_build(layout_json: str, prefix: str = "WB") -> str:
     前缀纪律：普通重建保持默认 prefix="WB"；评测/并排比较可以显式使用稳定前缀
     （如 SPC1/SPC2）并在 layout_json 顶层设置非重叠 origin。一次测试内必须复用同一前缀，
     否则异前缀残留会叠在场景里堵门、断 navmesh（wb_validate 能检出但应避免发生）。
+    每次成功落地都会进入独立 Outliner 根文件夹 `<prefix>/<batch>`，`wb_build` facts 会回传
+    `folder_root`，评测必须把它作为新测试确已落地的证据。
 
     默认使用 config/whitebox/kit.yaml 作为资产库，但结构层默认走 slab 模式：Engine Cube 连续地板/
     连续片墙，门窗只切墙洞，不放门框/窗框模块；如需旧 ArchKit 模块化结构与多层 room，
@@ -66,6 +73,8 @@ def wb_build(layout_json: str, prefix: str = "WB") -> str:
      "gameplay": {}}
     规则：
     - 房间至少 2x2 格；
+    - 结构层坐标必须使用整数格：room.rect、doors/windows 的 at/width、props/stairs 的 at
+      都不接受 1.5 这类半格值；半格/任意线段留待后续 DSL 版本；
     - structure_mode 缺省为 slab；slab 只允许 room.level=0。旧多层 room 只能显式
       structure_mode="modular" 使用；
     - scale_profile 缺省为 realistic；视觉/LLM 负责空间结构，真实米制尺度由
@@ -88,6 +97,7 @@ def wb_build(layout_json: str, prefix: str = "WB") -> str:
     - 多房间必须连通——相邻房间在共享墙同一位置各开一个对齐的门
       （例：A 在 east 墙 at=2 开门，B 紧贴其东侧则在 west 墙的对应位置开门）；
     - windows 是显式外墙开窗，不参与房间连通性；
+    - wb_validate 会额外检查近距离同向并列墙，抓出共享墙重复/错轴导致的视觉双墙；
     - 相邻房间的共享边必须完全对齐：贴合的两个房间，其共享墙方向上的范围应一致，
       不要让一个房间在共享边上探出另一个房间之外（否则探出段下方无支撑，地板会悬空错位）。
       例：A=[0,0,8,8] 的东边在 x=8、跨 y[0,8]；若 B 贴其东侧，B 的 y 范围应落在 [0,8] 内
@@ -132,16 +142,23 @@ def wb_build(layout_json: str, prefix: str = "WB") -> str:
         ]
         for room in spec.rooms
     }
+    batch_id = batch_from_actor_name(names[0], prefix) if names else None
+    folder_root = folder_root_from_actor_name(names[0], prefix) if names else None
     facts = {
         "kind": "wb_build",
         "ok": True,
         "rooms": len(spec.rooms),
         "components": len(names),
+        "spawned_count": len(names),
         "prefix": prefix,
+        "batch_id": batch_id,
+        "folder_root": folder_root,
+        "outliner_folder_root": folder_root,
     }
     return (
         f"搭建完成：{len(spec.rooms)} 个房间，{len(names)} 个构件，"
         f"位于 origin={spec.origin}，前缀 {prefix}_{cleared_note}（wb_clear 可整批撤销）\n"
+        f"Outliner 根文件夹：{folder_root}\n"
         f"房间中心（世界坐标 uu，path_test/截图请直接使用）："
         f"{json.dumps(centers, ensure_ascii=False)}"
         f"\n[facts] {json.dumps(facts, ensure_ascii=False)}"

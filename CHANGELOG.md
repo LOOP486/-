@@ -15,13 +15,24 @@
 ### 新增（空间黑盒评测）
 
 - 新增 `evals/tasks/ue_space.yaml`：用真实 UE 工具评测 agent 自主设计默认 slab 空间的能力，
-  固定 `SPC1/SPC2/SPC3` 前缀与并排 origin，明确禁止 hand-written 布局补救、gameplay/props/
+  固定 `SPC1/SPC2/SPC3` 与 `DST1/DST2/DST3` 前缀，按 2x3 测试区并排 origin 落地，
+  明确禁止 hand-written 布局补救、gameplay/props/
   cover/spawn/routes 与 `viewport_screenshot`，只观察 `wb_build -> wb_validate ->
   navmesh_rebuild -> path_test` trace。
+- SPC/DST 空间评测冻结为标准回归集：任务声明 `prompt_id=spc-dst-space-v1`、
+  `prompt_locked=true`，并固定 `planner/coder/judge/explorer=deepseek/deepseek-v4-pro` 与
+  `vision=moonshot/moonshot-v1-8k-vision-preview`（Kimi 轻量视觉）。UE eval 会读取任务模型 pin
+  临时覆写角色路由；冲突的 `--model` 会直接报错，避免标准测试漂移。
+- `AgentLoop` 会把 `wb_build` / `wb_validate` 工具参数里的完整 `layout_json` 自动保存为
+  `artifacts/layouts/*.json`，并在 trace 的 `tool_call.layout_artifact` 标出路径，避免复杂空间 DSL
+  只留在 500 字符截断的 arguments 预览里。
 - UE eval 支持 `no_unrecovered_tool_errors` 检查：允许 agent 自行修复中途工具错误，但最终失败时仍
   把未恢复错误纳入报告；runner 对执行期模型不可用/超时会写入确定性失败并快速终止。
 - 工具说明补充空间 eval 约束：允许显式 `prefix`/`origin` 做并排对比，纯空间任务不要生成玩法件；
   stair 示例与 footprint 提示改为更贴近默认 slab 测试。
+- 新增 `docs/superpowers/plans/2026-06-15-whitebox-eval-optimization.md`：归档两轮 SPC/DST
+  白盒测试问题清单与优化策略，覆盖墙体端点厚度补偿、楼梯间开口/护墙、LLM 超时、截图取证、
+  视觉 high-only gate 与 eval 报告分类。
 
 ### 新增（升级版资产扫描：UE 真值重建 manifest）
 
@@ -64,9 +75,18 @@
 - `wb_validate` metrics 新增 `structure_mode` 与只读空间指标 `wall_fragmentation_score`；视觉审查
   清单改为关注主空间、开合、遮挡、转角、比例与无意义孤立墙，并明确不因缺少门框/窗框扣分。
 - 白盒落地时会按 `Placement.metadata["room"]` 写入 World Outliner 文件夹：房间构件进入
-  `<prefix>/Rooms/<room>`，方便手动整理与检查默认 slab 测试场景。
+  `<prefix>/<batch>/Rooms/<room>`，`wb_build` facts 回传 `batch_id` 与 `folder_root`；
+  空间 eval 会硬检查 `folder_root` 非空，避免 trace 通过但大纲里没有新测试文件夹。
 - 共享墙去重会把保留墙段合并到共享边中心轴线，避免相邻段落一段在左/下侧、一段在右/上侧；
   `windows` 现在只允许开在外墙，内部共享墙开窗会报可读 `LayoutError`。
+- 结构层 DSL 坐标收紧为整数格：`room.rect`、`doors/windows.at/width`、`props/stairs.at`
+  遇到 `1.5` 这类半格值会直接报错，避免静默 `int()` 截断造成 SPC/DST 类空间墙体错位。
+- `wb_validate` 新增近距离同向并列墙检测，能把共享墙重复/错轴导致的视觉双墙作为 violation 暴露。
+- SPC/DST 空间 eval 新增 `metrics.parallel_wall_duplicate_count <= 0` 硬检查，防止
+  真机评测遗漏共享墙双层/并列墙回归。
+- planner 会把弱模型产出的 `path_test.success` 契约别名归一化为 `path_test.reachable`，避免
+  导航事实已通过却被 runner 误判失败；用户未请求截图/视觉时，也会移除白盒步骤幻觉出的
+  `screenshot` / `vision_review` 硬证据门禁，即使 planner 没有同时开放 `viewport_screenshot`。
 
 ### 新增（白盒可靠性底座）
 

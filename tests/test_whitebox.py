@@ -23,6 +23,46 @@ def by_name(placements: list[Placement], name: str) -> Placement:
     return next(p for p in placements if p.name == name)
 
 
+def wall_centerline_runs(placements: list[Placement]) -> list[tuple[int, float, float, float, str]]:
+    runs = []
+    for placement in placements:
+        if (
+            placement.kind != "wall"
+            or placement.target_min is None
+            or placement.target_size is None
+        ):
+            continue
+        thin_axis = 0 if placement.target_size[0] <= placement.target_size[1] else 1
+        long_axis = 1 - thin_axis
+        center = placement.target_min[thin_axis] + placement.target_size[thin_axis] / 2
+        start = placement.target_min[long_axis]
+        end = start + placement.target_size[long_axis]
+        runs.append((thin_axis, round(center, 3), round(start, 3), round(end, 3), placement.name))
+    return runs
+
+
+def parallel_duplicate_wall_pairs(
+    placements: list[Placement],
+) -> list[
+    tuple[
+        tuple[int, float, float, float, str],
+        tuple[int, float, float, float, str],
+    ]
+]:
+    pairs = []
+    runs = wall_centerline_runs(placements)
+    for index, left in enumerate(runs):
+        for right in runs[index + 1 :]:
+            if left[0] != right[0]:
+                continue
+            if abs(left[1] - right[1]) > 40:
+                continue
+            if min(left[3], right[3]) - max(left[2], right[2]) <= 25:
+                continue
+            pairs.append((left, right))
+    return pairs
+
+
 class TestGeometry:
     def test_single_room_counts_and_floor(self):
         spec = LayoutSpec(name="t", rooms=[Room(name="a", rect=(0, 0, 4, 3))])
@@ -77,7 +117,10 @@ class TestGeometry:
         shared = [
             p
             for p in placements
-            if not p.name.endswith("_floor") and abs(p.location[0] - 400.0) <= 40.0
+            if p.kind == "wall"
+            and p.target_size
+            and p.target_size[0] <= p.target_size[1]
+            and abs(p.location[0] - 400.0) <= 40.0
         ]
         # 门洞把共享墙切成上下两段，去重后该边总段数应 <= 2（而非 a、b 各 2 = 4 段）
         assert len(shared) <= 2, f"共享墙未去重，仍有 {len(shared)} 段：{[p.name for p in shared]}"
@@ -122,6 +165,64 @@ class TestGeometry:
 
         assert internal_y_walls
         assert {round(p.location[1]) for p in internal_y_walls} == {400}
+
+    def test_spc_loop_gallery_style_layout_has_no_parallel_duplicate_walls(self):
+        spec = LayoutSpec(
+            name="spc-loop-integer",
+            rooms=[
+                Room(name="Entry", rect=(0, 0, 5, 5), doors=[Door("east", 1, 2)]),
+                Room(
+                    name="Hall",
+                    rect=(5, 0, 7, 5),
+                    doors=[Door("west", 1, 2), Door("east", 1, 2)],
+                ),
+                Room(
+                    name="Bend",
+                    rect=(12, 0, 5, 5),
+                    doors=[Door("west", 1, 2), Door("north", 1, 2), Door("east", 1, 2)],
+                ),
+                Room(
+                    name="NorthRoom",
+                    rect=(12, 5, 5, 6),
+                    doors=[Door("south", 1, 2), Door("east", 2, 2)],
+                ),
+                Room(
+                    name="LongRoom",
+                    rect=(17, 5, 7, 6),
+                    doors=[Door("west", 2, 2), Door("south", 2, 2)],
+                ),
+                Room(
+                    name="BackRoom",
+                    rect=(17, 0, 7, 5),
+                    doors=[Door("west", 1, 2), Door("north", 2, 2)],
+                ),
+            ],
+        )
+
+        assert parallel_duplicate_wall_pairs(compile_layout(spec, MANIFEST)) == []
+
+    def test_dst_arena_style_layout_has_no_parallel_duplicate_walls(self):
+        spec = LayoutSpec(
+            name="dst-arena-integer",
+            rooms=[
+                Room(name="SpawnA", rect=(0, 2, 5, 5), doors=[Door("east", 1, 2)]),
+                Room(
+                    name="Atrium",
+                    rect=(5, 0, 8, 9),
+                    doors=[
+                        Door("west", 3, 2),
+                        Door("east", 3, 2),
+                        Door("north", 2, 2),
+                        Door("south", 2, 2),
+                    ],
+                ),
+                Room(name="SpawnB", rect=(13, 2, 5, 5), doors=[Door("west", 1, 2)]),
+                Room(name="NorthLane", rect=(7, 9, 4, 5), doors=[Door("south", 0, 2)]),
+                Room(name="SouthLane", rect=(7, -5, 4, 5), doors=[Door("north", 0, 2)]),
+            ],
+        )
+
+        assert parallel_duplicate_wall_pairs(compile_layout(spec, MANIFEST)) == []
 
 
 class TestValidation:
@@ -176,7 +277,7 @@ class TestValidation:
                 Room(name="b", rect=(4, 0, 4, 4), doors=[Door(wall="west", at=3, width=1)]),
             ],
         )
-        with pytest.raises(LayoutError, match="不连通"):
+        with pytest.raises(LayoutError, match=r"内部共享墙.*两侧对齐"):
             compile_layout(spec, MANIFEST)
 
     def test_layout_from_dict_roundtrip(self):
@@ -221,6 +322,57 @@ class TestValidation:
                     "rooms": [{"name": "a", "rect": [0, 0, 4, 4]}],
                 }
             )
+
+    @pytest.mark.parametrize(
+        "bad_layout",
+        [
+            {"name": "bad-rect", "rooms": [{"name": "a", "rect": [0, 0, 4.5, 4]}]},
+            {
+                "name": "bad-door-at",
+                "rooms": [
+                    {"name": "a", "rect": [0, 0, 4, 4], "doors": [{"wall": "east", "at": 1.5}]}
+                ],
+            },
+            {
+                "name": "bad-window-width",
+                "rooms": [
+                    {
+                        "name": "a",
+                        "rect": [0, 0, 4, 4],
+                        "windows": [{"wall": "north", "at": 1, "width": 1.5}],
+                    }
+                ],
+            },
+            {
+                "name": "bad-prop-at",
+                "rooms": [
+                    {
+                        "name": "a",
+                        "rect": [0, 0, 4, 4],
+                        "props": [{"key": "crate", "at": [1.5, 2]}],
+                    }
+                ],
+            },
+            {
+                "name": "bad-stair-at",
+                "rooms": [{"name": "a", "rect": [0, 0, 8, 8]}],
+                "stairs": [
+                    {
+                        "room": "a",
+                        "at": [1.5, 1],
+                        "from_level": 0,
+                        "to_level": 1,
+                        "facing": "north",
+                    }
+                ],
+            },
+        ],
+    )
+    def test_layout_from_dict_rejects_fractional_structure_grid_values(self, bad_layout):
+        from ue5agent.whitebox.compiler import layout_from_dict
+
+        with pytest.raises(LayoutError, match="整数格"):
+            layout_from_dict(bad_layout)
 
     def test_door_out_of_range_rejected(self):
         spec = LayoutSpec(

@@ -217,6 +217,8 @@ def _strip_unrequested_whitebox_visual_gate(goal: str, steps: list[PlanStep]) ->
     visual_evidence = {"screenshot", "vision_review"}
     visual_tools = {"viewport_screenshot"}
     for step in steps:
+        if not (_looks_like_whitebox_build(step.intent) or _looks_like_whitebox_validation(step)):
+            continue
         step.required_evidence = [
             evidence for evidence in step.required_evidence if evidence not in visual_evidence
         ]
@@ -275,7 +277,9 @@ def _contract_fields(step: dict[str, Any]) -> dict[str, Any]:
         "allowed_tools": _str_list(step.get("allowed_tools")),
         "permission_ceiling": ceiling if ceiling in _CEILING_VALUES else "",
         "preconditions": _str_list(step.get("preconditions")),
-        "success_checks": [c for c in step.get("success_checks", []) if isinstance(c, dict)]
+        "success_checks": _normalize_success_checks(
+            [c for c in step.get("success_checks", []) if isinstance(c, dict)]
+        )
         if isinstance(step.get("success_checks"), list)
         else [],
         "required_evidence": _str_list(step.get("required_evidence")),
@@ -288,6 +292,19 @@ def _str_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
     return [item.strip() for item in value if isinstance(item, str) and item.strip()]
+
+
+def _normalize_success_checks(checks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """修正弱模型常见字段别名，避免工具 facts 已正确却被契约误判。"""
+    normalized: list[dict[str, Any]] = []
+    for check in checks:
+        item = dict(check)
+        kind = str(item.get("kind", "")).strip()
+        field = str(item.get("field", "")).strip()
+        if kind == "path_test" and field == "success":
+            item["field"] = "reachable"
+        normalized.append(item)
+    return normalized
 
 
 def _parse(text: str) -> tuple[str, list[dict[str, Any]]] | None:

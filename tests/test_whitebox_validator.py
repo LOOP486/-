@@ -114,6 +114,25 @@ def test_extra_component_detected():
     assert any("多余构件" in v and "Ghost_floor" in v for v in report.violations)
 
 
+def test_parallel_duplicate_wall_detected_even_when_expected_names_match():
+    spec, manifest = _spec_and_manifest()
+    actors = _perfect_actors(spec, manifest)
+    shared = next(a for a in actors if a.name.endswith("A_east_0"))
+    actors.append(
+        ActorView(
+            name="WB_abc123_DebugParallelWall",
+            location=(shared.location[0] + 20, shared.location[1], shared.location[2]),
+            scale=shared.scale,
+            rotation=shared.rotation,
+        )
+    )
+
+    report = validate_layout(spec, manifest, actors)
+
+    assert not report.ok
+    assert any("并列墙" in violation for violation in report.violations)
+
+
 def test_displaced_component_detected():
     spec, manifest = _spec_and_manifest()
     actors = _perfect_actors(spec, manifest)

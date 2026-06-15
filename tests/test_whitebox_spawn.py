@@ -176,11 +176,28 @@ def test_spawn_passes_room_folder_to_spawn_actor(monkeypatch):
         metadata={"room": "Room"},
     )
 
-    sp.spawn_layout([p], prefix="WB")
+    names = sp.spawn_layout([p], prefix="WB")
 
     spawn = next(params for command, params in calls if command == "spawn_actor")
-    assert spawn["folder_path"] == "WB/Rooms/Room"
-    assert spawn["folder"] == "WB/Rooms/Room"
+    batch = sp.batch_from_actor_name(names[0], "WB")
+    assert batch
+    assert spawn["folder_path"] == f"WB/{batch}/Rooms/Room"
+    assert spawn["folder"] == f"WB/{batch}/Rooms/Room"
+
+
+def test_wb_build_facts_include_outliner_folder_root(monkeypatch):
+    """wb_build 必须回传本批 Outliner 根文件夹，供 eval 判定新测试确实落地。"""
+    calls, _present = _record_bridge(monkeypatch)
+
+    out = wb_server.wb_build(_LAYOUT, prefix="SPC1")
+
+    assert "Outliner 根文件夹：SPC1/" in out
+    facts = json.loads(out.split("[facts] ", 1)[1])
+    assert facts["prefix"] == "SPC1"
+    assert facts["batch_id"]
+    assert facts["folder_root"] == f"SPC1/{facts['batch_id']}"
+    spawn = next(params for command, params in calls if command == "spawn_actor")
+    assert spawn["folder_path"].startswith(f"{facts['folder_root']}/")
 
 
 def test_spawn_static_mesh_uses_prototype_grid_material(monkeypatch):

@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import pytest
+
 from tests.test_loop import FakeModel
 from ue5agent.core.loop import LoopResult
 from ue5agent.evals.checks import TaskOutcome, evaluate_check
@@ -160,6 +162,83 @@ class TestUeSuite:
         assert client._max_retries == 1
         assert client._request_timeout == 120.0
 
+    def test_ue_eval_builds_vision_reviewer_when_vision_role_exists(self):
+        from ue5agent.cli import _build_vision_reviewer
+
+        class DummyLlm:
+            has_vision = True
+
+        assert callable(_build_vision_reviewer(DummyLlm()))
+
+    def test_ue_eval_skips_vision_reviewer_without_vision_role(self):
+        from ue5agent.cli import _build_vision_reviewer
+
+        class DummyLlm:
+            has_vision = False
+
+        assert _build_vision_reviewer(DummyLlm()) is None
+
+    def test_ue_space_task_model_pins_override_eval_roles(self):
+        from ue5agent.cli import _apply_ue_task_model_pins
+        from ue5agent.config import ModelsConfig
+        from ue5agent.evals.ue_suite import UeEvalTask
+
+        config = ModelsConfig.model_validate(
+            {
+                "providers": {
+                    "deepseek": {"api_key_env": "DEEPSEEK_API_KEY"},
+                    "moonshot": {
+                        "base_url": "https://api.moonshot.cn/v1",
+                        "api_key_env": "MOONSHOT_API_KEY",
+                    },
+                },
+                "roles": {
+                    "planner": "deepseek/deepseek-chat",
+                    "coder": "deepseek/deepseek-chat",
+                    "vision": "moonshot/kimi-k2.6",
+                },
+            }
+        )
+        task = UeEvalTask(
+            name="standard_space",
+            prompt="x",
+            checks=[{"type": "run_succeeded"}],
+            planner_model="deepseek/deepseek-v4-pro",
+            vision_model="moonshot/moonshot-v1-8k-vision-preview",
+        )
+
+        pinned = _apply_ue_task_model_pins(config, [task], role="planner", model_override=None)
+
+        for role in ("planner", "coder", "judge", "explorer"):
+            assert pinned.roles[role] == "deepseek/deepseek-v4-pro"
+        assert pinned.roles["vision"] == "moonshot/moonshot-v1-8k-vision-preview"
+
+    def test_ue_space_task_model_pin_rejects_conflicting_cli_override(self):
+        from ue5agent.cli import _apply_ue_task_model_pins
+        from ue5agent.config import ModelsConfig
+        from ue5agent.evals.ue_suite import UeEvalTask
+
+        config = ModelsConfig.model_validate(
+            {
+                "providers": {"deepseek": {"api_key_env": "DEEPSEEK_API_KEY"}},
+                "roles": {"planner": "deepseek/deepseek-chat"},
+            }
+        )
+        task = UeEvalTask(
+            name="standard_space",
+            prompt="x",
+            checks=[{"type": "run_succeeded"}],
+            planner_model="deepseek/deepseek-v4-pro",
+        )
+
+        with pytest.raises(ValueError, match="固定模型"):
+            _apply_ue_task_model_pins(
+                config,
+                [task],
+                role="planner",
+                model_override="deepseek/deepseek-chat",
+            )
+
     def test_ue_yaml_loads(self):
         from ue5agent.evals.ue_suite import load_ue_tasks
 
@@ -171,27 +250,40 @@ class TestUeSuite:
         from ue5agent.evals.ue_suite import load_ue_tasks
 
         tasks = load_ue_tasks(UE_SPACE_TASKS)
-        assert len(tasks) == 3
+        assert len(tasks) == 6
         assert all("wb_build" in task.prompt for task in tasks)
+        assert all(task.prompt_id == "spc-dst-space-v1" for task in tasks)
+        assert all(task.prompt_locked is True for task in tasks)
+        assert all(task.planner_model == "deepseek/deepseek-v4-pro" for task in tasks)
+        assert all(task.vision_model == "moonshot/moonshot-v1-8k-vision-preview" for task in tasks)
         assert all(
             any(check.get("type") == "fact_equals" for check in task.checks) for task in tasks
         )
         expected_prefixes = {
-            "slab_branching_training_space": ("SPC1", "[5000,0,0]"),
-            "slab_loop_gallery_space": ("SPC2", "[10000,0,0]"),
-            "slab_single_level_stairwell_space": ("SPC3", "[15000,0,0]"),
+            "slab_branching_training_space": ("SPC1", "[20000,-10000,0]"),
+            "slab_loop_gallery_space": ("SPC2", "[25000,-10000,0]"),
+            "slab_single_level_stairwell_space": ("SPC3", "[30000,-10000,0]"),
+            "slab_arena_space": ("DST1", "[20000,-5000,0]"),
+            "slab_crossfire_space": ("DST2", "[25000,-5000,0]"),
+            "slab_ring_space": ("DST3", "[30000,-5000,0]"),
         }
         for task in tasks:
             prefix, origin = expected_prefixes[task.name]
             prompt_compact = task.prompt.replace(" ", "")
             assert f'prefix="{prefix}"' in task.prompt
             assert f"origin={origin}" in prompt_compact
+            assert "6 个测试" in task.prompt
             assert "不要生成 gameplay" in task.prompt
             assert "props" in task.prompt
             assert "cover" in task.prompt
             assert "spawn_points" in task.prompt
             assert "routes" in task.prompt
             assert "不要调用 viewport_screenshot" in task.prompt
+            assert {
+                "type": "fact_nonempty",
+                "kind": "wb_build",
+                "path": "folder_root",
+            } in task.checks
             zero_metric_paths = {
                 check.get("path")
                 for check in task.checks
@@ -203,6 +295,7 @@ class TestUeSuite:
                 "metrics.prop_count",
                 "metrics.spawn_count",
                 "metrics.route_count",
+                "metrics.parallel_wall_duplicate_count",
             } <= zero_metric_paths
         loop_task = next(task for task in tasks if task.name == "slab_loop_gallery_space")
         loop_path_lengths = [
@@ -262,11 +355,19 @@ class TestUeSuite:
                         "wall_fragmentation_score": 0.71,
                     },
                 },
+                {"kind": "wb_build", "ok": True, "folder_root": "SPC1/abc123"},
                 {"kind": "path_test", "ok": True, "reachable": True},
             ],
         )
 
         assert evaluate_ue_check({"type": "tool_called", "tool": "wb_build"}, rec) is None
+        assert (
+            evaluate_ue_check(
+                {"type": "fact_nonempty", "kind": "wb_build", "path": "folder_root"},
+                rec,
+            )
+            is None
+        )
         assert (
             evaluate_ue_check(
                 {
@@ -304,6 +405,11 @@ class TestUeSuite:
             is None
         )
         assert evaluate_ue_check({"type": "tool_called", "tool": "viewport_screenshot"}, rec)
+        missing_folder = UeRunRecord(success=True, facts=[{"kind": "wb_build", "ok": True}])
+        assert "为空或缺失" in evaluate_ue_check(
+            {"type": "fact_nonempty", "kind": "wb_build", "path": "folder_root"},
+            missing_folder,
+        )
 
     def test_no_tool_errors_check_reads_trace_summary(self):
         from ue5agent.evals.ue_suite import UeRunRecord, evaluate_ue_check
@@ -375,6 +481,17 @@ class TestUeSuite:
                 "facts": {"kind": "wb_build", "ok": True},
             },
             {
+                "event": "vision_review",
+                "passed": True,
+                "facts": {
+                    "kind": "vision_review",
+                    "ok": True,
+                    "parsed": True,
+                    "issue_count": 0,
+                    "high_count": 0,
+                },
+            },
+            {
                 "event": "tool_call",
                 "tool": "ue_whitebox__wb_validate",
                 "result_preview": "[error] 布局校验未通过",
@@ -397,7 +514,16 @@ class TestUeSuite:
             "ue_whitebox__wb_validate",
             "ue_whitebox__wb_build",
         ]
-        assert summary["facts"] == [{"kind": "wb_build", "ok": True}]
+        assert summary["facts"] == [
+            {"kind": "wb_build", "ok": True},
+            {
+                "kind": "vision_review",
+                "ok": True,
+                "parsed": True,
+                "issue_count": 0,
+                "high_count": 0,
+            },
+        ]
         assert summary["tool_errors"] == [
             "ue_whitebox__wb_validate: [error] 布局校验未通过",
             "ue_whitebox__wb_build: Error executing tool wb_build: manifest 中没有资产",

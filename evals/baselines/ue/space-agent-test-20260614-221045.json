@@ -1,0 +1,152 @@
+{
+  "suite": "ue",
+  "model": "deepseek/deepseek-v4-pro",
+  "role": "planner",
+  "timestamp": "2026-06-14 22:30:45",
+  "pass_rate": 0.8333333333333334,
+  "first_try_pass_rate": 0.6666666666666666,
+  "avg_iterations": 2.5,
+  "total_human_intervention": 0,
+  "results": [
+    {
+      "name": "slab_branching_training_space",
+      "passed": true,
+      "failures": [],
+      "success": true,
+      "iteration_count": 3,
+      "max_step_attempts": 2,
+      "human_intervention": 0,
+      "trace_path": "runs\\20260614-221054_slab_branching_training_\\trace.jsonl",
+      "tool_calls": [
+        "ue_whitebox__wb_build",
+        "ue_whitebox__wb_build",
+        "ue_whitebox__wb_validate",
+        "ue_editor__navmesh_rebuild",
+        "ue_editor__path_test",
+        "ue_editor__path_test",
+        "ue_editor__path_test",
+        "ue_whitebox__wb_validate",
+        "ue_editor__navmesh_rebuild",
+        "ue_editor__path_test"
+      ],
+      "tool_errors": [
+        "ue_whitebox__wb_build: [error] 布局校验未通过：房间不连通：CentralHall、EndRoom、WestCorridorH、WestCorridorV、WestSideRoom、EastCorridorH、EastCorridorV、EastSideRoom 无法从 Entrance 到达——相邻房间需要在共享墙的同一位置各开一个对齐的门"
+      ]
+    },
+    {
+      "name": "slab_loop_gallery_space",
+      "passed": false,
+      "failures": [
+        "任务应成功收口，实际失败：验收未通过",
+        "trace 应调用工具 wb_build 至少 1 次，实际 0 次",
+        "trace 缺少 facts kind=wb_build",
+        "trace 应调用工具 wb_validate 至少 1 次，实际 0 次",
+        "trace 应调用工具 navmesh_rebuild 至少 1 次，实际 0 次",
+        "trace 应调用工具 path_test 至少 1 次，实际 0 次",
+        "trace 缺少 facts kind=wb_validate",
+        "trace 缺少 facts kind=wb_validate",
+        "trace 缺少 facts kind=wb_validate",
+        "trace 缺少 facts kind=wb_validate",
+        "trace 缺少 facts kind=wb_validate",
+        "trace 缺少 facts kind=wb_validate",
+        "trace 缺少 facts kind=wb_validate",
+        "trace 缺少 facts kind=wb_validate",
+        "trace 中没有任何 path_test fact 同时满足 [{'path': 'reachable', 'equals': True}, {'path': 'path_length', 'gte': 400}]"
+      ],
+      "success": false,
+      "iteration_count": 1,
+      "max_step_attempts": 1,
+      "human_intervention": 0,
+      "trace_path": "runs\\20260614-221532_slab_loop_gallery_space\\trace.jsonl",
+      "tool_calls": [],
+      "tool_errors": []
+    },
+    {
+      "name": "slab_single_level_stairwell_space",
+      "passed": true,
+      "failures": [],
+      "success": true,
+      "iteration_count": 3,
+      "max_step_attempts": 1,
+      "human_intervention": 0,
+      "trace_path": "runs\\20260614-221745_slab_single_level_stairw\\trace.jsonl",
+      "tool_calls": [
+        "ue_whitebox__wb_build",
+        "ue_whitebox__wb_validate",
+        "ue_whitebox__wb_clear",
+        "ue_whitebox__wb_build",
+        "ue_whitebox__wb_validate",
+        "ue_editor__navmesh_rebuild",
+        "ue_editor__path_test",
+        "ue_editor__path_test",
+        "ue_editor__path_test",
+        "ue_editor__path_test",
+        "ue_editor__path_test",
+        "ue_editor__navmesh_rebuild",
+        "ue_editor__path_test",
+        "ue_editor__path_test",
+        "ue_editor__path_test"
+      ],
+      "tool_errors": []
+    },
+    {
+      "name": "slab_arena_space",
+      "passed": true,
+      "failures": [],
+      "success": true,
+      "iteration_count": 4,
+      "max_step_attempts": 1,
+      "human_intervention": 0,
+      "trace_path": "runs\\20260614-222202_slab_arena_space\\trace.jsonl",
+      "tool_calls": [
+        "ue_whitebox__wb_build",
+        "ue_whitebox__wb_validate",
+        "ue_whitebox__wb_validate",
+        "ue_editor__navmesh_rebuild",
+        "ue_editor__path_test",
+        "ue_editor__path_test",
+        "ue_editor__path_test",
+        "ue_editor__path_test",
+        "ue_editor__path_test"
+      ],
+      "tool_errors": []
+    },
+    {
+      "name": "slab_crossfire_space",
+      "passed": true,
+      "failures": [],
+      "success": true,
+      "iteration_count": 2,
+      "max_step_attempts": 1,
+      "human_intervention": 0,
+      "trace_path": "runs\\20260614-222623_slab_crossfire_space\\trace.jsonl",
+      "tool_calls": [
+        "ue_whitebox__wb_build",
+        "ue_whitebox__wb_validate",
+        "ue_editor__navmesh_rebuild",
+        "ue_editor__path_test",
+        "ue_editor__path_test",
+        "ue_editor__path_test"
+      ],
+      "tool_errors": []
+    },
+    {
+      "name": "slab_ring_space",
+      "passed": true,
+      "failures": [],
+      "success": true,
+      "iteration_count": 2,
+      "max_step_attempts": 1,
+      "human_intervention": 0,
+      "trace_path": "runs\\20260614-222835_slab_ring_space\\trace.jsonl",
+      "tool_calls": [
+        "ue_whitebox__wb_build",
+        "ue_whitebox__wb_validate",
+        "ue_editor__navmesh_rebuild",
+        "ue_editor__path_test",
+        "ue_editor__path_test"
+      ],
+      "tool_errors": []
+    }
+  ]
+}

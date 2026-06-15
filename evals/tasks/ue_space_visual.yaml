@@ -1,0 +1,280 @@
+# 白盒空间视觉检测评测：第二轮，在 ue_space 第一轮旁边生成但不重叠。
+# 目标：在结构/导航确定性验证之外，要求俯视截图 + vision_review 视觉检测硬证据。
+# 注意：这是视觉检测，不是平面图视觉输入；任务仍由文字需求驱动，不读取平面图。
+# 坐标布置：
+# - SPC*_V 放在第一轮 SPC 行下方 5000uu：y=-15000
+# - DST*_V 放在第一轮 DST 行上方 5000uu：y=0
+
+- name: slab_branching_training_space_visual
+  prompt_id: spc-dst-space-visual-v1
+  prompt_locked: true
+  planner_model: deepseek/deepseek-v4-pro
+  vision_model: moonshot/moonshot-v1-8k-vision-preview
+  prompt: >
+    请自己设计并搭建一个默认 slab 白盒空间，真实尺度，单层：一个有中心厅、入口、
+    两条转角走廊、两个侧室和一个尽端房间的训练场。多房间必须连通；内部共享墙只开门，
+    不在内部共享墙开窗；外墙可以开窗。调用 wb_build 时请使用 prefix="SPC1V"，
+    layout_json 顶层写 origin=[20000, -15000, 0]，这是第二轮视觉检测版，位置在第一轮同类测试旁边但不重叠；
+    使用默认 MI_PrototypeGrid_Gray 白盒材质。只测试空间结构和视觉检测，不要生成 gameplay；
+    不要生成 props、cover、spawn_points、routes；不要读取或输入平面图。使用 wb_build 落地后，
+    必须用 wb_validate 校验，并调用 viewport_screenshot 生成可审查的俯视截图，主体要居中、覆盖完整白盒、
+    不能过小或贴边；截图会触发 vision_review，视觉审查必须通过。再用 navmesh_rebuild 和 path_test
+    验证入口到最远房间导航可达。不要使用 modular 结构模式。最终简短报告结构、截图视觉审查和导航验证结果。
+  max_iterations: 40
+  checks:
+    - { type: run_succeeded }
+    - { type: no_unrecovered_tool_errors }
+    - { type: tool_called, tool: wb_build }
+    - { type: fact_nonempty, kind: wb_build, path: folder_root }
+    - { type: tool_called, tool: wb_validate }
+    - { type: tool_called, tool: viewport_screenshot }
+    - { type: tool_called, tool: navmesh_rebuild }
+    - { type: tool_called, tool: path_test }
+    - { type: fact_equals, kind: wb_validate, path: ok, equals: true }
+    - { type: fact_equals, kind: wb_validate, path: metrics.structure_mode, equals: slab }
+    - { type: fact_lte, kind: wb_validate, path: metrics.scale_warning_count, value: 0 }
+    - { type: fact_lte, kind: wb_validate, path: metrics.prop_count, value: 0 }
+    - { type: fact_lte, kind: wb_validate, path: metrics.spawn_count, value: 0 }
+    - { type: fact_lte, kind: wb_validate, path: metrics.route_count, value: 0 }
+    - { type: fact_lte, kind: wb_validate, path: metrics.parallel_wall_duplicate_count, value: 0 }
+    - { type: fact_lte, kind: wb_validate, path: metrics.wall_fragmentation_score, value: 1.5 }
+    - { type: fact_equals, kind: screenshot, path: ok, equals: true }
+    - { type: fact_equals, kind: screenshot, path: framing_ok, equals: true }
+    - { type: fact_nonempty, kind: screenshot, path: path }
+    - { type: fact_equals, kind: vision_review, path: ok, equals: true }
+    - { type: fact_equals, kind: vision_review, path: parsed, equals: true }
+    - { type: fact_lte, kind: vision_review, path: high_count, value: 0 }
+    - { type: fact_lte, kind: vision_review, path: issue_count, value: 0 }
+    - type: fact_any
+      kind: path_test
+      where:
+        - { path: reachable, equals: true }
+        - { path: path_length, gte: 1500 }
+
+- name: slab_loop_gallery_space_visual
+  prompt_id: spc-dst-space-visual-v1
+  prompt_locked: true
+  planner_model: deepseek/deepseek-v4-pro
+  vision_model: moonshot/moonshot-v1-8k-vision-preview
+  prompt: >
+    请自己设计并搭建一个默认 slab 白盒空间，真实尺度，单层：一个环形/回游动线的小型展厅，
+    至少 6 个空间节点，包括前厅、长廊、转角展廊、背厅、侧厅和出口厅；需要有一条主回游路线，
+    同时保留一个短捷径门洞。内部共享墙只允许门洞，不允许窗；窗只放外墙。调用 wb_build
+    时请使用 prefix="SPC2V"，layout_json 顶层写 origin=[25000, -15000, 0]，这是第二轮视觉检测版，
+    位置在第一轮同类测试旁边但不重叠；使用默认 MI_PrototypeGrid_Gray 白盒材质。只测试空间结构和视觉检测，
+    不要生成 gameplay；不要生成 props、cover、spawn_points、routes；不要读取或输入平面图。使用 wb_build 落地后，
+    必须用 wb_validate 校验，并调用 viewport_screenshot 生成可审查的俯视截图，主体要居中、覆盖完整白盒、
+    不能过小或贴边；截图会触发 vision_review，视觉审查必须通过。再用 navmesh_rebuild 和 path_test
+    验证前厅到出口厅可达。不要使用 modular 结构模式。最终简短报告结构、截图视觉审查和导航验证结果。
+  max_iterations: 40
+  checks:
+    - { type: run_succeeded }
+    - { type: no_unrecovered_tool_errors }
+    - { type: tool_called, tool: wb_build }
+    - { type: fact_nonempty, kind: wb_build, path: folder_root }
+    - { type: tool_called, tool: wb_validate }
+    - { type: tool_called, tool: viewport_screenshot }
+    - { type: tool_called, tool: navmesh_rebuild }
+    - { type: tool_called, tool: path_test }
+    - { type: fact_equals, kind: wb_validate, path: ok, equals: true }
+    - { type: fact_equals, kind: wb_validate, path: metrics.structure_mode, equals: slab }
+    - { type: fact_lte, kind: wb_validate, path: metrics.scale_warning_count, value: 0 }
+    - { type: fact_lte, kind: wb_validate, path: metrics.prop_count, value: 0 }
+    - { type: fact_lte, kind: wb_validate, path: metrics.spawn_count, value: 0 }
+    - { type: fact_lte, kind: wb_validate, path: metrics.route_count, value: 0 }
+    - { type: fact_lte, kind: wb_validate, path: metrics.parallel_wall_duplicate_count, value: 0 }
+    - { type: fact_lte, kind: wb_validate, path: metrics.wall_fragmentation_score, value: 1.8 }
+    - { type: fact_equals, kind: screenshot, path: ok, equals: true }
+    - { type: fact_equals, kind: screenshot, path: framing_ok, equals: true }
+    - { type: fact_nonempty, kind: screenshot, path: path }
+    - { type: fact_equals, kind: vision_review, path: ok, equals: true }
+    - { type: fact_equals, kind: vision_review, path: parsed, equals: true }
+    - { type: fact_lte, kind: vision_review, path: high_count, value: 0 }
+    - { type: fact_lte, kind: vision_review, path: issue_count, value: 0 }
+    - type: fact_any
+      kind: path_test
+      where:
+        - { path: reachable, equals: true }
+        - { path: path_length, gte: 400 }
+
+- name: slab_single_level_stairwell_space_visual
+  prompt_id: spc-dst-space-visual-v1
+  prompt_locked: true
+  planner_model: deepseek/deepseek-v4-pro
+  vision_model: moonshot/moonshot-v1-8k-vision-preview
+  prompt: >
+    请自己设计并搭建一个默认 slab 白盒空间，真实尺度，单层：一个大厅连接储藏间和小办公室，
+    大厅里放一段从 level 0 到 level 1 的楼梯以及楼梯间护墙，但不要创建任何二层 room。
+    多房间必须连通；窗只放外墙。调用 wb_build 时请使用 prefix="SPC3V"，
+    layout_json 顶层写 origin=[30000, -15000, 0]，这是第二轮视觉检测版，位置在第一轮同类测试旁边但不重叠；
+    使用默认 MI_PrototypeGrid_Gray 白盒材质。只测试空间结构和视觉检测，不要生成 gameplay；
+    不要生成 props、cover、spawn_points、routes；不要读取或输入平面图。使用 wb_build 落地后，必须用 wb_validate 校验，
+    并调用 viewport_screenshot 生成可审查的俯视截图，主体要居中、覆盖完整白盒、不能过小或贴边；
+    截图会触发 vision_review，视觉审查必须通过。再用 navmesh_rebuild 和 path_test 验证大厅到办公室导航可达。
+    不要使用 modular 结构模式。最终简短报告结构、截图视觉审查和导航验证结果。
+  max_iterations: 40
+  checks:
+    - { type: run_succeeded }
+    - { type: no_unrecovered_tool_errors }
+    - { type: tool_called, tool: wb_build }
+    - { type: fact_nonempty, kind: wb_build, path: folder_root }
+    - { type: tool_called, tool: wb_validate }
+    - { type: tool_called, tool: viewport_screenshot }
+    - { type: tool_called, tool: navmesh_rebuild }
+    - { type: tool_called, tool: path_test }
+    - { type: fact_equals, kind: wb_validate, path: ok, equals: true }
+    - { type: fact_equals, kind: wb_validate, path: metrics.structure_mode, equals: slab }
+    - { type: fact_lte, kind: wb_validate, path: metrics.scale_warning_count, value: 0 }
+    - { type: fact_lte, kind: wb_validate, path: metrics.prop_count, value: 0 }
+    - { type: fact_lte, kind: wb_validate, path: metrics.spawn_count, value: 0 }
+    - { type: fact_lte, kind: wb_validate, path: metrics.route_count, value: 0 }
+    - { type: fact_lte, kind: wb_validate, path: metrics.parallel_wall_duplicate_count, value: 0 }
+    - { type: fact_gte, kind: wb_validate, path: metrics.stair_count, value: 1 }
+    - { type: fact_gte, kind: wb_validate, path: metrics.stairwell_count, value: 1 }
+    - { type: fact_equals, kind: screenshot, path: ok, equals: true }
+    - { type: fact_equals, kind: screenshot, path: framing_ok, equals: true }
+    - { type: fact_nonempty, kind: screenshot, path: path }
+    - { type: fact_equals, kind: vision_review, path: ok, equals: true }
+    - { type: fact_equals, kind: vision_review, path: parsed, equals: true }
+    - { type: fact_lte, kind: vision_review, path: high_count, value: 0 }
+    - { type: fact_lte, kind: vision_review, path: issue_count, value: 0 }
+    - type: fact_any
+      kind: path_test
+      where:
+        - { path: reachable, equals: true }
+        - { path: path_length, gte: 500 }
+
+- name: slab_arena_space_visual
+  prompt_id: spc-dst-space-visual-v1
+  prompt_locked: true
+  planner_model: deepseek/deepseek-v4-pro
+  vision_model: moonshot/moonshot-v1-8k-vision-preview
+  prompt: >
+    请自己设计并搭建一个默认 slab 白盒空间，真实尺度，单层：一个对称竞技场测试空间，
+    包含两个出生侧厅、一个中央交战厅、上路支线和下路支线；两侧到中央、上下支线都必须连通。
+    内部共享墙只允许门洞，不允许窗；窗只放外墙。调用 wb_build 时请使用 prefix="DST1V"，
+    layout_json 顶层写 origin=[20000, 0, 0]，这是第二轮视觉检测版，位置在第一轮同类测试旁边但不重叠；
+    使用默认 MI_PrototypeGrid_Gray 白盒材质。只测试空间结构和视觉检测，不要生成 gameplay；
+    不要生成 props、cover、spawn_points、routes；不要读取或输入平面图。使用 wb_build 落地后，
+    必须用 wb_validate 校验，并调用 viewport_screenshot 生成可审查的俯视截图，主体要居中、覆盖完整白盒、
+    不能过小或贴边；截图会触发 vision_review，视觉审查必须通过。再用 navmesh_rebuild 和 path_test
+    验证两侧厅之间导航可达。不要使用 modular 结构模式。最终简短报告结构、截图视觉审查和导航验证结果。
+  max_iterations: 40
+  checks:
+    - { type: run_succeeded }
+    - { type: no_unrecovered_tool_errors }
+    - { type: tool_called, tool: wb_build }
+    - { type: fact_nonempty, kind: wb_build, path: folder_root }
+    - { type: tool_called, tool: wb_validate }
+    - { type: tool_called, tool: viewport_screenshot }
+    - { type: tool_called, tool: navmesh_rebuild }
+    - { type: tool_called, tool: path_test }
+    - { type: fact_equals, kind: wb_validate, path: ok, equals: true }
+    - { type: fact_equals, kind: wb_validate, path: metrics.structure_mode, equals: slab }
+    - { type: fact_lte, kind: wb_validate, path: metrics.scale_warning_count, value: 0 }
+    - { type: fact_lte, kind: wb_validate, path: metrics.prop_count, value: 0 }
+    - { type: fact_lte, kind: wb_validate, path: metrics.spawn_count, value: 0 }
+    - { type: fact_lte, kind: wb_validate, path: metrics.route_count, value: 0 }
+    - { type: fact_lte, kind: wb_validate, path: metrics.parallel_wall_duplicate_count, value: 0 }
+    - { type: fact_equals, kind: screenshot, path: ok, equals: true }
+    - { type: fact_equals, kind: screenshot, path: framing_ok, equals: true }
+    - { type: fact_nonempty, kind: screenshot, path: path }
+    - { type: fact_equals, kind: vision_review, path: ok, equals: true }
+    - { type: fact_equals, kind: vision_review, path: parsed, equals: true }
+    - { type: fact_lte, kind: vision_review, path: high_count, value: 0 }
+    - { type: fact_lte, kind: vision_review, path: issue_count, value: 0 }
+    - type: fact_any
+      kind: path_test
+      where:
+        - { path: reachable, equals: true }
+        - { path: path_length, gte: 800 }
+
+- name: slab_crossfire_space_visual
+  prompt_id: spc-dst-space-visual-v1
+  prompt_locked: true
+  planner_model: deepseek/deepseek-v4-pro
+  vision_model: moonshot/moonshot-v1-8k-vision-preview
+  prompt: >
+    请自己设计并搭建一个默认 slab 白盒空间，真实尺度，单层：一个十字交火测试空间，
+    左右两端是起终点房间，中间是主厅，主厅上方和下方各有一个侧袋空间；所有空间必须连通。
+    内部共享墙只允许门洞，不允许窗；窗只放外墙。调用 wb_build 时请使用 prefix="DST2V"，
+    layout_json 顶层写 origin=[25000, 0, 0]，这是第二轮视觉检测版，位置在第一轮同类测试旁边但不重叠；
+    使用默认 MI_PrototypeGrid_Gray 白盒材质。只测试空间结构和视觉检测，不要生成 gameplay；
+    不要生成 props、cover、spawn_points、routes；不要读取或输入平面图。使用 wb_build 落地后，
+    必须用 wb_validate 校验，并调用 viewport_screenshot 生成可审查的俯视截图，主体要居中、覆盖完整白盒、
+    不能过小或贴边；截图会触发 vision_review，视觉审查必须通过。再用 navmesh_rebuild 和 path_test
+    验证左右两端房间导航可达。不要使用 modular 结构模式。最终简短报告结构、截图视觉审查和导航验证结果。
+  max_iterations: 40
+  checks:
+    - { type: run_succeeded }
+    - { type: no_unrecovered_tool_errors }
+    - { type: tool_called, tool: wb_build }
+    - { type: fact_nonempty, kind: wb_build, path: folder_root }
+    - { type: tool_called, tool: wb_validate }
+    - { type: tool_called, tool: viewport_screenshot }
+    - { type: tool_called, tool: navmesh_rebuild }
+    - { type: tool_called, tool: path_test }
+    - { type: fact_equals, kind: wb_validate, path: ok, equals: true }
+    - { type: fact_equals, kind: wb_validate, path: metrics.structure_mode, equals: slab }
+    - { type: fact_lte, kind: wb_validate, path: metrics.scale_warning_count, value: 0 }
+    - { type: fact_lte, kind: wb_validate, path: metrics.prop_count, value: 0 }
+    - { type: fact_lte, kind: wb_validate, path: metrics.spawn_count, value: 0 }
+    - { type: fact_lte, kind: wb_validate, path: metrics.route_count, value: 0 }
+    - { type: fact_lte, kind: wb_validate, path: metrics.parallel_wall_duplicate_count, value: 0 }
+    - { type: fact_equals, kind: screenshot, path: ok, equals: true }
+    - { type: fact_equals, kind: screenshot, path: framing_ok, equals: true }
+    - { type: fact_nonempty, kind: screenshot, path: path }
+    - { type: fact_equals, kind: vision_review, path: ok, equals: true }
+    - { type: fact_equals, kind: vision_review, path: parsed, equals: true }
+    - { type: fact_lte, kind: vision_review, path: high_count, value: 0 }
+    - { type: fact_lte, kind: vision_review, path: issue_count, value: 0 }
+    - type: fact_any
+      kind: path_test
+      where:
+        - { path: reachable, equals: true }
+        - { path: path_length, gte: 800 }
+
+- name: slab_ring_space_visual
+  prompt_id: spc-dst-space-visual-v1
+  prompt_locked: true
+  planner_model: deepseek/deepseek-v4-pro
+  vision_model: moonshot/moonshot-v1-8k-vision-preview
+  prompt: >
+    请自己设计并搭建一个默认 slab 白盒空间，真实尺度，单层：一个四节点环形测试空间，
+    A/B/C/D 四个空间组成闭环，每个相邻空间之间都有对齐门洞，并保留至少两条可替代路径。
+    内部共享墙只允许门洞，不允许窗；窗只放外墙。调用 wb_build 时请使用 prefix="DST3V"，
+    layout_json 顶层写 origin=[30000, 0, 0]，这是第二轮视觉检测版，位置在第一轮同类测试旁边但不重叠；
+    使用默认 MI_PrototypeGrid_Gray 白盒材质。只测试空间结构和视觉检测，不要生成 gameplay；
+    不要生成 props、cover、spawn_points、routes；不要读取或输入平面图。使用 wb_build 落地后，
+    必须用 wb_validate 校验，并调用 viewport_screenshot 生成可审查的俯视截图，主体要居中、覆盖完整白盒、
+    不能过小或贴边；截图会触发 vision_review，视觉审查必须通过。再用 navmesh_rebuild 和 path_test
+    验证对角空间导航可达。不要使用 modular 结构模式。最终简短报告结构、截图视觉审查和导航验证结果。
+  max_iterations: 40
+  checks:
+    - { type: run_succeeded }
+    - { type: no_unrecovered_tool_errors }
+    - { type: tool_called, tool: wb_build }
+    - { type: fact_nonempty, kind: wb_build, path: folder_root }
+    - { type: tool_called, tool: wb_validate }
+    - { type: tool_called, tool: viewport_screenshot }
+    - { type: tool_called, tool: navmesh_rebuild }
+    - { type: tool_called, tool: path_test }
+    - { type: fact_equals, kind: wb_validate, path: ok, equals: true }
+    - { type: fact_equals, kind: wb_validate, path: metrics.structure_mode, equals: slab }
+    - { type: fact_lte, kind: wb_validate, path: metrics.scale_warning_count, value: 0 }
+    - { type: fact_lte, kind: wb_validate, path: metrics.prop_count, value: 0 }
+    - { type: fact_lte, kind: wb_validate, path: metrics.spawn_count, value: 0 }
+    - { type: fact_lte, kind: wb_validate, path: metrics.route_count, value: 0 }
+    - { type: fact_lte, kind: wb_validate, path: metrics.parallel_wall_duplicate_count, value: 0 }
+    - { type: fact_equals, kind: screenshot, path: ok, equals: true }
+    - { type: fact_equals, kind: screenshot, path: framing_ok, equals: true }
+    - { type: fact_nonempty, kind: screenshot, path: path }
+    - { type: fact_equals, kind: vision_review, path: ok, equals: true }
+    - { type: fact_equals, kind: vision_review, path: parsed, equals: true }
+    - { type: fact_lte, kind: vision_review, path: high_count, value: 0 }
+    - { type: fact_lte, kind: vision_review, path: issue_count, value: 0 }
+    - type: fact_any
+      kind: path_test
+      where:
+        - { path: reachable, equals: true }
+        - { path: path_length, gte: 600 }

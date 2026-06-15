@@ -4,6 +4,8 @@ from typing import Any
 
 import pytest
 
+from ue5agent.agent.events import RunWriter, read_events
+from ue5agent.agent.state import TaskSession
 from ue5agent.core.loop import AgentLoop, BudgetExhausted
 from ue5agent.core.permissions import PermissionGate, PermissionLevel
 from ue5agent.llm.types import AssistantTurn, ToolCall
@@ -96,6 +98,57 @@ async def test_dispatch_exception_still_answers_tool_call():
     assert len(tool_msgs) == 1
     assert "[error] 工具调度异常" in tool_msgs[0]["content"]
     assert tool_msgs[0]["tool_call_id"] == "call_1"
+
+
+async def test_whitebox_layout_json_saved_as_artifact(tmp_path):
+    """白盒 DSL 不能只留在截断 trace 里；每次 wb_build 调用都要落完整文件。"""
+    registry = ToolRegistry(PermissionGate())
+
+    async def wb_build(layout_json: str, prefix: str = "WB") -> str:
+        return f"built {prefix}"
+
+    registry.register(
+        ToolSpec(
+            name="ue_whitebox__wb_build",
+            description="搭建白盒",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "layout_json": {"type": "string"},
+                    "prefix": {"type": "string"},
+                },
+                "required": ["layout_json"],
+            },
+            level=PermissionLevel.READ,
+            handler=wb_build,
+        )
+    )
+    layout = {
+        "name": "dsl_archive",
+        "origin": [20000, -10000, 0],
+        "rooms": [{"name": "Hall", "rect": [0, 0, 6, 6]}],
+    }
+    arguments = (
+        '{"layout_json": "{\\"name\\": \\"dsl_archive\\", '
+        '\\"origin\\": [20000, -10000, 0], '
+        '\\"rooms\\": [{\\"name\\": \\"Hall\\", \\"rect\\": [0, 0, 6, 6]}]}", '
+        '"prefix": "SPC1"}'
+    )
+    model = FakeModel(
+        [tool_turn("ue_whitebox__wb_build", arguments), AssistantTurn(content="完成")]
+    )
+    writer = RunWriter(tmp_path, TaskSession.new("dsl"))
+
+    await AgentLoop(model, registry, session_log=writer).run("测试")
+
+    artifacts = list((writer.artifacts_dir / "layouts").glob("*.json"))
+    assert len(artifacts) == 1
+    assert artifacts[0].read_text(encoding="utf-8").startswith('{\n  "name": "dsl_archive"')
+    assert writer.session.artifacts[0].kind == "whitebox_layout"
+    assert writer.session.artifacts[0].meta["prefix"] == "SPC1"
+    assert layout["rooms"][0]["name"] in artifacts[0].read_text(encoding="utf-8")
+    tool_events = [e for e in read_events(writer.trace_path) if e["event"] == "tool_call"]
+    assert tool_events[0]["layout_artifact"] == writer.session.artifacts[0].path
 
 
 async def test_wall_clock_budget_stops_loop():

@@ -22,6 +22,7 @@ clear 仍按 `WB_` 前缀子串清理——唯一名仍以 `WB_` 开头，可被
 
 from __future__ import annotations
 
+import re
 import time
 
 from ue5agent.mcp_servers.ue_editor.bridge import send_command
@@ -53,6 +54,12 @@ def _batch_token() -> str:
     return format(int(time.time() * 1000) & 0xFFFFFFF, "x")
 
 
+def batch_from_actor_name(actor_name: str, prefix: str) -> str | None:
+    """从 `<prefix>_<batch>_<placement>` 里取批次号；不匹配返回 None。"""
+    match = re.match(rf"^{re.escape(prefix)}_([0-9a-f]+)_.+$", actor_name)
+    return match.group(1) if match else None
+
+
 def _folder_segment(value: object, *, fallback: str) -> str:
     """把布局名/房间名压成单层 Outliner 文件夹名，避免斜杠意外拆层。"""
     text = str(value).strip().replace("\\", "/").strip("/")
@@ -60,12 +67,24 @@ def _folder_segment(value: object, *, fallback: str) -> str:
     return "_".join(parts) if parts else fallback
 
 
-def _placement_folder_path(prefix: str, placement: Placement) -> str:
+def folder_root_for_batch(prefix: str, batch: str) -> str:
+    """本批白盒在 World Outliner 里的根文件夹。"""
+    return f"{_folder_segment(prefix, fallback='WB')}/{_folder_segment(batch, fallback='batch')}"
+
+
+def folder_root_from_actor_name(actor_name: str, prefix: str) -> str | None:
+    """根据已生成 actor 名反推出本批 World Outliner 根文件夹。"""
+    batch = batch_from_actor_name(actor_name, prefix)
+    return folder_root_for_batch(prefix, batch) if batch else None
+
+
+def _placement_folder_path(prefix: str, batch: str, placement: Placement) -> str:
     root = _folder_segment(prefix, fallback="WB")
+    folder_root = folder_root_for_batch(root, batch)
     room = placement.metadata.get("room")
     if room:
-        return f"{root}/Rooms/{_folder_segment(room, fallback='UnnamedRoom')}"
-    return f"{root}/Misc"
+        return f"{folder_root}/Rooms/{_folder_segment(room, fallback='UnnamedRoom')}"
+    return f"{folder_root}/Misc"
 
 
 def spawn_layout(placements: list[Placement], *, prefix: str = "WB") -> list[str]:
@@ -73,6 +92,8 @@ def spawn_layout(placements: list[Placement], *, prefix: str = "WB") -> list[str
 
     名字格式 `<prefix>_<batch>_<placement.name>`：仍以 `<prefix>_` 开头，
     可被 clear_layout 子串匹配整批清理；`<batch>` 保证跨批不重名。
+    Outliner 文件夹也带同一批次号：`<prefix>/<batch>/Rooms/<room>`，这样
+    每次 agent 生成的新测试都能在大纲里用独立文件夹确认。
     """
     batch = _batch_token()
     spawned: list[str] = []
@@ -84,7 +105,7 @@ def spawn_layout(placements: list[Placement], *, prefix: str = "WB") -> list[str
             "location": list(placement.location),
             "rotation": list(placement.rotation),
         }
-        folder_path = _placement_folder_path(prefix, placement)
+        folder_path = _placement_folder_path(prefix, batch, placement)
         params["folder_path"] = folder_path
         params["folder"] = folder_path
         if placement.actor_type == "StaticMeshActor":

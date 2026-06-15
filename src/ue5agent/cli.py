@@ -20,6 +20,7 @@ from ue5agent.config import (
     load_agent_settings,
     load_models_config,
     with_model_for_roles,
+    with_role_model,
 )
 
 app = typer.Typer(help="UE5 游戏开发 agent", no_args_is_help=True)
@@ -159,17 +160,27 @@ def eval_command(
     """跑评测集：sandbox 档在干净沙盒中度量工具调用能力（离线）；ue 档用完整 TaskRunner
     + 真实 MCP 工具面跑端到端任务（需编辑器在线），度量一次通过率/迭代次数/人工干预次数。"""
     config = _require_models(models)
+    if suite == "ue":
+        settings = load_agent_settings(agent) if agent.exists() else AgentSettings()
+        tasks_path = tasks or Path("evals/tasks/ue.yaml")
+        asyncio.run(
+            _run_ue_eval(
+                config,
+                settings,
+                tasks_path,
+                role=role,
+                out=out,
+                model_override=model_override,
+            )
+        )
+        return
+
     if model_override:
         config = with_model_for_roles(
             config,
             sorted({role, "planner", "coder", "judge", "explorer"}),
             model_override,
         )
-    if suite == "ue":
-        settings = load_agent_settings(agent) if agent.exists() else AgentSettings()
-        tasks_path = tasks or Path("evals/tasks/ue.yaml")
-        asyncio.run(_run_ue_eval(config, settings, tasks_path, role=role, out=out))
-        return
 
     from ue5agent.evals.runner import load_tasks, run_eval
     from ue5agent.llm.client import LiteLLMClient
@@ -218,6 +229,7 @@ async def _run_ue_eval(
     *,
     role: str = "planner",
     out: Path | None = None,
+    model_override: str | None = None,
 ) -> None:
     """UE 在线评测档（E3/C3）：探活编辑器 → 挂载 MCP → 每个任务用完整 TaskRunner 跑端到端。
 
@@ -250,8 +262,16 @@ async def _run_ue_eval(
         raise typer.Exit(2)
 
     task_list = load_ue_tasks(tasks_path)
+    try:
+        config = _apply_ue_task_model_pins(
+            config, task_list, role=role, model_override=model_override
+        )
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
     secrets = collect_secret_values(config.secret_env_names())
     llm = _build_ue_eval_llm(config)
+    vision_reviewer = _build_vision_reviewer(llm)
     model_ref = llm.model_for(role)
 
     try:
@@ -267,6 +287,7 @@ async def _run_ue_eval(
                         registry,
                         writer,
                         step_max_iterations=settings.limits.max_iterations,
+                        vision_reviewer=vision_reviewer,
                     )
                     try:
                         outcome = await runner.run(task.prompt)
@@ -337,6 +358,65 @@ def _build_ue_eval_llm(config: ModelsConfig) -> Any:
     from ue5agent.llm.client import LiteLLMClient
 
     return LiteLLMClient(config, max_retries=1, request_timeout_seconds=120.0)
+
+
+def _build_vision_reviewer(llm: Any) -> Any:
+    """配了 vision 角色才注入视觉审查钩子；未配则保留截图供人工查看。"""
+    if not getattr(llm, "has_vision", False):
+        return None
+
+    from ue5agent.agent.vision_review import review_screenshots
+
+    async def vision_reviewer(paths: list[str], requirement: str) -> Any:
+        # litellm 对部分多模态端点（moonshot 实测）的调用会阻塞事件循环、令 runner 的
+        # asyncio 超时失效。放进工作线程跑独立事件循环，主循环保持空闲。
+        def _blocking() -> Any:
+            return asyncio.run(
+                review_screenshots(llm, requirement=requirement, screenshot_paths=list(paths))
+            )
+
+        return await asyncio.to_thread(_blocking)
+
+    return vision_reviewer
+
+
+def _apply_ue_task_model_pins(
+    config: ModelsConfig,
+    tasks: list[Any],
+    *,
+    role: str,
+    model_override: str | None,
+) -> ModelsConfig:
+    """应用 UE 标准任务声明的模型 pin；普通任务仍可用 --model 临时覆写。"""
+    planner_models = {task.planner_model for task in tasks if getattr(task, "planner_model", None)}
+    vision_models = {task.vision_model for task in tasks if getattr(task, "vision_model", None)}
+    if len(planner_models) > 1:
+        raise ValueError(f"任务文件包含多个固定 planner_model：{sorted(planner_models)}")
+    if len(vision_models) > 1:
+        raise ValueError(f"任务文件包含多个固定 vision_model：{sorted(vision_models)}")
+
+    pinned_planner = next(iter(planner_models), None)
+    if pinned_planner:
+        if model_override and model_override != pinned_planner:
+            raise ValueError(
+                f"任务文件固定模型为 {pinned_planner}，不能用 --model {model_override} 覆写"
+            )
+        config = with_model_for_roles(
+            config,
+            sorted({role, "planner", "coder", "judge", "explorer"}),
+            pinned_planner,
+        )
+    elif model_override:
+        config = with_model_for_roles(
+            config,
+            sorted({role, "planner", "coder", "judge", "explorer"}),
+            model_override,
+        )
+
+    pinned_vision = next(iter(vision_models), None)
+    if pinned_vision:
+        config = with_role_model(config, "vision", pinned_vision)
+    return config
 
 
 def _dump_ue_report(out: Path, model_ref: str, role: str, report: Any) -> None:
@@ -567,21 +647,7 @@ async def _execute_task(
 
     _safe_console_print("[dim]任务执行中（规划→执行→验收）…[/dim]")
     writer = ConsoleRunWriter(Path("runs"), TaskSession.new(text[:40]), secrets=secrets)
-    # A4：配了 vision 角色才注入视觉审查钩子；未配则降级为"截图存档供人看"（行为同前）
-    vision_reviewer = None
-    if getattr(llm, "has_vision", False):
-        from ue5agent.agent.vision_review import review_screenshots
-
-        async def vision_reviewer(paths: list[str], requirement: str) -> Any:
-            # litellm 对部分多模态端点（moonshot 实测）的调用会阻塞事件循环、令 runner 的
-            # asyncio 超时失效（定时器得不到执行机会）。放进工作线程跑独立事件循环：主循环
-            # 保持空闲，硬超时才能可靠触发；线程内若挂起则成孤儿，但不再拖死整个任务。
-            def _blocking() -> Any:
-                return asyncio.run(
-                    review_screenshots(llm, requirement=requirement, screenshot_paths=list(paths))
-                )
-
-            return await asyncio.to_thread(_blocking)
+    vision_reviewer = _build_vision_reviewer(llm)
 
     # E2：注册子代理能力——步内可 spawn 上下文隔离的只读探索子代理（闭包指向本次 writer，
     # chat 复用同一 registry 故 replace=True）。

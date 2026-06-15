@@ -1,0 +1,209 @@
+{
+  "suite": "ue",
+  "model": "deepseek/deepseek-v4-pro",
+  "role": "planner",
+  "timestamp": "2026-06-14 23:35:37",
+  "pass_rate": 0.0,
+  "first_try_pass_rate": 0.0,
+  "avg_iterations": 2.5,
+  "total_human_intervention": 0,
+  "results": [
+    {
+      "name": "slab_branching_training_space_visual",
+      "passed": false,
+      "failures": [
+        "trace 缺少 facts kind=vision_review",
+        "trace 缺少 facts kind=vision_review",
+        "trace 缺少 facts kind=vision_review",
+        "trace 缺少 facts kind=vision_review"
+      ],
+      "success": true,
+      "iteration_count": 5,
+      "max_step_attempts": 1,
+      "human_intervention": 0,
+      "trace_path": "runs\\20260614-230445_slab_branching_training_\\trace.jsonl",
+      "tool_calls": [
+        "ue_whitebox__wb_build",
+        "ue_whitebox__wb_build",
+        "ue_whitebox__wb_validate",
+        "ue_editor__viewport_screenshot",
+        "ue_whitebox__wb_validate",
+        "ue_editor__navmesh_rebuild",
+        "ue_editor__path_test",
+        "ue_editor__path_test",
+        "ue_editor__path_test"
+      ],
+      "tool_errors": [
+        "ue_whitebox__wb_build: [error] 布局校验未通过：房间 east_corridor_v 的窗只能开在外墙：east 墙与房间 side_room_east 相邻"
+      ]
+    },
+    {
+      "name": "slab_loop_gallery_space_visual",
+      "passed": false,
+      "failures": [
+        "任务应成功收口，实际失败：验收未通过",
+        "trace 应调用工具 wb_build 至少 1 次，实际 0 次",
+        "trace 缺少 facts kind=wb_build",
+        "trace 应调用工具 wb_validate 至少 1 次，实际 0 次",
+        "trace 应调用工具 viewport_screenshot 至少 1 次，实际 0 次",
+        "trace 应调用工具 navmesh_rebuild 至少 1 次，实际 0 次",
+        "trace 应调用工具 path_test 至少 1 次，实际 0 次",
+        "trace 缺少 facts kind=wb_validate",
+        "trace 缺少 facts kind=wb_validate",
+        "trace 缺少 facts kind=wb_validate",
+        "trace 缺少 facts kind=wb_validate",
+        "trace 缺少 facts kind=wb_validate",
+        "trace 缺少 facts kind=wb_validate",
+        "trace 缺少 facts kind=wb_validate",
+        "trace 缺少 facts kind=wb_validate",
+        "trace 缺少 facts kind=screenshot",
+        "trace 缺少 facts kind=screenshot",
+        "trace 缺少 facts kind=screenshot",
+        "trace 缺少 facts kind=vision_review",
+        "trace 缺少 facts kind=vision_review",
+        "trace 缺少 facts kind=vision_review",
+        "trace 缺少 facts kind=vision_review",
+        "trace 中没有任何 path_test fact 同时满足 [{'path': 'reachable', 'equals': True}, {'path': 'path_length', 'gte': 400}]"
+      ],
+      "success": false,
+      "iteration_count": 1,
+      "max_step_attempts": 1,
+      "human_intervention": 0,
+      "trace_path": "runs\\20260614-230931_slab_loop_gallery_space_\\trace.jsonl",
+      "tool_calls": [],
+      "tool_errors": []
+    },
+    {
+      "name": "slab_single_level_stairwell_space_visual",
+      "passed": false,
+      "failures": [
+        "任务应成功收口，实际失败：验收未通过",
+        "trace 中出现未恢复工具错误：ue_whitebox__wb_build: [error] 布局校验未通过：房间 office 的内部共享墙门洞必须两侧对齐：west at=2 width=2 与房间 hall 相邻；ue_whitebox__wb_build: [error] 布局校验未通过：房间 hall 的楼梯 stair_2_001 穿墙\n[提示] ue_whitebox__wb_build 是非幂等工具且已连续 2 次执行失败，禁止原样重试——副作用可能已部分发生。先用查询工具核实实际状态（如 actor_find / repo_status），或先用 wb_clear 清理已落地的部分，再换参数或路径。；ue_whitebox__wb_build: [error] 布局校验未通过：房间 hall 的楼梯 stair_2_001 穿墙\n[提示] ue_whitebox__wb_build 是非幂等工具且已连续 3 次执行失败，禁止原样重试——副作用可能已部分发生。先用查询工具核实实际状态（如 actor_find / repo_status），或先用 wb_clear 清理已落地的部分，再换参数或路径。；ue_editor__viewport_screenshot: [denied] 本步骤契约不允许使用 ue_editor__viewport_screenshot：不在本步骤工具白名单（['ue_editor__navmesh_rebuild', 'ue_editor__path_test', 'wb_clear', 'wb_build', 'wb_validate']），换契约内的工具完成；ue_whitebox__wb_build: [error] 布局校验未通过：房间 hall 的楼梯 stair_2_001 穿墙",
+        "trace 缺少 facts kind=vision_review",
+        "trace 缺少 facts kind=vision_review",
+        "trace 缺少 facts kind=vision_review",
+        "trace 缺少 facts kind=vision_review",
+        "trace 中没有任何 path_test fact 同时满足 [{'path': 'reachable', 'equals': True}, {'path': 'path_length', 'gte': 500}]"
+      ],
+      "success": false,
+      "iteration_count": 2,
+      "max_step_attempts": 1,
+      "human_intervention": 0,
+      "trace_path": "runs\\20260614-231217_slab_single_level_stairw\\trace.jsonl",
+      "tool_calls": [
+        "ue_whitebox__wb_build",
+        "ue_whitebox__wb_validate",
+        "ue_editor__viewport_screenshot",
+        "ue_whitebox__wb_clear",
+        "ue_whitebox__wb_build",
+        "ue_whitebox__wb_validate",
+        "ue_editor__viewport_screenshot",
+        "ue_editor__navmesh_rebuild",
+        "ue_editor__path_test",
+        "ue_editor__path_test",
+        "ue_editor__path_test",
+        "ue_whitebox__wb_clear",
+        "ue_whitebox__wb_build",
+        "ue_whitebox__wb_build",
+        "ue_whitebox__wb_clear",
+        "ue_whitebox__wb_build",
+        "ue_whitebox__wb_build",
+        "ue_whitebox__wb_validate",
+        "ue_editor__viewport_screenshot",
+        "ue_editor__navmesh_rebuild",
+        "ue_editor__path_test",
+        "ue_editor__path_test",
+        "ue_whitebox__wb_clear",
+        "ue_whitebox__wb_build",
+        "ue_whitebox__wb_build",
+        "ue_whitebox__wb_clear"
+      ],
+      "tool_errors": [
+        "ue_whitebox__wb_build: [error] 布局校验未通过：房间 office 的内部共享墙门洞必须两侧对齐：west at=2 width=2 与房间 hall 相邻",
+        "ue_whitebox__wb_build: [error] 布局校验未通过：房间 hall 的楼梯 stair_2_001 穿墙\n[提示] ue_whitebox__wb_build 是非幂等工具且已连续 2 次执行失败，禁止原样重试——副作用可能已部分发生。先用查询工具核实实际状态（如 actor_find / repo_status），或先用 wb_clear 清理已落地的部分，再换参数或路径。",
+        "ue_whitebox__wb_build: [error] 布局校验未通过：房间 hall 的楼梯 stair_2_001 穿墙\n[提示] ue_whitebox__wb_build 是非幂等工具且已连续 3 次执行失败，禁止原样重试——副作用可能已部分发生。先用查询工具核实实际状态（如 actor_find / repo_status），或先用 wb_clear 清理已落地的部分，再换参数或路径。",
+        "ue_editor__viewport_screenshot: [denied] 本步骤契约不允许使用 ue_editor__viewport_screenshot：不在本步骤工具白名单（['ue_editor__navmesh_rebuild', 'ue_editor__path_test', 'wb_clear', 'wb_build', 'wb_validate']），换契约内的工具完成",
+        "ue_whitebox__wb_build: [error] 布局校验未通过：房间 hall 的楼梯 stair_2_001 穿墙",
+        "ue_whitebox__wb_build: [error] 布局校验未通过：房间 hall 的楼梯 stair_2_001 穿墙\n[提示] ue_whitebox__wb_build 是非幂等工具且已连续 2 次执行失败，禁止原样重试——副作用可能已部分发生。先用查询工具核实实际状态（如 actor_find / repo_status），或先用 wb_clear 清理已落地的部分，再换参数或路径。"
+      ]
+    },
+    {
+      "name": "slab_arena_space_visual",
+      "passed": false,
+      "failures": [
+        "trace 缺少 facts kind=vision_review",
+        "trace 缺少 facts kind=vision_review",
+        "trace 缺少 facts kind=vision_review",
+        "trace 缺少 facts kind=vision_review"
+      ],
+      "success": true,
+      "iteration_count": 2,
+      "max_step_attempts": 1,
+      "human_intervention": 0,
+      "trace_path": "runs\\20260614-232055_slab_arena_space_visual\\trace.jsonl",
+      "tool_calls": [
+        "ue_whitebox__wb_build",
+        "ue_whitebox__wb_clear",
+        "ue_whitebox__wb_build",
+        "ue_whitebox__wb_validate",
+        "ue_editor__viewport_screenshot",
+        "ue_editor__navmesh_rebuild",
+        "ue_editor__path_test"
+      ],
+      "tool_errors": [
+        "ue_whitebox__wb_build: [error] 布局校验未通过：房间 upper_path 的窗只能开在外墙：north 墙与房间 central_hall 相邻\n[提示] ue_whitebox__wb_build 是非幂等工具且已连续 3 次执行失败，禁止原样重试——副作用可能已部分发生。先用查询工具核实实际状态（如 actor_find / repo_status），或先用 wb_clear 清理已落地的部分，再换参数或路径。"
+      ]
+    },
+    {
+      "name": "slab_crossfire_space_visual",
+      "passed": false,
+      "failures": [
+        "trace 缺少 facts kind=vision_review",
+        "trace 缺少 facts kind=vision_review",
+        "trace 缺少 facts kind=vision_review",
+        "trace 缺少 facts kind=vision_review"
+      ],
+      "success": true,
+      "iteration_count": 3,
+      "max_step_attempts": 2,
+      "human_intervention": 0,
+      "trace_path": "runs\\20260614-232622_slab_crossfire_space_vis\\trace.jsonl",
+      "tool_calls": [
+        "ue_whitebox__wb_build",
+        "ue_whitebox__wb_validate",
+        "ue_editor__viewport_screenshot",
+        "ue_whitebox__wb_build",
+        "ue_whitebox__wb_validate",
+        "ue_editor__viewport_screenshot",
+        "ue_editor__navmesh_rebuild",
+        "ue_editor__path_test"
+      ],
+      "tool_errors": []
+    },
+    {
+      "name": "slab_ring_space_visual",
+      "passed": false,
+      "failures": [
+        "任务应成功收口，实际失败：验收未通过",
+        "trace 应调用工具 navmesh_rebuild 至少 1 次，实际 0 次",
+        "trace 应调用工具 path_test 至少 1 次，实际 0 次",
+        "trace 缺少 facts kind=vision_review",
+        "trace 缺少 facts kind=vision_review",
+        "trace 缺少 facts kind=vision_review",
+        "trace 缺少 facts kind=vision_review",
+        "trace 中没有任何 path_test fact 同时满足 [{'path': 'reachable', 'equals': True}, {'path': 'path_length', 'gte': 600}]"
+      ],
+      "success": false,
+      "iteration_count": 2,
+      "max_step_attempts": 2,
+      "human_intervention": 0,
+      "trace_path": "runs\\20260614-233152_slab_ring_space_visual\\trace.jsonl",
+      "tool_calls": [
+        "ue_whitebox__wb_build",
+        "ue_whitebox__wb_validate",
+        "ue_editor__viewport_screenshot"
+      ],
+      "tool_errors": []
+    }
+  ]
+}
