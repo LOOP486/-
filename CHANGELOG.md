@@ -70,6 +70,8 @@
   视觉审查随机拖回，或视觉 high 后被 `wb_validate` 成功事实绕过。
 - Planner 会为自然语言白盒 `wb_validate`/`path_test` 验证步骤补 success checks（含
   `path_length >= N` 下限），让 runner 能用客观 facts 早停/本地收口，减少口头确认和步骤漂移。
+- Planner 后处理在合并同一 `path_test.path_length` 契约时会补齐 `gte/min` 数值边界，并移除误写的
+  `equals=true`，避免已经满足长度下限的路径 facts 被当作布尔值反复判失败。
 - 通用 deterministic verdict 现在只看本 attempt 新产生的 facts；跨步骤复用 facts 仅服务
   success checks/required evidence，避免无契约步骤被前序 `wb_validate` 误判通过。
 - 视觉审查会把门洞/开口/窗户/共享墙可见性问题降为报告项，由 `wb_validate`/`path_test`

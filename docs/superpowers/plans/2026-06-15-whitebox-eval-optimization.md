@@ -411,6 +411,11 @@ Follow-up 12: 再跑 `SPC1V` 时，结构与截图 facts 均正常，但 vision 
 不应作为 high 阻断。已修视觉提示与解析：这类可见性问题降为 medium 报告项，真正的布局错位、
 穿插、悬空、孤立墙仍可 high。
 
+Follow-up 13: 单任务 `SPC1V` 探针确认门洞可见性误判已降为 medium 且视觉步骤可通过；随后导航
+步骤暴露 planner success_checks 合并缺口：模型先给出裸 `path_test.path_length` 契约时，后处理没有
+补入 `gte 1500`，verifier 将 `path_length=2855.2` 按 `equals=true` 判失败并触发重复 path_test。
+已修 planner 契约合并：同一 `kind/field` 会补齐 `gte/min` 数值边界，并移除误写的布尔 equals。
+
 - [x] **Step 3: 更新文档**
 
 把复跑结论写入 `docs/roadmap.md` 的 B6/B7 条目，并在 `CHANGELOG.md` 的 `[未发布]` 记录行为变化。
@@ -438,6 +443,7 @@ Follow-up 12: 再跑 `SPC1V` 时，结构与截图 facts 均正常，但 vision 
 也已限定为非视觉纯验证步骤，不能绕过截图/视觉 high；planner 会为自然语言验证/导航步骤补
 success checks，让 runner 用客观 facts 收口；通用 deterministic verdict 已收窄到本 attempt 新 facts，
 避免 carried facts 误放行无契约步骤；门洞/开口/窗户/共享墙可见性由 validator/path facts 兜底，
-不再 high 阻断。下一步应优先继续提升 agent 自主布局稳定性，而不是靠反复收窄
+不再 high 阻断；`path_test.path_length >= N` 契约合并会保留数值边界，避免达标路径被布尔误判。
+下一步应优先继续提升 agent 自主布局稳定性，而不是靠反复收窄
 或反复运行测试题面。
 视觉档作为后续验证项保留。

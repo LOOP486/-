@@ -167,14 +167,34 @@ def _reconcile_whitebox_validation_checks(steps: list[PlanStep]) -> None:
 def _append_success_check(step: PlanStep, check: dict[str, Any]) -> None:
     kind = str(check.get("kind", "")).strip()
     field = str(check.get("field", "ok")).strip()
-    if any(
-        str(existing.get("kind", "")).strip() == kind
-        and str(existing.get("field", "ok")).strip() == field
-        for existing in step.success_checks
-        if isinstance(existing, dict)
-    ):
-        return
+    for existing in step.success_checks:
+        if not isinstance(existing, dict):
+            continue
+        if (
+            str(existing.get("kind", "")).strip() == kind
+            and str(existing.get("field", "ok")).strip() == field
+        ):
+            _merge_success_check(existing, check)
+            return
     step.success_checks.append(check)
+
+
+def _merge_success_check(existing: dict[str, Any], incoming: dict[str, Any]) -> None:
+    """同一事实字段的契约去重时，保留 planner 原意并补齐后处理推导出的比较条件。"""
+    numeric_keys = ("min", "gte", "minimum", "max", "lte", "maximum")
+    has_numeric_bound = any(key in incoming for key in numeric_keys)
+    for key in numeric_keys:
+        if key in incoming and key not in existing:
+            existing[key] = incoming[key]
+    if (
+        "equals" in incoming
+        and incoming["equals"] is not True
+        and "equals" not in existing
+        and not has_numeric_bound
+    ):
+        existing["equals"] = incoming["equals"]
+    if has_numeric_bound and existing.get("equals") is True and "equals" not in incoming:
+        existing.pop("equals", None)
 
 
 def _looks_like_path_test_requirement(text: str) -> bool:

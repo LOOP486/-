@@ -1095,8 +1095,13 @@ def test_evaluate_success_checks_supports_numeric_min_max():
 
     passed = evaluate_success_checks(checks, [{"kind": "path_test", "path_length": 2855.1}])
     failed = evaluate_success_checks(checks, [{"kind": "path_test", "path_length": 1200.0}])
+    gte_passed = evaluate_success_checks(
+        [{"kind": "path_test", "field": "path_length", "gte": 1500}],
+        [{"kind": "path_test", "path_length": 2855.2}],
+    )
 
     assert passed is not None and passed.verdict == "pass"
+    assert gte_passed is not None and gte_passed.verdict == "pass"
     assert failed is not None and failed.verdict == "fail"
     assert "path_length" in failed.reason
 
@@ -2290,6 +2295,36 @@ async def test_planner_adds_checks_for_natural_whitebox_validation_steps():
     assert {"kind": "wb_validate", "field": "ok", "equals": True} in steps[1].success_checks
     assert {"kind": "path_test", "field": "reachable", "equals": True} in steps[2].success_checks
     assert {"kind": "path_test", "field": "path_length", "gte": 1500} in steps[2].success_checks
+
+
+async def test_planner_merges_path_length_threshold_into_existing_check():
+    """模型若先给出裸 path_length 契约，后处理要补成数值下限，不能按 equals=True 验收。"""
+    model = FakeModel(
+        [
+            plan_raw(
+                "standard",
+                [
+                    {
+                        "intent": "重建导航网格并运行 path_test",
+                        "acceptance": "路径测试通过，且 path_length >= 1500",
+                        "success_checks": [
+                            {"kind": "path_test", "field": "reachable"},
+                            {"kind": "path_test", "field": "path_length", "equals": True},
+                        ],
+                    }
+                ],
+            )
+        ]
+    )
+
+    _, steps = await make_plan(model, "白盒空间需要 path_test 可达且 path_length >= 1500")
+
+    path_length_checks = [
+        check
+        for check in steps[0].success_checks
+        if check.get("kind") == "path_test" and check.get("field") == "path_length"
+    ]
+    assert path_length_checks == [{"kind": "path_test", "field": "path_length", "gte": 1500}]
 
 
 async def test_planner_reconciles_whitebox_build_with_visual_gate():
