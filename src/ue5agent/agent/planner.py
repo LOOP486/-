@@ -211,6 +211,15 @@ def _reconcile_whitebox_visual_gate(goal: str, steps: list[PlanStep]) -> None:
         (-1, None),
     )
     if build_step is None:
+        build_index, build_step = next(
+            (
+                (index, step)
+                for index, step in enumerate(steps)
+                if _looks_like_whitebox_visual_step(step)
+            ),
+            (-1, None),
+        )
+    if build_step is None:
         return
     target_step = next(
         (step for step in steps[build_index + 1 :] if _looks_like_whitebox_visual_step(step)),

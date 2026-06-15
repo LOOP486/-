@@ -60,6 +60,9 @@
   钩子误拒并触发模型反复换参数。
 - 白盒视觉门禁现在优先绑定到实际截图/视觉步骤；只有单步白盒视觉计划才回退绑定到 build 步，避免
   `wb_build`/`wb_validate` 已通过后，因为提前要求 `screenshot`/`vision_review` 而反复重试同一 build 步。
+- `AgentLoop` 的 early-stop 现在会等同一轮 assistant 消息里的所有 `tool_calls` 都写入 tool 回包后
+  再结束步骤，避免 `wb_validate` 先满足契约时跳过同轮 `viewport_screenshot` 回包，污染后续 LLM
+  history 并触发 `insufficient tool messages following tool_calls`。
 
 ### 新增（关卡尺度 metrics）
 

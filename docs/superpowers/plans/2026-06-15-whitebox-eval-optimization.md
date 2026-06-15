@@ -374,6 +374,12 @@ Follow-up 5: 继续受控重跑时发现新的 agent 执行链问题：planner �
 补完截图后又回到同一步补 validate，出现循环苗头。已停止该轮 eval，改为修 planner：视觉门禁优先
 绑定到实际截图/视觉步骤；只有单步白盒视觉计划才回退绑定 build 步。
 
+Follow-up 6: 再次受控重跑时，s1 同一轮返回 `wb_validate` 与 `viewport_screenshot` 两个
+tool_calls。`wb_validate` 先满足步骤契约后触发 early-stop，导致同轮 `viewport_screenshot`
+没有 tool 回包，下一步 LLM 请求被 provider 拒绝为 `insufficient tool messages following tool_calls`。
+已停止该轮 eval，改为修 core loop：同一 assistant 消息里的所有 tool_calls 必须全部写入 tool 回包后，
+才允许 early-stop。
+
 - [x] **Step 3: 更新文档**
 
 把复跑结论写入 `docs/roadmap.md` 的 B6/B7 条目，并在 `CHANGELOG.md` 的 `[未发布]` 记录行为变化。
@@ -395,6 +401,7 @@ Follow-up 5: 继续受控重跑时发现新的 agent 执行链问题：planner �
 先后暴露编辑器无活动视口、MCP SDK 断链重连缺口与步骤漂移问题；已快速分类/修复，不再让模型空转或把
 断链重试外包给模型；focus 截图的相邻旧结构污染已在取证 wrapper 侧裁掉，手写相机导致的贴边图也会
 交还 UE 侧自动聚焦或被本地快检拦住；视觉硬证据已改为挂到实际截图/视觉步骤，避免 build/validate
-步骤被后续视觉门禁拖回循环。下一步应优先继续提升 agent 自主布局稳定性，而不是靠反复收窄
+步骤被后续视觉门禁拖回循环；early-stop 也已改成所有同轮 tool_calls 回包后才可触发，避免污染
+后续 LLM history。下一步应优先继续提升 agent 自主布局稳定性，而不是靠反复收窄
 或反复运行测试题面。
 视觉档作为后续验证项保留。

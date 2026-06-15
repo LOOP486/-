@@ -18,7 +18,7 @@ from ue5agent.agent.vision_review import parse_review
 from ue5agent.core.errors import ErrorCategory, mark_env_unready, mark_error
 from ue5agent.core.permissions import PermissionGate, PermissionLevel
 from ue5agent.llm.client import LLMUnavailable
-from ue5agent.llm.types import AssistantTurn
+from ue5agent.llm.types import AssistantTurn, ToolCall
 from ue5agent.tools.registry import ScopedRegistry, ToolRegistry, ToolSpec
 
 
@@ -1758,6 +1758,72 @@ async def test_whitebox_visual_step_stops_after_build_validate_and_screenshot(tm
     assert verifies[0]["verdict"] == "pass"
 
 
+async def test_whitebox_visual_early_stop_answers_all_same_turn_tool_calls(tmp_path):
+    """同轮多工具调用时，早停不得跳过后续工具回包污染下一步 history。"""
+    registry = _vision_registry()
+
+    async def wb_build(layout_json: str = "") -> str:
+        return (
+            '搭建完成\n[facts] {"kind": "wb_build", "ok": true, '
+            '"prefix": "SPC1V", "folder_root": "SPC1V/batch"}'
+        )
+
+    registry.register(
+        ToolSpec(
+            name="ue_whitebox__wb_build",
+            description="",
+            parameters={"type": "object", "properties": {"layout_json": {"type": "string"}}},
+            level=PermissionLevel.WRITE_SAFE,
+            handler=wb_build,
+        )
+    )
+    reviewer = _FakeReviewer([parse_review('{"issues": []}')])
+    model = StrictToolHistoryFakeModel(
+        [
+            plan_raw(
+                "standard",
+                [
+                    {
+                        "intent": "使用 wb_build 搭建白盒结构并俯视截图自查",
+                        "acceptance": "wb_validate 与 vision_review 均通过",
+                        "allowed_tools": [
+                            "ue_whitebox__wb_build",
+                            "ue_whitebox__wb_validate",
+                            "ue_editor__viewport_screenshot",
+                        ],
+                        "success_checks": [{"kind": "wb_validate", "field": "ok", "equals": True}],
+                        "required_evidence": ["screenshot", "vision_review"],
+                    },
+                    {"intent": "汇总", "acceptance": "已汇总"},
+                ],
+            ),
+            tool_turn("ue_whitebox__wb_build", '{"layout_json": "{}"}'),
+            AssistantTurn(
+                content=None,
+                tool_calls=[
+                    ToolCall("call_validate", "ue_whitebox__wb_validate", '{"layout_json": "{}"}'),
+                    ToolCall("call_shot", "ue_editor__viewport_screenshot", "{}"),
+                ],
+            ),
+            AssistantTurn(content="已汇总"),
+            judge("pass"),
+        ]
+    )
+    writer = RunWriter(tmp_path, TaskSession.new("视觉早停多工具"))
+    runner = TaskRunner(model, registry, writer, vision_reviewer=reviewer, max_step_attempts=1)
+
+    outcome = await runner.run("搭建白盒并截图视觉审查")
+
+    assert outcome.success
+    events = read_events(writer.trace_path)
+    tool_calls = [e for e in events if e["event"] == "tool_call"]
+    assert [e["tool"] for e in tool_calls][-2:] == [
+        "ue_whitebox__wb_validate",
+        "ue_editor__viewport_screenshot",
+    ]
+    assert [call[0] for call in reviewer.calls] == [["/tmp/shot.png"]]
+
+
 async def test_vision_high_issue_fails_then_regenerates_and_passes(tmp_path):
     """A4：截图被视觉审查判 high 问题 → 步骤 fail；问题区域回灌 history → 重做后
     决定性证据（wb_validate）+ 视觉通过 → pass。全程不调 judge。"""
@@ -2079,6 +2145,36 @@ async def test_planner_puts_visual_gate_on_split_screenshot_step_not_build_step(
     assert "ue_editor__viewport_screenshot" in steps[1].allowed_tools
     assert "wb_build" in steps[1].allowed_tools
     assert "wb_validate" in steps[1].allowed_tools
+
+
+async def test_planner_adds_visual_gate_when_step_mentions_visual_but_not_wb_build():
+    """模型有时写“构建白盒并截图”但不显式写 wb_build，也必须保留视觉硬证据。"""
+    model = FakeModel(
+        [
+            plan_raw(
+                "standard",
+                [
+                    {
+                        "intent": "使用模板构建 SPC1V 白盒训练场，并执行俯视截图自查与结构校验",
+                        "acceptance": (
+                            "白盒生成成功，wb_validate 返回 ok，俯视截图显示完整建筑且视觉审查通过"
+                        ),
+                        "allowed_tools": [
+                            "ue_whitebox__wb_build",
+                            "ue_whitebox__wb_validate",
+                            "ue_editor__viewport_screenshot",
+                        ],
+                        "success_checks": [{"kind": "wb_validate", "field": "ok", "equals": True}],
+                    }
+                ],
+            )
+        ]
+    )
+
+    _, steps = await make_plan(model, "搭建白盒空间，必须截图并通过 vision_review 视觉审查")
+
+    assert steps[0].required_evidence == ["screenshot", "vision_review"]
+    assert _tool_allowed(steps[0].allowed_tools, "viewport_screenshot")
 
 
 async def test_planner_strips_unrequested_whitebox_visual_gate():

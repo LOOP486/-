@@ -46,6 +46,13 @@ def tool_turn(name: str, arguments: str) -> AssistantTurn:
     return AssistantTurn(content=None, tool_calls=[ToolCall("call_1", name, arguments)])
 
 
+def multi_tool_turn(*calls: tuple[str, str, str]) -> AssistantTurn:
+    return AssistantTurn(
+        content=None,
+        tool_calls=[ToolCall(call_id, name, arguments) for call_id, name, arguments in calls],
+    )
+
+
 async def test_tool_call_then_final_answer():
     model = FakeModel([tool_turn("echo", '{"text": "hi"}'), AssistantTurn(content="完成")])
     loop = AgentLoop(model, make_registry())
@@ -98,6 +105,31 @@ async def test_dispatch_exception_still_answers_tool_call():
     assert len(tool_msgs) == 1
     assert "[error] 工具调度异常" in tool_msgs[0]["content"]
     assert tool_msgs[0]["tool_call_id"] == "call_1"
+
+
+async def test_early_stop_waits_until_all_tool_calls_are_answered():
+    """early stop 只能发生在同一 assistant 消息的所有 tool_calls 都回包之后。"""
+    history: list[dict[str, Any]] = []
+    model = FakeModel(
+        [
+            multi_tool_turn(
+                ("call_1", "echo", '{"text": "first"}'),
+                ("call_2", "echo", '{"text": "second"}'),
+            )
+        ]
+    )
+    loop = AgentLoop(
+        model,
+        make_registry(),
+        stop_after_tool=lambda: "证据已足够",
+    )
+
+    result = await loop.run("测试", history=history)
+
+    assert result.final_text == "证据已足够"
+    assert result.tool_call_count == 2
+    tool_messages = [message for message in history if message.get("role") == "tool"]
+    assert [message["tool_call_id"] for message in tool_messages] == ["call_1", "call_2"]
 
 
 async def test_whitebox_layout_json_saved_as_artifact(tmp_path):

@@ -197,25 +197,25 @@ class AgentLoop:
                         ),
                     }
                 )
-                if self._stop_after_tool is not None:
-                    final_text = self._stop_after_tool()
-                    if final_text is not None:
-                        if self._log:
-                            self._log.write(
-                                "run_end",
-                                turns=turn,
-                                tool_calls=tool_call_count,
-                                prompt_tokens=prompt_tokens,
-                                completion_tokens=completion_tokens,
-                                early_stop=True,
-                            )
-                        return LoopResult(
-                            final_text,
-                            turn,
-                            tool_call_count,
-                            prompt_tokens,
-                            completion_tokens,
+            if self._stop_after_tool is not None:
+                final_text = self._stop_after_tool()
+                if final_text is not None:
+                    if self._log:
+                        self._log.write(
+                            "run_end",
+                            turns=turn,
+                            tool_calls=tool_call_count,
+                            prompt_tokens=prompt_tokens,
+                            completion_tokens=completion_tokens,
+                            early_stop=True,
                         )
+                    return LoopResult(
+                        final_text,
+                        turn,
+                        tool_call_count,
+                        prompt_tokens,
+                        completion_tokens,
+                    )
         raise BudgetExhausted(f"迭代 {self._max_iterations} 轮仍未产出最终答复")
 
 

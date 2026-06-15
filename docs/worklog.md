@@ -1,6 +1,6 @@
 # 工作日志（对话交接用）
 
-> 最后更新：2026-06-15（B7 白盒 agent 侧布局 guardrail + MCP 断链重连/视觉步骤早停 + focus 截图前景裁剪；当前 486 个单测全绿）。
+> 最后更新：2026-06-15（B7 白盒 agent 侧布局 guardrail + MCP 断链重连/视觉步骤早停 + focus 截图前景裁剪；当前 489 个单测全绿）。
 > 新对话接手前先读本页 + [development-plan.md](development-plan.md)。
 > 架构权威版：[architecture/design.md](architecture/design.md) + ADR 0001–0006。
 > ✅ 最新结论：**Stage A–D 全收口；Stage E（E1/E2/E3）全部真机收口**。
@@ -12,7 +12,7 @@
 > - **E3 真机出基线**：`eval --suite ue --out evals/baselines/ue/deepseek-2026-06-13.json` →
 >   4/4 通过、一次通过率 100%、平均迭代 1.5、人工干预 0（含 run_functional_test 用例）。
 >   故障注入复核：杀编辑器后单跑 → env_unready → 1 次尝试快速终止（13s，不空转）。
-> 486 单测全绿（`uv run pytest -q`），ruff format/check、mypy 与 check-config 全绿。
+> 489 单测全绿（`uv run pytest -q`），ruff format/check、mypy 与 check-config 全绿。
 > **插件改动尚未提交 agent_test git**（functest 三命令在 EpicUnrealMCPEditorCommands.*/Bridge.cpp）；
 > 本轮追加 viewport_screenshot clean/focus 真机修复并已编译验证；下次可 commit。
 > 编辑器本轮被重启过，结束时已重新拉起在线。
@@ -43,6 +43,9 @@
 > 再次受控重跑时发现 planner 把截图/视觉硬证据提前挂到 s1 build/validate 步，导致 s1 通过后
 > 反复补截图、再补 validate，出现循环苗头；已改为把视觉门禁优先绑定到实际截图/视觉步骤，单步计划才
 > 回退绑定 build 步。
+> 后续受控重跑又发现同一轮 `wb_validate + viewport_screenshot` 多工具调用时，early-stop 在
+> 第一个工具回包后直接结束步骤，跳过截图 tool 回包并污染下一步 history，触发
+> `insufficient tool messages following tool_calls`；已改为同一轮所有 tool_calls 全部回包后才能早停。
 
 ## 项目一句话
 
@@ -70,7 +73,7 @@ ue5agent：UE5 游戏开发 agent——C++ 实现功能、蓝图只读理解、�
   `UE_MCP_TOKEN_FILE` 指向它，客户端握手自动出示；裸 `send_command`（不经 cli load_dotenv）会被拒，
   调试时需手动带 `UE_MCP_TOKEN_FILE` 环境变量。插件源码在 agent_test 仓库（独立 git）。
 - 用户入口：双击 ue5agent-chat.bat 或 `uv run ue5agent run "任务" --yes`；trace 回放 `uv run ue5agent trace`；清理旧运行 `uv run ue5agent runs prune`
-- 486 个单测全绿；评测 `uv run ue5agent eval`（basic+hard 双档基线满分，evals/baselines/）；
+- 489 个单测全绿；评测 `uv run ue5agent eval`（basic+hard 双档基线满分，evals/baselines/）；
   UE 在线档 `uv run ue5agent eval --suite ue`（需编辑器在线，离线探活失败即退出不跑分；
   首份基线 evals/baselines/ue/deepseek-2026-06-13.json；B7 SPC/DST 标准结构 baseline
   evals/baselines/ue/space-agent-test-20260615-205313.json 已归档 6/6，通过率 100%；视觉 baseline
@@ -93,7 +96,7 @@ ue5agent：UE5 游戏开发 agent——C++ 实现功能、蓝图只读理解、�
    - **致命陷阱**：任何依赖 `find` 的"删后复查 / spawn 前重名预检"对这种"僵尸名"天然失效（Python 侧视图 ≠ 引擎命名空间）。前一版按此思路修，崩溃照样复现——别再走回头路。
    - 根治（已实施，spawner.py v3）：spawn 名 = `WB_<批次时间戳base36>_<构件名>`（`_batch_token()`），新名在引擎命名空间必然空闲。clear 仍按 `WB_` 前缀整批回滚（唯一名仍带前缀可清，但 clear 只为防场景堆积，不再承担防崩职责）。
 8. **"卡很久没反应"的来源**：编辑器崩溃后桥端口关闭，agent 不会立即退出，而是对死掉的编辑器反复重试（每次 `WinError 10061 拒绝连接`，掺杂跑偏去编译 C++），把时间耗在无效重试上。根因（第 7 条）解决后不再触发崩溃，自然不再死循环；若仍见大量 10061，先确认编辑器进程是否还活着（`Get-Process *UnrealEditor*` + 探 55557 端口）。
-9. **任何异常都不准从"assistant 发出 tool_calls"到"tool 回包入列"之间逃逸**（2026-06-12 e2e 确诊）：一旦逃逸，history 里的 tool_calls 永远缺回包，该会话**之后每次** LLM 请求都被 API 拒（`insufficient tool messages following tool_calls`），步骤重试三次全空耗且报错样子像 API 故障。首个实例：非交互运行（bash 后台）下 WRITE_PROJECT 触发 `typer.confirm`，无 TTY 抛 Abort 从 gate 逃逸。已修三层：CLI 无 TTY 不挂确认器、pipeline 兜住 gate 一切异常转 [denied]、loop 调度异常转 [error] 仍回包（tests/test_loop.py::test_dispatch_exception_still_answers_tool_call）。若再见 BadRequestError 连发，先查 trace 里最后一个 llm_turn 是否带 tool_names 而其后无 tool_call 事件。
+9. **任何异常都不准从"assistant 发出 tool_calls"到"tool 回包入列"之间逃逸**（2026-06-12 e2e 确诊）：一旦逃逸，history 里的 tool_calls 永远缺回包，该会话**之后每次** LLM 请求都被 API 拒（`insufficient tool messages following tool_calls`），步骤重试三次全空耗且报错样子像 API 故障。首个实例：非交互运行（bash 后台）下 WRITE_PROJECT 触发 `typer.confirm`，无 TTY 抛 Abort 从 gate 逃逸。已修三层：CLI 无 TTY 不挂确认器、pipeline 兜住 gate 一切异常转 [denied]、loop 调度异常转 [error] 仍回包（tests/test_loop.py::test_dispatch_exception_still_answers_tool_call）。2026-06-15 追加修复：early-stop 必须等同一轮所有 tool_calls 都回包后才能结束，防止 `wb_validate` 先满足契约时跳过同轮截图回包。若再见 BadRequestError 连发，先查 trace 里最后一个 llm_turn 是否带 tool_names 而其后无 tool_call 事件。
    - **9b：TTY 启发式在 Git Bash/pty 包装下会误判**（同日二次实测）：单看 `sys.stdin.isatty()` 在 bash 后台仍为 True，确认器被挂上、Abort 被兜住返回 False → write_project 全部被拒（报"未获用户确认"）。已改 stdin+stdout 双检，且 `ue5agent run` 加 `--yes/-y`——**脚本化/agent 调用 run 一律带 --yes**，别赌启发式。
 10. **白盒前缀纪律：异前缀残留是隐形杀手**（2026-06-12 契约 e2e 确诊）：模型自创 spawn 前缀（S1_）后任务 aborted，残留构件没人清（重建语义只清同前缀；当时回滚也按默认 WB 清）。下一个任务在同一 origin 落 WB_ 布局，**S1_ 旧墙正好横在新门洞上** → navmesh 在门处断开、path_test 全 partial；模型把现象误诊为 agent radius（看起来很合理！）。而 wb_validate 当时只查本前缀构件，对异前缀残留全盲——校验 PASS 但场景实际坏了。已修三处：① 契约自洽（success_checks 要求的验证工具自动并入 allowed_tools，planner._reconcile_contract）；② 回滚按实际前缀清（wb_build facts 带 prefix，runner 回滚读取）；③ wb_validate 宽查询 + 异前缀残留检测（与布局区域重叠的旧批次构件 → violation 并给 wb_clear 指引）。**经验：可达性异常先查场景里有没有别的批次的墙，再怀疑导航参数。**
 11. **本机终端跑 pytest 会 OSError 22 静默失败（exit 1 零输出）**：pytest 的 terminal writer 在某些包装终端（agent 工具调用、重定向）下写 stdout 报 Invalid argument，且错误本身也打不出来——看起来像"测试坏了但没有任何信息"。规避：`uv run python scripts/run_tests.py`（进程内重定向 stdout/stderr 到 runs/pytest_out.txt 再跑 pytest，读文件看结果）。ruff/mypy/uv 不受影响。直接在真终端（Windows Terminal/PowerShell 窗口）跑则正常。
