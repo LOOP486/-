@@ -76,6 +76,7 @@ async def make_plan(
     _reconcile_split_whitebox_build_steps(steps)
     _reconcile_combined_whitebox_build_validation_tools(steps)
     _reconcile_split_whitebox_repair_tools(steps)
+    _reconcile_whitebox_validation_checks(steps)
     for step in steps:
         _reconcile_contract(step)
     _strip_unrequested_whitebox_visual_gate(goal, steps)
@@ -148,6 +149,51 @@ def _reconcile_combined_whitebox_build_validation_tools(steps: list[PlanStep]) -
             _ensure_allowed_tool(step, tool)
 
 
+def _reconcile_whitebox_validation_checks(steps: list[PlanStep]) -> None:
+    """自然语言白盒验证/导航步骤补确定性 success_checks，减少口头确认和步骤漂移。"""
+    for step in steps:
+        text = _step_text(step)
+        if "wb_validate" in text:
+            _append_success_check(step, {"kind": "wb_validate", "field": "ok", "equals": True})
+        if _looks_like_path_test_requirement(text):
+            _append_success_check(step, {"kind": "path_test", "field": "reachable", "equals": True})
+            min_length = _path_length_threshold(text)
+            if min_length is not None:
+                _append_success_check(
+                    step, {"kind": "path_test", "field": "path_length", "gte": min_length}
+                )
+
+
+def _append_success_check(step: PlanStep, check: dict[str, Any]) -> None:
+    kind = str(check.get("kind", "")).strip()
+    field = str(check.get("field", "ok")).strip()
+    if any(
+        str(existing.get("kind", "")).strip() == kind
+        and str(existing.get("field", "ok")).strip() == field
+        for existing in step.success_checks
+        if isinstance(existing, dict)
+    ):
+        return
+    step.success_checks.append(check)
+
+
+def _looks_like_path_test_requirement(text: str) -> bool:
+    if "path_test" in text:
+        return True
+    if "可达" not in text:
+        return False
+    return any(token in text for token in ("路径", "导航", "navmesh", "path"))
+
+
+def _path_length_threshold(text: str) -> int | None:
+    match = re.search(r"path_length\s*(?:>=|≥|至少|不少于)?\s*(\d+)", text)
+    if not match:
+        match = re.search(r"(?:路径长度|长度)\s*(?:>=|≥|至少|不少于)\s*(\d+)", text)
+    if not match:
+        return None
+    return int(match.group(1))
+
+
 def _step_allows_tool(step: PlanStep, tool_name: str) -> bool:
     if not step.allowed_tools:
         return True
@@ -162,25 +208,23 @@ def _ensure_allowed_tool(step: PlanStep, tool_name: str) -> None:
 
 
 def _looks_like_whitebox_validation(step: PlanStep) -> bool:
-    text = " ".join(
-        [
-            step.intent,
-            step.acceptance,
-            *(str(check.get("kind", "")) for check in step.success_checks),
-        ]
-    ).lower()
+    text = _step_text(step)
     return "wb_validate" in text or "path_test" in text or "navmesh" in text
 
 
 def _looks_like_whitebox_nav_validation(step: PlanStep) -> bool:
-    text = " ".join(
+    text = _step_text(step)
+    return any(token in text for token in ("path_test", "navmesh", "导航", "可达"))
+
+
+def _step_text(step: PlanStep) -> str:
+    return " ".join(
         [
             step.intent,
             step.acceptance,
             *(str(check.get("kind", "")) for check in step.success_checks),
         ]
     ).lower()
-    return any(token in text for token in ("path_test", "navmesh", "导航", "可达"))
 
 
 def _looks_like_whitebox_visual_step(step: PlanStep) -> bool:

@@ -92,7 +92,7 @@
   `wb_build` 派发前轻量 guardrail（删除共享墙窗、补齐单侧共享门洞、收拢越界楼梯 footprint）、
   `viewport_screenshot` clean view/focus_prefix/margin 与按最新 `folder_root` 自动聚焦截图、
   视觉 high-only gate，以及 blockout 视觉清单（不因门窗框、楼梯踏步/扶手、房间标签扣分）。
-  离线回归已更新到 492 个单测全绿；标准结构档
+  离线回归已更新到 493 个单测全绿；标准结构档
   `evals/baselines/ue/space-agent-test-20260615-205313.json` 已归档，SPC/DST 6/6 通过，
   pass_rate=1.0，first_try_pass_rate=0.8333，平均迭代 3.0，人工干预 0。后续重点继续放在
   白盒搭建 agent 的自主构型稳定性。视觉档复跑时暴露编辑器无活动视口导致截图不可用，已归类为
@@ -118,7 +118,8 @@
   与同步骤重试里的成功 facts 参与后续契约验收，减少重复验证和无效重试。最新受控复跑显示导航步骤
   仍会继承旧截图并再次触发 `vision_review`，已改为只审本次 attempt 新截图，并在执行前本地跳过已被
   历史 success-check facts 满足的纯重复验证步；截图/视觉步骤不会走缓存放行，避免视觉 high 被
-  `wb_validate` 成功事实绕过。
+  `wb_validate` 成功事实绕过。Planner 也会为自然语言 `wb_validate`/`path_test` 步骤补
+  success checks，减少重复校验、口头确认和提前调用下步工具的漂移。
 - [ ] C. 平面图输入：从手绘/平面图/草图识别房间、门窗与连通关系，生成布局 DSL；透视图仅作风格/
   语义参考。（剩余的"图→布局 DSL 结构化识别"尚未做。）
 

@@ -2199,6 +2199,37 @@ async def test_contract_reconciles_check_tools_into_allowlist():
     assert steps2[0].allowed_tools == []
 
 
+async def test_planner_adds_checks_for_natural_whitebox_validation_steps():
+    """自然语言拆出的白盒校验/导航步骤也要有 success_checks，供 runner 本地收口。"""
+    model = FakeModel(
+        [
+            plan_raw(
+                "standard",
+                [
+                    {
+                        "intent": "使用 wb_build 搭建白盒并截图",
+                        "acceptance": "wb_validate 无错误，视觉审查通过",
+                    },
+                    {
+                        "intent": "使用 wb_validate 校验白盒场景",
+                        "acceptance": "wb_validate 返回无错误",
+                    },
+                    {
+                        "intent": "重建导航网格并测试入口到尽端房间的路径可达性和长度",
+                        "acceptance": "路径测试通过，且 path_length >= 1500",
+                    },
+                ],
+            )
+        ]
+    )
+
+    _, steps = await make_plan(model, "搭建白盒空间，必须截图并通过视觉审查，然后验证导航可达")
+
+    assert {"kind": "wb_validate", "field": "ok", "equals": True} in steps[1].success_checks
+    assert {"kind": "path_test", "field": "reachable", "equals": True} in steps[2].success_checks
+    assert {"kind": "path_test", "field": "path_length", "gte": 1500} in steps[2].success_checks
+
+
 async def test_planner_reconciles_whitebox_build_with_visual_gate():
     model = FakeModel(
         [
@@ -2291,7 +2322,8 @@ async def test_planner_puts_visual_gate_on_split_screenshot_step_not_build_step(
     _, steps = await make_plan(model, "搭建白盒训练场，必须截图并通过视觉审查")
 
     assert steps[0].required_evidence == []
-    assert steps[0].success_checks == [{"kind": "wb_build", "field": "ok", "equals": True}]
+    assert {"kind": "wb_build", "field": "ok", "equals": True} in steps[0].success_checks
+    assert {"kind": "wb_validate", "field": "ok", "equals": True} in steps[0].success_checks
     assert steps[1].required_evidence == ["screenshot", "vision_review"]
     assert "ue_editor__viewport_screenshot" in steps[1].allowed_tools
     assert "wb_build" in steps[1].allowed_tools

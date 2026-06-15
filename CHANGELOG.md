@@ -68,6 +68,8 @@
 - TaskRunner 现在只会对本次 attempt 新产生的截图触发 `vision_review`，并会在步骤执行前用已通过的
   success-check facts 本地收口纯重复验证步；截图/视觉步骤不会走该缓存放行，避免导航步骤被旧截图
   视觉审查随机拖回，或视觉 high 后被 `wb_validate` 成功事实绕过。
+- Planner 会为自然语言白盒 `wb_validate`/`path_test` 验证步骤补 success checks（含
+  `path_length >= N` 下限），让 runner 能用客观 facts 早停/本地收口，减少口头确认和步骤漂移。
 
 ### 新增（关卡尺度 metrics）
 

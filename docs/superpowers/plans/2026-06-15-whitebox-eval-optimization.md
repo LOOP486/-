@@ -396,6 +396,11 @@ Follow-up 9: 修复后受控复跑确认 `SPC1V` 的导航步骤不再复审旧�
 成功 fact 不能把截图/视觉步骤本地放行。已停止该轮 eval 并加保护：只有非视觉的纯验证步骤能
 使用历史 success-check facts 本地跳过，截图/视觉步骤必须重新取得视觉证据。
 
+Follow-up 10: 同一轮 trace 还显示自然语言 `wb_validate`/导航步骤缺少 success_checks，导致已
+验证过的步骤仍要求 coder 重复确认，并可能在 s2 提前调用 s3 的导航工具后被 allowlist 拦截。已修
+planner 后处理：对白盒 `wb_validate` 步补 `wb_validate.ok=true`，对 `path_test`/可达步骤补
+`path_test.reachable=true`，文本包含 `path_length >= N` 时补长度下限。
+
 - [x] **Step 3: 更新文档**
 
 把复跑结论写入 `docs/roadmap.md` 的 B6/B7 条目，并在 `CHANGELOG.md` 的 `[未发布]` 记录行为变化。
@@ -420,6 +425,7 @@ Follow-up 9: 修复后受控复跑确认 `SPC1V` 的导航步骤不再复审旧�
 步骤被后续视觉门禁拖回循环；early-stop 也已改成所有同轮 tool_calls 回包后才可触发，避免污染
 后续 LLM history；跨步骤成功 facts 也会被后续契约验收复用，避免重复校验步制造无效重试；视觉审查
 现在只消费本次 attempt 新截图，导航等非视觉步骤不会再被旧截图随机 high 拖回；cached contract pass
-也已限定为非视觉纯验证步骤，不能绕过截图/视觉 high。下一步应优先继续提升 agent 自主布局稳定性，而不是靠反复收窄
+也已限定为非视觉纯验证步骤，不能绕过截图/视觉 high；planner 会为自然语言验证/导航步骤补
+success checks，让 runner 用客观 facts 收口。下一步应优先继续提升 agent 自主布局稳定性，而不是靠反复收窄
 或反复运行测试题面。
 视觉档作为后续验证项保留。
