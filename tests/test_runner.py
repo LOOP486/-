@@ -58,6 +58,66 @@ class RaisingFakeModel(FakeModel):
         return action
 
 
+class CancelledFakeModel(FakeModel):
+    """模拟底层 LLM 客户端用 CancelledError 表示请求被取消/超时。"""
+
+    async def acomplete(self, role, messages, tools=None) -> AssistantTurn:
+        self.seen_messages.append([dict(m) for m in messages])
+        action = self._script.pop(0)
+        if action == "cancel":
+            raise asyncio.CancelledError()
+        return action
+
+
+class BaseExceptionFakeModel(FakeModel):
+    """模拟底层 LLM 客户端抛出 SystemExit 这类 BaseException。"""
+
+    async def acomplete(self, role, messages, tools=None) -> AssistantTurn:
+        self.seen_messages.append([dict(m) for m in messages])
+        action = self._script.pop(0)
+        if action == "system_exit":
+            raise SystemExit(1)
+        return action
+
+
+class SlowCoderFakeModel(FakeModel):
+    """模拟 coder 请求挂起超过 TaskRunner 步内墙钟预算。"""
+
+    async def acomplete(self, role, messages, tools=None) -> AssistantTurn:
+        if role == "coder":
+            await asyncio.sleep(0.2)
+        return await super().acomplete(role, messages, tools=tools)
+
+
+class SlowPlannerFakeModel(FakeModel):
+    """模拟 planner 请求挂起超过 TaskRunner 步内墙钟预算。"""
+
+    async def acomplete(self, role, messages, tools=None) -> AssistantTurn:
+        if role == "planner":
+            await asyncio.sleep(0.2)
+        return await super().acomplete(role, messages, tools=tools)
+
+
+class StrictToolHistoryFakeModel(FakeModel):
+    """模拟 OpenAI 兼容 API 对 tool_call/tool 消息配对的校验。"""
+
+    async def acomplete(self, role, messages, tools=None) -> AssistantTurn:
+        self._assert_tool_history_is_paired(messages)
+        return await super().acomplete(role, messages, tools=tools)
+
+    def _assert_tool_history_is_paired(self, messages) -> None:
+        pending: list[str] = []
+        for message in messages:
+            if message.get("role") == "assistant":
+                pending.extend(call["id"] for call in message.get("tool_calls") or [])
+            elif message.get("role") == "tool":
+                tool_call_id = message.get("tool_call_id")
+                if tool_call_id in pending:
+                    pending.remove(tool_call_id)
+        if pending:
+            raise AssertionError(f"unanswered tool_calls in history: {pending}")
+
+
 async def test_trivial_fast_path(tmp_path):
     runner, _, writer = make_runner(
         tmp_path,
@@ -115,6 +175,37 @@ async def test_llm_request_start_event_records_request_shape(tmp_path):
     assert events.index(start) < next(i for i, e in enumerate(events) if e["event"] == "llm_turn")
 
 
+async def test_plan_cancelled_error_returns_failed_outcome(tmp_path):
+    model = CancelledFakeModel(["cancel"])
+    writer = RunWriter(tmp_path, TaskSession.new("计划取消"))
+    runner = TaskRunner(model, make_registry(), writer)
+
+    outcome = await runner.run("搭建空间")
+
+    assert not outcome.success
+    assert writer.session.status == "aborted"
+    events = read_events(writer.trace_path)
+    errors = [e for e in events if e["event"] == "run_error"]
+    assert errors and errors[0]["phase"] == "plan"
+    assert errors[0]["failure_type"] == "llm_timeout"
+
+
+async def test_plan_wall_timeout_returns_failed_outcome(tmp_path):
+    model = SlowPlannerFakeModel([plan("standard", ("执行", "完成"))])
+    writer = RunWriter(tmp_path, TaskSession.new("计划超时"))
+    runner = TaskRunner(model, make_registry(), writer, step_wall_seconds=0.05)
+
+    outcome = await runner.run("搭建空间")
+
+    assert not outcome.success
+    assert writer.session.status == "aborted"
+    events = read_events(writer.trace_path)
+    errors = [e for e in events if e["event"] == "run_error"]
+    assert errors and errors[0]["phase"] == "plan"
+    assert errors[0]["failure_type"] == "llm_timeout"
+    assert "计划阶段墙钟预算" in errors[0]["error"]
+
+
 async def test_coder_llm_timeout_is_classified_and_retried_once(tmp_path):
     model = RaisingFakeModel(
         [
@@ -137,6 +228,171 @@ async def test_coder_llm_timeout_is_classified_and_retried_once(tmp_path):
     retries = [e for e in events if e["event"] == "recover_action"]
     assert retries and retries[0]["action"] == "retry"
     assert "llm_timeout" in retries[0]["reason"]
+
+
+async def test_coder_cancelled_error_is_classified_and_retried_once(tmp_path):
+    model = CancelledFakeModel(
+        [
+            plan("standard", ("生成白盒布局", "完成")),
+            "cancel",
+            AssistantTurn(content="重试完成"),
+            judge("pass"),
+        ]
+    )
+    writer = RunWriter(tmp_path, TaskSession.new("LLM 取消"))
+    runner = TaskRunner(model, make_registry(), writer, max_step_attempts=3)
+
+    outcome = await runner.run("搭建空间")
+
+    assert outcome.success
+    assert writer.session.plan[0].attempts == 2
+    events = read_events(writer.trace_path)
+    errors = [e for e in events if e["event"] == "run_error"]
+    assert errors and errors[0]["failure_type"] == "llm_timeout"
+    retries = [e for e in events if e["event"] == "recover_action"]
+    assert retries and retries[0]["action"] == "retry"
+
+
+async def test_coder_base_exception_is_recorded_without_process_exit(tmp_path):
+    model = BaseExceptionFakeModel(
+        [
+            plan("standard", ("生成白盒布局", "完成")),
+            "system_exit",
+        ]
+    )
+    writer = RunWriter(tmp_path, TaskSession.new("LLM base exception"))
+    runner = TaskRunner(model, make_registry(), writer, max_step_attempts=3)
+
+    outcome = await runner.run("搭建空间")
+
+    assert not outcome.success
+    assert writer.session.plan[0].attempts == 1
+    events = read_events(writer.trace_path)
+    errors = [e for e in events if e["event"] == "run_error"]
+    assert errors and errors[0]["failure_type"] == "execution_error"
+    assert "SystemExit" in errors[0]["error"]
+
+
+async def test_step_wall_timeout_interrupts_slow_coder_request(tmp_path):
+    model = SlowCoderFakeModel(
+        [
+            plan("standard", ("生成白盒布局", "完成")),
+            AssistantTurn(content="慢请求返回"),
+            judge("pass"),
+        ]
+    )
+    writer = RunWriter(tmp_path, TaskSession.new("步内超时"))
+    runner = TaskRunner(
+        model,
+        make_registry(),
+        writer,
+        max_step_attempts=1,
+        step_wall_seconds=0.05,
+    )
+
+    outcome = await runner.run("执行一个不能卡住整套 eval 的任务")
+
+    assert not outcome.success
+    events = read_events(writer.trace_path)
+    errors = [e for e in events if e["event"] == "run_error"]
+    assert errors and errors[0]["failure_type"] == "llm_timeout"
+    assert "步内墙钟预算" in errors[0]["error"]
+
+
+async def test_step_timeout_retry_does_not_reuse_unanswered_tool_call_history(tmp_path):
+    registry = ToolRegistry(PermissionGate())
+
+    async def slow_tool() -> str:
+        await asyncio.sleep(0.2)
+        return "too late"
+
+    registry.register(
+        ToolSpec(
+            name="slow_tool",
+            description="慢工具",
+            parameters={"type": "object", "properties": {}},
+            level=PermissionLevel.READ,
+            handler=slow_tool,
+        )
+    )
+    model = StrictToolHistoryFakeModel(
+        [
+            plan_raw(
+                "standard",
+                [{"intent": "调用慢工具", "acceptance": "完成", "allowed_tools": ["slow_tool"]}],
+            ),
+            tool_turn("slow_tool", "{}"),
+            AssistantTurn(content="重试完成"),
+            judge("pass"),
+        ]
+    )
+    writer = RunWriter(tmp_path, TaskSession.new("工具超时重试"))
+    runner = TaskRunner(
+        model,
+        registry,
+        writer,
+        max_step_attempts=2,
+        step_wall_seconds=0.05,
+    )
+
+    outcome = await runner.run("执行一个工具可能超时的任务")
+
+    assert outcome.success
+    assert writer.session.plan[0].attempts == 2
+    retry_view = model.seen_messages[2]
+    assert all(not message.get("tool_calls") for message in retry_view)
+    events = read_events(writer.trace_path)
+    retries = [e for e in events if e["event"] == "recover_action"]
+    assert retries and retries[0]["action"] == "retry"
+
+
+async def test_report_only_final_step_is_completed_without_extra_llm(tmp_path):
+    model = FakeModel(
+        [
+            plan_raw(
+                "standard",
+                [
+                    {
+                        "intent": "验证导航可达",
+                        "acceptance": "path_test 返回 reachable true",
+                        "allowed_tools": ["ue_editor__path_test"],
+                        "success_checks": [
+                            {"kind": "path_test", "field": "reachable", "equals": True}
+                        ],
+                    },
+                    {
+                        "intent": "简短报告验证结果",
+                        "acceptance": "输出报告，确认结构校验通过且导航可达",
+                        "allowed_tools": ["ue_editor__output_log_tail"],
+                    },
+                ],
+            ),
+            tool_turn("ue_editor__path_test", "{}"),
+        ]
+    )
+    registry = make_registry()
+
+    async def path_test() -> str:
+        return '{"reachable": true}\n[facts] {"kind": "path_test", "reachable": true}'
+
+    registry.register(
+        ToolSpec(
+            name="ue_editor__path_test",
+            description="",
+            parameters={"type": "object", "properties": {}},
+            level=PermissionLevel.READ,
+            handler=path_test,
+        )
+    )
+    writer = RunWriter(tmp_path, TaskSession.new("报告跳过"))
+    runner = TaskRunner(model, registry, writer)
+
+    outcome = await runner.run("验证后简短报告")
+
+    assert outcome.success
+    assert len(model.seen_messages) == 2
+    assert writer.session.plan[1].status == "done"
+    assert "前序步骤已完成" in outcome.final_answer
 
 
 async def test_whitebox_build_step_prompt_discourages_long_preamble(tmp_path):
@@ -564,6 +820,10 @@ def plan_raw(task_class: str, steps: list[dict]) -> AssistantTurn:
     return AssistantTurn(content=json.dumps({"task_class": task_class, "steps": steps}))
 
 
+def _tool_allowed(tools: list[str], name: str) -> bool:
+    return any(tool == name or tool.endswith(f"__{name}") for tool in tools)
+
+
 async def test_planner_parses_contract_fields():
     model = FakeModel(
         [
@@ -685,6 +945,35 @@ def test_evaluate_success_checks_rules():
     assert passed is not None and passed.verdict == "pass"
 
 
+def test_evaluate_success_checks_treats_wb_validate_valid_as_ok_alias():
+    passed = evaluate_success_checks(
+        [{"kind": "wb_validate", "field": "valid", "equals": True}],
+        [{"kind": "wb_validate", "ok": True, "violations": 0}],
+    )
+
+    assert passed is not None and passed.verdict == "pass"
+
+
+def test_evaluate_success_checks_supports_numeric_min_max():
+    checks = [{"kind": "path_test", "field": "path_length", "min": 1500}]
+
+    passed = evaluate_success_checks(checks, [{"kind": "path_test", "path_length": 2855.1}])
+    failed = evaluate_success_checks(checks, [{"kind": "path_test", "path_length": 1200.0}])
+
+    assert passed is not None and passed.verdict == "pass"
+    assert failed is not None and failed.verdict == "fail"
+    assert "path_length" in failed.reason
+
+
+def test_evaluate_success_checks_treats_path_test_total_as_latest_fact_count():
+    result = evaluate_success_checks(
+        [{"kind": "path_test", "field": "total", "equals": 1}],
+        [{"kind": "path_test", "ok": True, "reachable": True, "path_length": 2855.1}],
+    )
+
+    assert result is not None and result.verdict == "pass"
+
+
 def test_required_evidence_fails_when_screenshot_frame_fact_is_false():
     result = evaluate_required_evidence(
         ["screenshot", "vision_review"],
@@ -791,6 +1080,45 @@ async def test_contract_success_checks_drive_retry_then_pass(tmp_path):
     verifies = [e for e in read_events(writer.trace_path) if e["event"] == "verify_result"]
     assert verifies[0]["mode"] == "contract" and verifies[0]["verdict"] == "insufficient"
     assert verifies[1]["mode"] == "contract" and verifies[1]["verdict"] == "pass"
+
+
+async def test_contract_pass_stops_after_tool_without_summary_turn(tmp_path):
+    """工具事实已经满足 step 契约时，runner 不再额外请求模型做收口总结。
+
+    真机 UE eval 中 path_test 已经返回 reachable=true 后，后续总结请求如果超时/断线，
+    不应抹掉已经拿到的客观验证证据。
+    """
+    registry = _facts_tool_registry(
+        "path_test",
+        '{"reachable": true}\n[facts] {"kind": "path_test", "ok": true, "reachable": true}',
+    )
+    model = FakeModel(
+        [
+            plan_raw(
+                "standard",
+                [
+                    {
+                        "intent": "验证路径",
+                        "acceptance": "path_test 返回可达",
+                        "success_checks": [
+                            {"kind": "path_test", "field": "reachable", "equals": True}
+                        ],
+                    }
+                ],
+            ),
+            tool_turn("path_test", "{}"),
+        ]
+    )
+    writer = RunWriter(tmp_path, TaskSession.new("工具后早停"))
+    runner = TaskRunner(model, registry, writer, max_step_attempts=1)
+
+    outcome = await runner.run("验证可达性")
+
+    assert outcome.success
+    assert len(model.seen_messages) == 2  # plan + coder 工具调用；没有第三次总结请求
+    verifies = [e for e in read_events(writer.trace_path) if e["event"] == "verify_result"]
+    assert verifies[0]["mode"] == "contract"
+    assert verifies[0]["verdict"] == "pass"
 
 
 async def test_decisive_failure_overrides_contract_pass(tmp_path):
@@ -1044,6 +1372,127 @@ def _vision_registry() -> ToolRegistry:
         )
     )
     return registry
+
+
+async def test_viewport_screenshot_auto_focus_uses_latest_wb_build_folder(tmp_path):
+    """模型裸调截图时，runner 用最新 wb_build.folder_root 精确聚焦本批白盒。"""
+    registry = ToolRegistry(PermissionGate())
+    screenshot_args = []
+
+    async def wb_build(prefix: str = "WB") -> str:
+        return (
+            '搭建完成\n[facts] {"kind": "wb_build", "ok": true, '
+            f'"prefix": "{prefix}", "folder_root": "SPC1/abc123"}}'
+        )
+
+    async def viewport_screenshot(
+        file_path: str = "",
+        focus_prefix: str = "",
+        clean_view: bool = False,
+    ) -> str:
+        screenshot_args.append(
+            {"file_path": file_path, "focus_prefix": focus_prefix, "clean_view": clean_view}
+        )
+        return 'saved\n[facts] {"kind": "screenshot", "ok": true, "path": "/tmp/shot.png"}'
+
+    registry.register(
+        ToolSpec(
+            name="ue_whitebox__wb_build",
+            description="",
+            parameters={"type": "object", "properties": {"prefix": {"type": "string"}}},
+            level=PermissionLevel.WRITE_SAFE,
+            handler=wb_build,
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="ue_editor__viewport_screenshot",
+            description="",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "file_path": {"type": "string"},
+                    "focus_prefix": {"type": "string"},
+                    "clean_view": {"type": "boolean"},
+                },
+            },
+            level=PermissionLevel.READ,
+            handler=viewport_screenshot,
+        )
+    )
+    model = FakeModel(
+        [
+            plan("standard", ("搭建并截图", "完成")),
+            tool_turn("ue_whitebox__wb_build", '{"prefix": "SPC1"}'),
+            tool_turn("ue_editor__viewport_screenshot", "{}"),
+            AssistantTurn(content="完成"),
+            judge("pass"),
+        ]
+    )
+    writer = RunWriter(tmp_path, TaskSession.new("截图聚焦"))
+    runner = TaskRunner(model, registry, writer)
+
+    outcome = await runner.run("搭建 SPC1 并截图")
+
+    assert outcome.success
+    assert screenshot_args == [{"file_path": "", "focus_prefix": "SPC1/abc123", "clean_view": True}]
+
+
+async def test_viewport_screenshot_auto_focus_keeps_explicit_focus_prefix(tmp_path):
+    """模型显式传 focus_prefix 时，runner 不覆盖。"""
+    registry = ToolRegistry(PermissionGate())
+    screenshot_args = []
+
+    async def wb_build() -> str:
+        return '搭建完成\n[facts] {"kind": "wb_build", "ok": true, "folder_root": "SPC1/abc123"}'
+
+    async def viewport_screenshot(focus_prefix: str = "", clean_view: bool = True) -> str:
+        screenshot_args.append({"focus_prefix": focus_prefix, "clean_view": clean_view})
+        return 'saved\n[facts] {"kind": "screenshot", "ok": true, "path": "/tmp/shot.png"}'
+
+    registry.register(
+        ToolSpec(
+            name="ue_whitebox__wb_build",
+            description="",
+            parameters={"type": "object", "properties": {}},
+            level=PermissionLevel.WRITE_SAFE,
+            handler=wb_build,
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="ue_editor__viewport_screenshot",
+            description="",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "focus_prefix": {"type": "string"},
+                    "clean_view": {"type": "boolean"},
+                },
+            },
+            level=PermissionLevel.READ,
+            handler=viewport_screenshot,
+        )
+    )
+    model = FakeModel(
+        [
+            plan("standard", ("搭建并截图", "完成")),
+            tool_turn("ue_whitebox__wb_build", "{}"),
+            tool_turn(
+                "ue_editor__viewport_screenshot",
+                '{"focus_prefix": "manual/batch", "clean_view": false}',
+            ),
+            AssistantTurn(content="完成"),
+            judge("pass"),
+        ]
+    )
+    writer = RunWriter(tmp_path, TaskSession.new("截图显式聚焦"))
+    runner = TaskRunner(model, registry, writer)
+
+    outcome = await runner.run("搭建 SPC1 并截图")
+
+    assert outcome.success
+    assert screenshot_args == [{"focus_prefix": "manual/batch", "clean_view": False}]
 
 
 class _FakeReviewer:
@@ -1439,8 +1888,10 @@ async def test_planner_keeps_whitebox_repair_tools_for_split_nav_validation():
     _, steps = await make_plan(model, "搭建白盒空间，然后验证导航可达")
 
     validate = steps[1]
-    assert "wb_build" in validate.allowed_tools
-    assert "wb_clear" in validate.allowed_tools
+    assert _tool_allowed(validate.allowed_tools, "wb_build")
+    assert _tool_allowed(validate.allowed_tools, "wb_clear")
+    assert _tool_allowed(validate.allowed_tools, "navmesh_rebuild")
+    assert _tool_allowed(validate.allowed_tools, "path_test")
 
 
 async def test_planner_keeps_repair_tools_for_split_wb_validate():
@@ -1469,8 +1920,10 @@ async def test_planner_keeps_repair_tools_for_split_wb_validate():
     _, steps = await make_plan(model, "搭建白盒空间后校验")
 
     validate = steps[1]
-    assert "wb_build" in validate.allowed_tools
-    assert "wb_clear" in validate.allowed_tools
+    assert _tool_allowed(validate.allowed_tools, "wb_build")
+    assert _tool_allowed(validate.allowed_tools, "wb_clear")
+    assert not _tool_allowed(validate.allowed_tools, "navmesh_rebuild")
+    assert not _tool_allowed(validate.allowed_tools, "path_test")
 
 
 async def test_planner_keeps_navmesh_rebuild_for_split_path_validation():

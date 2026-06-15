@@ -272,6 +272,124 @@ class TestValidation:
         with pytest.raises(LayoutError, match="不连通"):
             compile_layout(spec, MANIFEST)
 
+    def test_compact_training_layout_entry_route_span_rejected(self):
+        spec = LayoutSpec(
+            name="compact-training",
+            rooms=[
+                Room(name="entrance", rect=(8, 0, 4, 4), doors=[Door("north", 1, 2)]),
+                Room(
+                    name="central_hall",
+                    rect=(8, 4, 4, 4),
+                    doors=[
+                        Door("south", 1, 2),
+                        Door("north", 1, 2),
+                        Door("west", 1, 2),
+                        Door("east", 1, 2),
+                    ],
+                ),
+                Room(
+                    name="west_corridor_a",
+                    rect=(4, 4, 4, 4),
+                    doors=[Door("east", 1, 2), Door("west", 1, 2)],
+                ),
+                Room(
+                    name="west_corridor_b",
+                    rect=(0, 4, 4, 4),
+                    doors=[Door("east", 1, 2), Door("south", 1, 2)],
+                ),
+                Room(name="left_side_room", rect=(0, 0, 4, 4), doors=[Door("north", 1, 2)]),
+                Room(
+                    name="east_corridor_a",
+                    rect=(12, 4, 4, 4),
+                    doors=[Door("west", 1, 2), Door("east", 1, 2)],
+                ),
+                Room(
+                    name="east_corridor_b",
+                    rect=(16, 4, 4, 4),
+                    doors=[Door("west", 1, 2), Door("south", 1, 2)],
+                ),
+                Room(
+                    name="right_side_room",
+                    rect=(16, 0, 4, 4),
+                    doors=[Door("north", 1, 2)],
+                ),
+                Room(name="end_room", rect=(8, 8, 4, 4), doors=[Door("south", 1, 2)]),
+            ],
+        )
+
+        with pytest.raises(LayoutError, match=r"主路径过短|尽端距离过短"):
+            compile_layout(spec, MANIFEST)
+
+    def test_training_layout_named_end_room_must_be_far_from_entry(self):
+        spec = LayoutSpec(
+            name="short-named-end-training",
+            rooms=[
+                Room(name="Entrance", rect=(7, 1, 6, 5), doors=[Door("north", 2, 2)]),
+                Room(
+                    name="CentralHall",
+                    rect=(6, 6, 8, 8),
+                    doors=[
+                        Door("south", 3, 2),
+                        Door("north", 3, 2),
+                        Door("east", 2, 2),
+                        Door("west", 2, 2),
+                    ],
+                ),
+                Room(name="EndRoom", rect=(6, 14, 8, 6), doors=[Door("south", 3, 2)]),
+                Room(
+                    name="EastCorridorH",
+                    rect=(14, 6, 7, 4),
+                    doors=[Door("west", 2, 2), Door("east", 2, 2)],
+                ),
+                Room(
+                    name="EastCorridorV",
+                    rect=(21, 6, 3, 11),
+                    doors=[Door("west", 2, 2), Door("east", 6, 2)],
+                ),
+                Room(name="EastSideRoom", rect=(24, 11, 6, 5), doors=[Door("west", 1, 2)]),
+                Room(name="WestCorridor", rect=(-1, 6, 7, 4), doors=[Door("east", 2, 2)]),
+            ],
+        )
+
+        with pytest.raises(LayoutError, match="尽端距离过短"):
+            compile_layout(spec, MANIFEST)
+
+    def test_long_training_layout_entry_route_span_allowed(self):
+        spec = LayoutSpec(
+            name="long-training",
+            rooms=[
+                Room(name="Entrance", rect=(0, 0, 4, 4), doors=[Door("east", 1, 2)]),
+                Room(
+                    name="HallA",
+                    rect=(4, 0, 4, 4),
+                    doors=[Door("west", 1, 2), Door("east", 1, 2)],
+                ),
+                Room(
+                    name="HallB",
+                    rect=(8, 0, 4, 4),
+                    doors=[Door("west", 1, 2), Door("east", 1, 2)],
+                ),
+                Room(
+                    name="HallC",
+                    rect=(12, 0, 4, 4),
+                    doors=[Door("west", 1, 2), Door("east", 1, 2)],
+                ),
+                Room(
+                    name="HallD",
+                    rect=(16, 0, 4, 4),
+                    doors=[Door("west", 1, 2), Door("east", 1, 2)],
+                ),
+                Room(
+                    name="HallE",
+                    rect=(20, 0, 4, 4),
+                    doors=[Door("west", 1, 2), Door("east", 1, 2)],
+                ),
+                Room(name="EndRoom", rect=(24, 0, 4, 4), doors=[Door("west", 1, 2)]),
+            ],
+        )
+
+        assert compile_layout(spec, MANIFEST)
+
     def test_windows_on_shared_walls_are_rejected(self):
         spec = LayoutSpec(
             name="t",

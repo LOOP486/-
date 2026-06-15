@@ -412,6 +412,39 @@ def test_stair_cannot_block_straight_door_to_door_route():
         compile_layout(spec, KIT)
 
 
+def test_stair_clearance_cannot_cut_turning_door_route():
+    spec = layout_from_dict(
+        {
+            "name": "stair-clearance-cuts-turning-route",
+            "structure_mode": "slab",
+            "rooms": [
+                {
+                    "name": "Main",
+                    "rect": [0, 0, 10, 8],
+                    "level": 0,
+                    "doors": [
+                        {"wall": "north", "at": 3, "width": 2},
+                        {"wall": "east", "at": 3, "width": 2},
+                    ],
+                }
+            ],
+            "stairs": [
+                {
+                    "room": "Main",
+                    "at": [1, 1],
+                    "from_level": 0,
+                    "to_level": 1,
+                    "facing": "north",
+                    "key": "stair_2_001",
+                }
+            ],
+        }
+    )
+
+    with pytest.raises(LayoutError, match="净空"):
+        compile_layout(spec, KIT)
+
+
 def test_explicit_props_use_native_scale_and_required_conflicts_fail():
     spec = layout_from_dict(
         {

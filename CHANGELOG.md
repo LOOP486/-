@@ -12,12 +12,20 @@
   并按旋转后 AABB 识别重复墙，减少楼梯井误报和小夹缝漏检。
 - UE eval 的 coder 超时从直接 abort 调整为分类记录 `llm_timeout` 并同 step 重试一次；LLM 请求开始前新增
   `llm_request_start` 事件，trace 可见 role、turn、消息数、估算字符量与工具数。
+- UE eval 每个任务独立挂载 MCP server，避免长任务后 stdio session 关闭导致后续任务连续
+  `ClosedResourceError`。
+- MCP 客户端在 stdio session 已关闭、损坏或 end-of-stream 后会自动重启对应 server session，
+  避免单个断链工具把后续调用全部污染成同类错误。
+- 声明式验收支持 `path_test.total` / `path_test.count` 作为最新 `path_test` 事实存在别名：
+  只要最终导航事实没有显式 `ok=false`，即可计为 1，避免 `path_test` 已成功但报告误判失败。
 - 白盒 `wb_build` 执行提示改为少解释、优先直接调工具且不重复粘贴完整 JSON；视觉失败重试只携带目标、
   最新 folder/screenshot 与 high 问题摘要，避免长 history 放大超时概率。
-- `viewport_screenshot` 新增 `clean_view`、`focus_prefix` 与 `margin` 参数透传，默认启用 clean view，
-  为 UE 侧隐藏编辑器叠加物和按测试前缀自动聚焦截图留出稳定接口。
+- `viewport_screenshot` 新增 `clean_view`、`focus_prefix` 与 `margin`；runner 会在模型未显式传参时
+  用最新 `wb_build.folder_root` 自动聚焦本批白盒，UE 侧按 Actor/Outliner 前缀计算 bbox、隐藏
+  grid/选中描边/轴标并俯拍，减少旧批次和邻近结构污染视觉判断。
 - 视觉审查 gate 改为 high-only：`VisionReviewResult.passed` 与视觉评测任务只让
   `high_count > 0` 或解析失败阻断自动收口，medium/low 继续作为报告字段保留。
+- 默认视觉审查清单明确按 blockout 阶段评价，不因缺少门框/窗框、楼梯踏步/扶手或房间文字标签扣分。
 
 ### 新增（关卡尺度 metrics）
 

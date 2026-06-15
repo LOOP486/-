@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -58,6 +60,7 @@ class AgentLoop:
         compact_budget_chars: int = 200_000,
         max_wall_seconds: float | None = 1800.0,
         session_log: TraceSink | None = None,
+        stop_after_tool: Callable[[], str | None] | None = None,
     ):
         self._llm = llm
         self._registry = registry
@@ -67,6 +70,7 @@ class AgentLoop:
         self._compact_budget_chars = compact_budget_chars
         self._max_wall_seconds = max_wall_seconds
         self._log = session_log
+        self._stop_after_tool = stop_after_tool
 
     async def run(
         self,
@@ -109,7 +113,18 @@ class AgentLoop:
                     tool_count=len(tools),
                 )
             started = time.monotonic()
-            assistant = await self._llm.acomplete(role, view, tools=tools)
+            try:
+                assistant = await self._llm.acomplete(role, view, tools=tools)
+            except asyncio.CancelledError as exc:
+                task = asyncio.current_task()
+                if task is not None and task.cancelling():
+                    raise
+                raise TimeoutError("LLM 请求被取消（可能是底层超时）") from exc
+            except BaseException as exc:
+                task = asyncio.current_task()
+                if isinstance(exc, KeyboardInterrupt) or (task is not None and task.cancelling()):
+                    raise
+                raise RuntimeError(f"LLM 请求异常：{type(exc).__name__}: {exc}") from exc
             llm_duration_ms = round((time.monotonic() - started) * 1000)
             if assistant.usage:
                 prompt_tokens += assistant.usage.prompt_tokens
@@ -182,6 +197,25 @@ class AgentLoop:
                         ),
                     }
                 )
+                if self._stop_after_tool is not None:
+                    final_text = self._stop_after_tool()
+                    if final_text is not None:
+                        if self._log:
+                            self._log.write(
+                                "run_end",
+                                turns=turn,
+                                tool_calls=tool_call_count,
+                                prompt_tokens=prompt_tokens,
+                                completion_tokens=completion_tokens,
+                                early_stop=True,
+                            )
+                        return LoopResult(
+                            final_text,
+                            turn,
+                            tool_call_count,
+                            prompt_tokens,
+                            completion_tokens,
+                        )
         raise BudgetExhausted(f"迭代 {self._max_iterations} 轮仍未产出最终答复")
 
 

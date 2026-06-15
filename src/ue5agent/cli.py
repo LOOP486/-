@@ -28,6 +28,7 @@ console = Console(legacy_windows=False)
 
 DEFAULT_MODELS = Path("config/models.yaml")
 DEFAULT_AGENT = Path("config/agent.yaml")
+UE_EVAL_STEP_WALL_SECONDS = 210.0
 
 
 def _safe_console_print(*args: Any, **kwargs: Any) -> None:
@@ -255,6 +256,10 @@ async def _run_ue_eval(
         console.print(f"[red]未找到任务文件 {tasks_path}[/red]")
         raise typer.Exit(1)
     if not probe_editor():
+        launched = _launch_editor_for_ue_eval(settings)
+        if launched:
+            _safe_console_print(f"[yellow]{launched}[/yellow]")
+    if not probe_editor():
         console.print(
             "[red]UE 编辑器桥不可达[/red]：ue 档需先打开编辑器并加载 agent_test 工程"
             "（UnrealMCP 插件随工程加载）。不在线时不跑分以免伪造结果。"
@@ -276,49 +281,85 @@ async def _run_ue_eval(
 
     try:
         with run_lock(Path("runs") / ".runner.lock"):  # D2.1 同工程单 runner
-            registry = ToolRegistry(_build_gate(settings, assume_yes=True))  # 评测无人值守
-            async with McpManager(settings.mcp_servers, env=build_runtime_env(settings)) as manager:
-                await manager.register_all(registry)
 
-                async def run_one(task: UeEvalTask) -> UeRunRecord:
-                    writer = RunWriter(Path("runs"), TaskSession.new(task.name), secrets=secrets)
-                    runner = TaskRunner(
-                        llm,
-                        registry,
-                        writer,
-                        step_max_iterations=settings.limits.max_iterations,
-                        vision_reviewer=vision_reviewer,
-                    )
-                    try:
-                        outcome = await runner.run(task.prompt)
-                    except Exception as exc:  # 单任务异常记为失败，不中断整批
-                        summary = summarize_trace(writer.trace_path)
-                        return UeRunRecord(
-                            success=False,
-                            error=f"{type(exc).__name__}: {exc}",
-                            trace_path=str(writer.trace_path),
-                            run_dir=str(writer.dir),
-                            tool_calls=summary["tool_calls"],
-                            facts=summary["facts"],
-                            tool_errors=summary["tool_errors"],
+            async def run_one(task: UeEvalTask) -> UeRunRecord:
+                for attempt in range(2):
+                    if not probe_editor():
+                        launched = _launch_editor_for_ue_eval(settings)
+                        if launched:
+                            _safe_console_print(f"[yellow]{launched}[/yellow]")
+                    record = await run_one_once(task)
+                    if attempt == 0 and _ue_record_env_unready(record):
+                        _safe_console_print(
+                            f"[yellow]{task.name} 检测到编辑器环境掉线，"
+                            "重启编辑器后重跑一次[/yellow]"
                         )
-                    plan = writer.session.plan
-                    summary = summarize_trace(writer.trace_path)
-                    return UeRunRecord(
-                        success=outcome.success,
-                        final_answer=outcome.final_answer or outcome.report,
-                        iteration_count=sum(s.attempts for s in plan),
-                        max_step_attempts=max((s.attempts for s in plan), default=0),
-                        human_intervention=0,  # 无人值守 eval 不触发确认器
-                        error="；".join(summary["run_errors"]) if not outcome.success else "",
-                        trace_path=str(writer.trace_path),
-                        run_dir=str(writer.dir),
-                        tool_calls=summary["tool_calls"],
-                        facts=summary["facts"],
-                        tool_errors=summary["tool_errors"],
-                    )
+                        launched = _launch_editor_for_ue_eval(settings)
+                        if launched:
+                            _safe_console_print(f"[yellow]{launched}[/yellow]")
+                        continue
+                    if attempt == 0 and _ue_record_llm_timeout(record):
+                        _safe_console_print(
+                            f"[yellow]{task.name} 检测到 LLM 超时/取消，重跑一次[/yellow]"
+                        )
+                        continue
+                    return record
+                return record
 
-                report = await run_ue_suite(task_list, run_one)
+            async def run_one_once(task: UeEvalTask) -> UeRunRecord:
+                writer = RunWriter(Path("runs"), TaskSession.new(task.name), secrets=secrets)
+                try:
+                    # UE 在线任务耗时长，stdio MCP session 偶发在单任务后关闭；每个任务独立挂载
+                    # server，避免一条坏 session 污染整套评测。
+                    registry = ToolRegistry(_build_gate(settings, assume_yes=True))  # 评测无人值守
+                    async with McpManager(
+                        settings.mcp_servers, env=build_runtime_env(settings)
+                    ) as manager:
+                        await manager.register_all(registry)
+                        runner = TaskRunner(
+                            llm,
+                            registry,
+                            writer,
+                            step_max_iterations=settings.limits.max_iterations,
+                            step_wall_seconds=UE_EVAL_STEP_WALL_SECONDS,
+                            vision_reviewer=vision_reviewer,
+                        )
+                        outcome = await runner.run(task.prompt)
+                except asyncio.CancelledError as exc:
+                    task_obj = asyncio.current_task()
+                    if task_obj is not None and task_obj.cancelling():
+                        raise
+                    return _ue_exception_record(
+                        writer, TimeoutError("LLM 请求被取消（MCP/LLM 边界）"), exc
+                    )
+                except Exception as exc:  # 单任务异常记为失败，不中断整批
+                    return _ue_exception_record(writer, exc)
+                except BaseException as exc:
+                    task_obj = asyncio.current_task()
+                    if isinstance(exc, KeyboardInterrupt) or (
+                        task_obj is not None and task_obj.cancelling()
+                    ):
+                        raise
+                    wrapped = RuntimeError(f"UE eval 子任务异常：{type(exc).__name__}: {exc}")
+                    return _ue_exception_record(writer, wrapped, exc)
+
+                plan = writer.session.plan
+                summary = summarize_trace(writer.trace_path)
+                return UeRunRecord(
+                    success=outcome.success,
+                    final_answer=outcome.final_answer or outcome.report,
+                    iteration_count=sum(s.attempts for s in plan),
+                    max_step_attempts=max((s.attempts for s in plan), default=0),
+                    human_intervention=0,  # 无人值守 eval 不触发确认器
+                    error="；".join(summary["run_errors"]) if not outcome.success else "",
+                    trace_path=str(writer.trace_path),
+                    run_dir=str(writer.dir),
+                    tool_calls=summary["tool_calls"],
+                    facts=summary["facts"],
+                    tool_errors=summary["tool_errors"],
+                )
+
+            report = await run_ue_suite(task_list, run_one)
     except RunLockError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(1) from exc
@@ -359,6 +400,72 @@ def _build_ue_eval_llm(config: ModelsConfig) -> Any:
     from ue5agent.llm.client import LiteLLMClient
 
     return LiteLLMClient(config, max_retries=2, request_timeout_seconds=180.0)
+
+
+def _ue_exception_record(
+    writer: Any, exc: BaseException, original: BaseException | None = None
+) -> Any:
+    from ue5agent.evals.ue_suite import UeRunRecord, summarize_trace
+
+    summary = summarize_trace(writer.trace_path)
+    error = f"{type(exc).__name__}: {exc}"
+    if original is not None:
+        error += f"（original {type(original).__name__}: {original}）"
+    return UeRunRecord(
+        success=False,
+        error=error,
+        trace_path=str(writer.trace_path),
+        run_dir=str(writer.dir),
+        tool_calls=summary["tool_calls"],
+        facts=summary["facts"],
+        tool_errors=summary["tool_errors"],
+    )
+
+
+_UE_ENV_UNREADY_MARKERS = (
+    "[env:unready]",
+    "编辑器桥连接被拒",
+    "连不上编辑器桥",
+    "编辑器桥通信中断",
+    "编辑器桥通信失败",
+    "ConnectionRefusedError",
+    "WinError 10061",
+)
+
+
+def _ue_record_env_unready(record: Any) -> bool:
+    text = "\n".join(
+        [
+            str(getattr(record, "error", "") or ""),
+            *(str(item) for item in getattr(record, "tool_errors", []) or []),
+        ]
+    )
+    return any(marker in text for marker in _UE_ENV_UNREADY_MARKERS)
+
+
+def _ue_record_llm_timeout(record: Any) -> bool:
+    text = "\n".join(
+        [
+            str(getattr(record, "error", "") or ""),
+            *(str(item) for item in getattr(record, "tool_errors", []) or []),
+        ]
+    )
+    return "llm_timeout" in text or "LLM 请求被取消" in text
+
+
+def _launch_editor_for_ue_eval(settings: AgentSettings, *, timeout_seconds: int = 240) -> str:
+    if settings.engine is None or settings.project is None:
+        return ""
+    from ue5agent.mcp_servers.ue_lifecycle.launcher import LaunchError, launch_editor
+
+    try:
+        return launch_editor(
+            str(settings.engine.root),
+            str(settings.project.uproject),
+            timeout=float(timeout_seconds),
+        )
+    except LaunchError as exc:
+        return f"编辑器启动失败：{exc}"
 
 
 def _build_vision_reviewer(llm: Any) -> Any:

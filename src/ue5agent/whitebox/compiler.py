@@ -46,6 +46,10 @@ _FLOOR_THICKNESS = 20.0
 """地板板厚（uu）：顶面贴 z=0，向下 20uu。cube 基准 100uu 时即旧逻辑的 scale.z=0.2。"""
 _STRUCTURE_MODES = {"slab", "modular"}
 _SCALE_PROFILES = {"realistic"}
+_MIN_REALISTIC_ENTRY_ROUTE_SPAN_CELLS = 15.0
+_ENTRY_ROOM_NAME_MARKERS = ("entrance", "entry", "start", "spawn", "入口", "前厅", "起点", "出生")
+_END_ROOM_NAME_MARKERS_EN = ("end", "terminal", "final", "goal")
+_END_ROOM_NAME_MARKERS_ZH = ("尽端", "终点", "终端", "终局")
 _ENGINE_SLAB_ASSET = AssetDef(
     key="_engine_slab",
     path="/Engine/BasicShapes/Cube.Cube",
@@ -1372,6 +1376,44 @@ def _expanded_world_cells_within_room(
     return out
 
 
+def _stair_clearance_cells(
+    room: Room, stair_cells: set[tuple[int, int, int]]
+) -> set[tuple[int, int, int]]:
+    footprint = {(wx, wy) for level, wx, wy in stair_cells if level == room.level}
+    return _expanded_world_cells_within_room(room, footprint, level=room.level)
+
+
+def _room_door_groups_connected(room: Room, blocked: set[tuple[int, int, int]]) -> bool:
+    if len(room.doors) < 2:
+        return True
+    door_groups = [_door_anchor_cells(room, door) for door in room.doors]
+    if any(not (group - blocked) for group in door_groups):
+        return False
+    free = _room_free_cells(room, blocked)
+    start = next(iter(door_groups[0] - blocked))
+    visited = {start}
+    queue: deque[tuple[int, int, int]] = deque([start])
+    while queue:
+        level, x, y = queue.popleft()
+        for nx, ny in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
+            neighbor = (level, nx, ny)
+            if neighbor in visited or neighbor not in free:
+                continue
+            visited.add(neighbor)
+            queue.append(neighbor)
+    return all(group & visited for group in door_groups)
+
+
+def _room_free_cells(room: Room, blocked: set[tuple[int, int, int]]) -> set[tuple[int, int, int]]:
+    x, y, w, d = room.rect
+    return {
+        (room.level, x + dx, y + dy)
+        for dx in range(w)
+        for dy in range(d)
+        if (room.level, x + dx, y + dy) not in blocked
+    }
+
+
 def _room_by_name(spec: LayoutSpec, name: str) -> Room:
     for room in spec.rooms:
         if room.name == name:
@@ -1956,6 +1998,7 @@ def _validate(spec: LayoutSpec, manifest: Manifest) -> None:
                 raise LayoutError(f"房间 {a.name} 与 {b.name} 内部重叠")
     _validate_props(spec, manifest)
     _validate_connectivity(spec)
+    _validate_realistic_entry_route_span(spec)
 
 
 def _validate_stairs(spec: LayoutSpec, manifest: Manifest) -> None:
@@ -1978,8 +2021,17 @@ def _validate_stairs(spec: LayoutSpec, manifest: Manifest) -> None:
         for _level, wx, wy in cells:
             if not _room_contains_world_cell(room, wx, wy):
                 raise LayoutError(f"房间 {room.name} 的楼梯井越界")
+        if cells & _door_reserved_cells(room):
+            raise LayoutError(f"房间 {room.name} 的楼梯 {asset.key} 堵门")
         if cells & _door_to_door_route_cells(room, through_only=True):
             raise LayoutError(f"房间 {room.name} 的楼梯 {asset.key} 堵门到门路线")
+        clearance_cells = _stair_clearance_cells(room, cells)
+        if clearance_cells & _door_reserved_cells(room):
+            raise LayoutError(f"房间 {room.name} 的楼梯 {asset.key} 净空占用门洞")
+        if clearance_cells & _door_to_door_route_cells(room, through_only=False):
+            raise LayoutError(f"房间 {room.name} 的楼梯 {asset.key} 净空堵门到门路线")
+        if not _room_door_groups_connected(room, clearance_cells):
+            raise LayoutError(f"房间 {room.name} 的楼梯 {asset.key} 切断门间通路")
         if _native_piece_crosses_wall(spec, room, stair.at, asset, rotation, manifest.grid):
             raise LayoutError(f"房间 {room.name} 的楼梯 {asset.key} 穿墙")
         if spec.structure_mode == "modular" and _stair_target_room(spec, stair) is None:
@@ -2127,6 +2179,90 @@ def _validate_connectivity(spec: LayoutSpec) -> None:
             f"房间不连通：{('、'.join(orphans))} 无法从 {names[0]} 到达——"
             "相邻房间需要在共享墙的同一位置各开一个对齐的门"
         )
+
+
+def _validate_realistic_entry_route_span(spec: LayoutSpec) -> None:
+    """真实尺度多房间训练场需要有足够的入口到尽端跨度，避免全挤成短团块。"""
+    if spec.structure_mode != "slab" or spec.scale_profile != "realistic" or len(spec.rooms) < 7:
+        return
+    anchors = [room for room in spec.rooms if _looks_like_entry_room(room.name)]
+    if not anchors:
+        return
+
+    targets = [room for room in spec.rooms if _looks_like_end_room(room.name)]
+    if targets:
+        too_short: tuple[Room, Room, float] | None = None
+        for target in targets:
+            best_anchor, best_span = _best_entry_span_to_room(anchors, target)
+            if best_span >= _MIN_REALISTIC_ENTRY_ROUTE_SPAN_CELLS:
+                continue
+            if too_short is None or best_span < too_short[2]:
+                too_short = (best_anchor, target, best_span)
+        if too_short is None:
+            return
+        best_anchor, target, best_span = too_short
+        raise LayoutError(
+            "多房间训练场尽端距离过短："
+            f"入口 {best_anchor.name} 到尽端 {target.name} 仅 {best_span:.1f} 格，"
+            f"至少 {_MIN_REALISTIC_ENTRY_ROUTE_SPAN_CELLS:.0f} 格；请把尽端房间或主走廊拉远"
+        )
+
+    best_span = 0.0
+    best_anchor = anchors[0]
+    for anchor in anchors:
+        span = max(
+            (_room_center_distance_cells(anchor, room) for room in spec.rooms),
+            default=0.0,
+        )
+        if span > best_span:
+            best_span = span
+            best_anchor = anchor
+        if span >= _MIN_REALISTIC_ENTRY_ROUTE_SPAN_CELLS:
+            return
+
+    raise LayoutError(
+        "多房间训练场主路径过短："
+        f"入口 {best_anchor.name} 到最远房间仅 {best_span:.1f} 格，"
+        f"至少 {_MIN_REALISTIC_ENTRY_ROUTE_SPAN_CELLS:.0f} 格；请拉长走廊或尽端房间"
+    )
+
+
+def _looks_like_entry_room(name: str) -> bool:
+    lowered = name.lower()
+    return any(marker in lowered for marker in _ENTRY_ROOM_NAME_MARKERS)
+
+
+def _looks_like_end_room(name: str) -> bool:
+    lowered = name.lower()
+    if any(marker in lowered for marker in _END_ROOM_NAME_MARKERS_ZH):
+        return True
+    tokens = lowered.replace("-", "_").split("_")
+    return any(
+        any(token == marker or token.startswith(marker) for marker in _END_ROOM_NAME_MARKERS_EN)
+        for token in tokens
+    )
+
+
+def _best_entry_span_to_room(anchors: list[Room], target: Room) -> tuple[Room, float]:
+    best_anchor = anchors[0]
+    best_span = 0.0
+    for anchor in anchors:
+        span = _room_center_distance_cells(anchor, target)
+        if span > best_span:
+            best_anchor = anchor
+            best_span = span
+    return best_anchor, best_span
+
+
+def _room_center_distance_cells(left: Room, right: Room) -> float:
+    ax, ay = _room_center_world_cells(left)
+    bx, by = _room_center_world_cells(right)
+    return ((ax - bx) ** 2 + (ay - by) ** 2) ** 0.5
+
+
+def _room_center_world_cells(room: Room) -> tuple[float, float]:
+    x, y, w, d = room.rect
+    return (x + w / 2, y + d / 2)
 
 
 def _door_world_segments(room: Room) -> list[tuple[str, int, int, int]]:

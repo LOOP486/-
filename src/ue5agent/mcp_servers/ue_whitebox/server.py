@@ -92,10 +92,14 @@ def wb_build(layout_json: str, prefix: str = "WB") -> str:
       route markers 与 cover/pillar；不提供 gameplay 时旧布局输出保持结构层行为；
       `spawn_points`/`routes` 只有缺省时才走默认生成，显式 `[]` 表示不生成对应默认层；
     - props 显式优先；required（optional=false）越界、重叠、堵门或堵同房间门到门路线会报错，
-      optional=true 则跳过；stairs 也不能堵同房间对穿门的直通 corridor；
+      optional=true 则跳过；stairs 也不能堵门、堵任意同房间门到门路线，或让一圈净空切断门间通路；
     - spawn 阶段中途失败时会按同前缀自动回滚半批次；若错误文本提示回滚失败，先 wb_clear 再重试；
     - 多房间必须连通——相邻房间在共享墙同一位置各开一个对齐的门
       （例：A 在 east 墙 at=2 开门，B 紧贴其东侧则在 west 墙的对应位置开门）；
+    - slab+realistic 且 7 个以上房间的训练场，如果存在 entrance/entry/start/spawn/入口/前厅/
+      起点/出生等入口房间命名，入口中心到最远房间中心至少 15 格；如果还存在
+      end/terminal/final/goal/尽端/终点等尽端房间命名，尽端房间中心到入口也必须至少
+      15 格，避免 SPC1 这类多房间训练布局全挤成短团块、path_test 距离不足；
     - windows 是显式外墙开窗，不参与房间连通性；
     - wb_validate 会额外检查近距离同向并列墙，抓出共享墙重复/错轴导致的视觉双墙；
     - 相邻房间的共享边必须完全对齐：贴合的两个房间，其共享墙方向上的范围应一致，

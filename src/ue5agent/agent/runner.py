@@ -61,10 +61,13 @@ _ABORT_HINTS: dict[ErrorCategory, str] = {
         "请重启 UE 编辑器后重跑。不再对死桥空转重试。"
     ),
 }
+_EARLY_CONTRACT_PASS_KINDS = {"compile", "wb_validate", "path_test"}
 
 
 def _execution_failure_type(exc: Exception) -> str:
     text = f"{type(exc).__name__}: {exc}"
+    if "LLM 请求被取消" in text or "LLM 请求超时" in text or "CancelledError" in text:
+        return "llm_timeout"
     if "TimeoutError" in text and (
         type(exc).__name__ == "LLMUnavailable" or "全部模型不可用" in text
     ):
@@ -83,6 +86,53 @@ def _is_whitebox_build_step(step: PlanStep) -> bool:
         "白盒" in text and any(word in text for word in ("搭", "创建", "生成", "落地"))
     )
     return build_intent or (allows_build and "build" in text)
+
+
+def _is_report_only_step(step: PlanStep) -> bool:
+    text = f"{step.intent} {step.acceptance}".lower()
+    has_report_intent = any(
+        token in text for token in ("报告", "总结", "汇总", "report", "summary")
+    )
+    if not has_report_intent:
+        return False
+    tool_markers = (
+        "wb_build",
+        "wb_validate",
+        "path_test",
+        "navmesh_rebuild",
+        "ubt_compile",
+        "viewport_screenshot",
+    )
+    return not any(marker in text for marker in tool_markers)
+
+
+def _report_only_summary() -> str:
+    return "前序步骤已完成，验证结果已纳入最终报告。"
+
+
+def _compact_llm_timeout_retry_history(
+    *,
+    system_content: str,
+    goal: str,
+    step: PlanStep,
+    retry_note: str,
+) -> list[dict[str, Any]]:
+    """LLM/工具墙钟超时后重试使用干净上下文，避免孤儿 tool_call 污染下一轮。"""
+    return [
+        {"role": "system", "content": system_content},
+        {
+            "role": "user",
+            "content": "\n".join(
+                [
+                    "LLM 超时重试摘要：",
+                    f"总目标：{goal}",
+                    f"当前步骤（{step.id}）：{step.intent}",
+                    f"验收标准：{step.acceptance or '无'}",
+                    retry_note,
+                ]
+            ),
+        },
+    ]
 
 
 def _compact_vision_retry_history(
@@ -124,6 +174,30 @@ def _latest_fact_field(facts: list[dict], kind: str, field: str) -> Any:
         if fact.get("kind") == kind and fact.get(field) is not None:
             return fact[field]
     return None
+
+
+def _with_auto_screenshot_focus(name: str, arguments_json: str, facts: list[dict]) -> str:
+    """截图工具未显式传 focus_prefix 时，用最新 wb_build 文件夹精确聚焦本批白盒。"""
+    if name != "viewport_screenshot" and not name.endswith("__viewport_screenshot"):
+        return arguments_json
+    try:
+        arguments = json.loads(arguments_json or "{}")
+    except json.JSONDecodeError:
+        return arguments_json
+    if not isinstance(arguments, dict):
+        return arguments_json
+    if arguments.get("focus_prefix"):
+        return arguments_json
+    focus = (
+        _latest_fact_field(facts, "wb_build", "folder_root")
+        or _latest_fact_field(facts, "wb_build", "outliner_folder_root")
+        or _latest_fact_field(facts, "wb_build", "prefix")
+    )
+    if isinstance(focus, str) and focus.strip():
+        arguments["focus_prefix"] = focus.strip()
+        arguments.setdefault("clean_view", True)
+        return json.dumps(arguments, ensure_ascii=False)
+    return arguments_json
 
 
 @dataclass
@@ -176,6 +250,30 @@ class _EvidenceTee:
         self.error_categories.clear()
 
 
+class _AutoScreenshotFocusRegistry:
+    """在 runner 层补全截图聚焦参数，不污染 core loop 的工具协议。"""
+
+    def __init__(self, base: Any, tee: _EvidenceTee):
+        self._base = base
+        self._tee = tee
+
+    def specs(self) -> list[dict[str, Any]]:
+        return self._base.specs()
+
+    def names(self) -> list[str]:
+        return self._base.names()
+
+    def get(self, name: str) -> Any:
+        return self._base.get(name)
+
+    async def run(self, name: str, arguments_json: str) -> Any:
+        arguments_json = _with_auto_screenshot_focus(name, arguments_json, self._tee.facts)
+        return await self._base.run(name, arguments_json)
+
+    async def dispatch(self, name: str, arguments_json: str) -> str:
+        return (await self.run(name, arguments_json)).text
+
+
 class TaskRunner:
     def __init__(
         self,
@@ -212,14 +310,13 @@ class TaskRunner:
                 allowed_tools=step.allowed_tools,
                 permission_ceiling=step.permission_ceiling,
             )
+        registry = _AutoScreenshotFocusRegistry(registry, tee)
         max_iterations = self._step_max_iterations
-        wall_seconds = self._step_wall_seconds
+        wall_seconds = self._wall_seconds_for_step(step)
         budget = step.step_budget or {}
         try:
             if budget.get("max_turns"):
                 max_iterations = min(int(budget["max_turns"]), max_iterations)
-            if budget.get("max_seconds"):
-                wall_seconds = min(float(budget["max_seconds"]), wall_seconds)
         except (TypeError, ValueError):
             pass  # 预算字段不合法时沿用 runner 默认值
         return AgentLoop(
@@ -229,7 +326,37 @@ class TaskRunner:
             max_iterations=max_iterations,
             max_wall_seconds=wall_seconds,
             session_log=tee,
+            stop_after_tool=lambda: self._early_contract_pass_summary(step, tee),
         )
+
+    def _wall_seconds_for_step(self, step: PlanStep) -> float:
+        wall_seconds = self._step_wall_seconds
+        budget = step.step_budget or {}
+        try:
+            if budget.get("max_seconds"):
+                wall_seconds = min(float(budget["max_seconds"]), wall_seconds)
+        except (TypeError, ValueError):
+            pass
+        return wall_seconds
+
+    def _early_contract_pass_summary(self, step: PlanStep, tee: _EvidenceTee) -> str | None:
+        """工具事实已满足步骤契约时，直接结束本步，避免为一句总结再打 LLM。"""
+        if step.required_evidence or not step.success_checks:
+            return None
+        check_kinds = {
+            str(check.get("kind", "")).strip()
+            for check in step.success_checks
+            if isinstance(check, dict)
+        }
+        if not check_kinds or not check_kinds <= _EARLY_CONTRACT_PASS_KINDS:
+            return None
+        decisive = deterministic_verdict(tee.facts)
+        if decisive is not None and decisive.verdict == "fail":
+            return None
+        contract = evaluate_success_checks(step.success_checks, tee.facts)
+        if contract is None or contract.verdict != "pass":
+            return None
+        return f"[工具证据已满足步骤契约] {contract.reason}"
 
     async def _probe_editor_online(self) -> bool:
         """探活编辑器桥是否在线（bridge_down 恢复用）。无探测工具时保守返回 True，
@@ -422,11 +549,36 @@ class TaskRunner:
 
         deadline = time.monotonic() + self._total_wall_seconds
         self._writer.event("phase_enter", phase="plan")
-        session.task_class, session.plan = await make_plan(
-            self._llm,
-            goal,
-            tool_names=self._registry.names(),
-        )
+        try:
+            plan_timeout = min(self._step_wall_seconds, max(0.01, deadline - time.monotonic()))
+            session.task_class, session.plan = await asyncio.wait_for(
+                make_plan(
+                    self._llm,
+                    goal,
+                    tool_names=self._registry.names(),
+                ),
+                timeout=plan_timeout,
+            )
+        except asyncio.CancelledError as exc:
+            task = asyncio.current_task()
+            if task is not None and task.cancelling():
+                raise
+            timeout = TimeoutError("LLM 请求被取消（可能是底层超时）")
+            return self._abort_during_plan(timeout, original=exc)
+        except TimeoutError as exc:
+            if exc.args and str(exc).strip():
+                timeout = exc
+            else:
+                timeout = TimeoutError(f"LLM 请求超时（计划阶段墙钟预算 {plan_timeout:.2f}s）")
+            return self._abort_during_plan(timeout, original=exc)
+        except Exception as exc:
+            return self._abort_during_plan(exc)
+        except BaseException as exc:
+            task = asyncio.current_task()
+            if isinstance(exc, KeyboardInterrupt) or (task is not None and task.cancelling()):
+                raise
+            wrapped = RuntimeError(f"LLM 请求异常：{type(exc).__name__}: {exc}")
+            return self._abort_during_plan(wrapped, original=exc)
         self._writer.event(
             "phase_exit",
             phase="plan",
@@ -451,6 +603,20 @@ class TaskRunner:
                 step.status = "skipped"
                 continue
             session.current_step = index
+            if _is_report_only_step(step) and summaries:
+                step.status = "done"
+                step.attempts += 1
+                summaries[step.id] = _report_only_summary()
+                self._writer.event("phase_enter", phase="execute", step_id=step.id)
+                self._writer.event("phase_exit", phase="execute", step_id=step.id)
+                self._writer.event(
+                    "verify_result",
+                    step_id=step.id,
+                    verdict="pass",
+                    reason="报告汇总步骤复用前序验证证据",
+                    mode="local",
+                )
+                continue
             step.status = "running"
             while True:
                 if time.monotonic() >= deadline:
@@ -481,7 +647,14 @@ class TaskRunner:
                 execution_verdict: VerifyResult | None = None
                 execution_failure_type: str | None = None
                 try:
-                    result = await loop.run(prompt, role="coder", history=history)
+                    step_timeout = min(
+                        self._wall_seconds_for_step(step),
+                        max(0.01, deadline - time.monotonic()),
+                    )
+                    result = await asyncio.wait_for(
+                        loop.run(prompt, role="coder", history=history),
+                        timeout=step_timeout,
+                    )
                     summaries[step.id] = result.final_text
                 except BudgetExhausted as exc:
                     execution_failure_type = _execution_failure_type(exc)
@@ -492,6 +665,23 @@ class TaskRunner:
                         step_id=step.id,
                         failure_type=execution_failure_type,
                         error=str(exc),
+                    )
+                except TimeoutError as exc:
+                    if exc.args and str(exc).strip():
+                        step_exc = exc
+                    else:
+                        step_exc = TimeoutError(f"LLM 请求超时（步内墙钟预算 {step_timeout:.2f}s）")
+                    execution_failure_type = _execution_failure_type(step_exc)
+                    reason = f"步骤执行异常：{type(step_exc).__name__}: {step_exc}"
+                    if execution_failure_type != "execution_error":
+                        reason = f"{execution_failure_type}: {reason}"
+                    summaries[step.id] = f"[{reason}]"
+                    execution_verdict = VerifyResult("fail", reason)
+                    self._writer.event(
+                        "run_error",
+                        step_id=step.id,
+                        failure_type=execution_failure_type,
+                        error=f"{type(step_exc).__name__}: {step_exc}",
                     )
                 except Exception as exc:  # LLM/工具底层故障：记为步骤失败，不炸整个会话
                     execution_failure_type = _execution_failure_type(exc)
@@ -576,14 +766,15 @@ class TaskRunner:
                             action="retry",
                             reason=verdict.reason,
                         )
-                        history.append(
-                            {
-                                "role": "user",
-                                "content": (
-                                    f"步骤 {step.id} 执行时发生 llm_timeout：{verdict.reason}。"
-                                    "请压缩输出，直接调用必要工具后再总结。"
-                                ),
-                            }
+                        retry_note = (
+                            f"步骤 {step.id} 执行时发生 llm_timeout：{verdict.reason}。"
+                            "请压缩输出，直接调用必要工具后再总结。"
+                        )
+                        history = _compact_llm_timeout_retry_history(
+                            system_content=system_content,
+                            goal=goal,
+                            step=step,
+                            retry_note=retry_note,
                         )
                         continue
                     step.status = "failed"
@@ -680,4 +871,33 @@ class TaskRunner:
             report=report,
             session_id=session.id,
             final_answer=final_answer,
+        )
+
+    def _abort_during_plan(
+        self, exc: Exception, *, original: BaseException | None = None
+    ) -> RunOutcome:
+        session = self._session
+        session.status = "aborted"
+        failure_type = _execution_failure_type(exc)
+        error = f"{type(exc).__name__}: {exc}"
+        if original is not None and original is not exc:
+            error += f"（original {type(original).__name__}: {original}）"
+        reason = f"{failure_type}: 规划阶段异常：{error}"
+        self._writer.event(
+            "run_error",
+            phase="plan",
+            failure_type=failure_type,
+            error=error,
+        )
+        self._writer.event("phase_exit", phase="plan", error=reason)
+        self._writer.event("phase_enter", phase="final_report")
+        report = build_report(session, {}, final_answer=reason)
+        self._writer.write_report(report)
+        self._writer.save_session()
+        self._writer.event("run_end", turns=0, tool_calls=0)
+        return RunOutcome(
+            success=False,
+            report=report,
+            session_id=session.id,
+            final_answer=reason,
         )

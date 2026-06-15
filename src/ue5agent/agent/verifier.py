@@ -100,8 +100,24 @@ def evaluate_success_checks(checks: list[dict], facts: list[dict]) -> VerifyResu
             missing.append(kind)
             continue
         field_name = str(check.get("field", "ok"))
+        actual = _success_check_value(matched, field_name)
+        min_value = _first_present(check, ("min", "gte", "minimum"))
+        max_value = _first_present(check, ("max", "lte", "maximum"))
+        if min_value is not None or max_value is not None:
+            try:
+                actual_num = _coerce_float(actual)
+            except (TypeError, ValueError):
+                failed.append(f"{kind}.{field_name}={actual!r}（不是数值）")
+                continue
+            if min_value is not None and actual_num < _coerce_float(min_value):
+                failed.append(f"{kind}.{field_name}={actual!r}（应 >= {min_value!r}）")
+                continue
+            if max_value is not None and actual_num > _coerce_float(max_value):
+                failed.append(f"{kind}.{field_name}={actual!r}（应 <= {max_value!r}）")
+                continue
+            if "equals" not in check:
+                continue
         expected = check.get("equals", True)
-        actual = matched.get(field_name)
         if actual != expected:
             failed.append(f"{kind}.{field_name}={actual!r}（期望 {expected!r}）")
     if not valid:
@@ -114,6 +130,31 @@ def evaluate_success_checks(checks: list[dict], facts: list[dict]) -> VerifyResu
             "缺少契约要求的证据：" + "、".join(missing) + "——请调用相应验证工具产生证据",
         )
     return VerifyResult("pass", f"契约检查全部通过（{valid} 项）")
+
+
+def _success_check_value(fact: dict, field_name: str) -> object:
+    if field_name in fact:
+        return fact[field_name]
+    if fact.get("kind") == "path_test" and field_name in ("total", "count"):
+        return 0 if fact.get("ok") is False else 1
+    if fact.get("kind") == "wb_validate" and field_name == "valid":
+        return fact.get("ok")
+    if fact.get("kind") == "wb_validate" and field_name == "ok":
+        return fact.get("valid")
+    return None
+
+
+def _first_present(source: dict, keys: tuple[str, ...]) -> object | None:
+    for key in keys:
+        if key in source:
+            return source[key]
+    return None
+
+
+def _coerce_float(value: object) -> float:
+    if isinstance(value, bool | int | float | str):
+        return float(value)
+    raise TypeError(f"not a numeric value: {value!r}")
 
 
 def evaluate_required_evidence(required: list[str], facts: list[dict]) -> VerifyResult | None:

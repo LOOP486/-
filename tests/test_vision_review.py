@@ -98,7 +98,8 @@ def test_default_review_checklist_focuses_on_blockout_space_not_frames(tmp_path)
     messages = build_review_messages("单层三空间白盒", [p])
     text = messages[1]["content"][0]["text"]
 
-    assert "不要因缺少门框/窗框扣分" in text
+    assert "不要因缺少门框/窗框、楼梯踏步/扶手、房间文字标签扣分" in text
+    assert "楼梯只需表达可通行体量" in text
     for keyword in ("主空间", "开合", "遮挡", "转角", "比例", "无意义孤立墙"):
         assert keyword in text
 

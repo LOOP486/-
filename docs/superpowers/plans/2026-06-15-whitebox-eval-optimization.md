@@ -205,7 +205,10 @@ Expected: 新测试失败。
 
 **Files:**
 - Modify: `src/ue5agent/mcp_servers/ue_editor/server.py`
+- Modify: `src/ue5agent/agent/runner.py`
+- Modify: `agent_test/Plugins/UnrealMCP/Source/UnrealMCP/Private/Commands/EpicUnrealMCPEditorCommands.cpp`
 - Test: `tests/test_ue_editor_tools.py`
+- Test: `tests/test_runner.py`
 
 - [x] **Step 1: 写失败测试**
 
@@ -222,11 +225,17 @@ Expected: 新参数尚未实现，测试失败。
 - `margin: float = 1.25`
 
 截图前根据 `focus_prefix` 计算目标 bbox，自动调整相机高度，尽量排除邻近测试体。
+runner 在模型未显式传 `focus_prefix` 时，会优先使用最新 `wb_build.folder_root`
+（如 `SPC1V/<batch>`）补参，避免同前缀历史批次进入截图。
 
 - [x] **Step 3: 验证**
 
 Run: `uv run pytest tests/test_ue_editor_tools.py -q`
 Expected: 参数与 facts 均通过。
+
+追加验证：`uv run pytest tests/test_runner.py tests/test_vision_review.py -q`，
+并真机验证 `FOCUSVERIFY/<batch>` 精确聚焦截图，`focused_actor_count=8`、
+`framing_ok=true`，随后 `wb_clear(prefix="FOCUSVERIFY")` 清理临时构件。
 
 ### Task 6: 视觉 gate 分级
 
@@ -264,6 +273,20 @@ Expected: high blocking 仍失败，medium/low 不阻断。
 > `navmesh_rebuild/path_test` 时本次 eval 拉起的 `ue_editor` MCP 子进程断线并连续返回
 > `ClosedResourceError`；直接调用 `ue_editor.navmesh_rebuild` 可成功，说明 UE bridge 本体在线。
 > 本次未归档新的 UE baseline，Task 7 保持待复跑。
+>
+> 2026-06-15 二次复跑结构档：首个任务通过，但第二个任务开始后复用的 `ue_whitebox`
+> stdio MCP session 已关闭，后续任务连续 `ClosedResourceError`。已改为 UE eval 每个任务独立
+> 挂载 MCP server，避免单条坏 session 污染整套评测；失败报告
+> `space-agent-test-20260615-111941.json` 仅作为诊断产物，不作为正式 baseline。
+>
+> 2026-06-15 后续诊断结构档：`space-agent-test-20260615-185512.json` 跑到 5/6，唯一失败是
+> `SPC1` 的 `path_test.total == 1` success check 没有被 verifier 识别；trace 中最终
+> `path_test` 已可达，路径长度约 2855uu。已补 `path_test.total/count` 别名与回归测试。
+>
+> 2026-06-15 继续复跑结构档：`191735`、`193803`、`194825` 三次均已推进到 SPC/DST 中后段，
+> 但评测 Python 进程被外部终止并留下 stale `runs/.runner.lock`；没有 Python traceback，
+> 也没有生成正式 baseline。结构档仍待稳定进程后复跑；视觉档先暂缓，避免在结构评测进程不稳定时
+> 产出不可比报告。
 
 - [ ] **Step 1: 跑结构测试**
 
@@ -287,4 +310,7 @@ Expected: high 问题为 0 的任务通过；medium/low 出现在报告但不压
 
 ## 当前结论
 
-现有 DSL 方向是成立的，不需要因为这两轮问题推翻。下一步应优先补编译器和 validator 的几何硬约束，同时让 eval 报告把 LLM timeout、工具 timeout、视觉 high/medium 和真实几何错误分开显示。视觉检测应继续保留，但只让 high severity 阻断自动收口。
+现有 DSL 方向是成立的，不需要因为这两轮问题推翻。代码侧 P0/P1 修复已完成，离线回归已覆盖墙体、
+楼梯、LLM timeout、MCP session 重启、截图聚焦、视觉 high-only gate 与 `path_test.total/count`
+验收别名。下一步不再扩大代码改动，优先排查 UE 在线 eval 进程被外部终止的问题；结构档稳定后再归档
+正式 baseline，视觉档随后复跑。

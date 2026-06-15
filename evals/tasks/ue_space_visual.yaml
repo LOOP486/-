@@ -17,9 +17,22 @@
     layout_json 顶层写 origin=[20000, -15000, 0]，这是第二轮视觉检测版，位置在第一轮同类测试旁边但不重叠；
     使用默认 MI_PrototypeGrid_Gray 白盒材质。只测试空间结构和视觉检测，不要生成 gameplay；
     不要生成 props、cover、spawn_points、routes；不要读取或输入平面图。使用 wb_build 落地后，
+    尽端房间中心距入口至少 16 格，不要放 PathStart/PathEnd 或任何标记立方体。推荐采用稳定训练场模板：
+    entry[0,0,6,6]、central_hall[0,6,8,8]、east_corridor[8,6,8,4]、
+    turn_corridor[16,6,4,12]、end_room[16,18,6,6]、west_corridor[-8,6,8,4]、
+    west_side_room[-14,6,6,6]、east_side_room[20,8,6,6]；门洞统一 width=2：
+    entry north at=2 ↔ central_hall south at=2，
+    central_hall east at=1 ↔ east_corridor west at=1，
+    east_corridor east at=2 ↔ turn_corridor west at=2，
+    turn_corridor north at=1 ↔ end_room south at=1，
+    central_hall west at=1 ↔ west_corridor east at=1，
+    west_corridor west at=2 ↔ west_side_room east at=2，
+    turn_corridor east at=3 ↔ east_side_room west at=1。只有外轮廓墙可开窗，
+    不确定就不要开窗。
     必须用 wb_validate 校验，并调用 viewport_screenshot 生成可审查的俯视截图，主体要居中、覆盖完整白盒、
     不能过小或贴边；截图会触发 vision_review，视觉审查必须通过。再用 navmesh_rebuild 和 path_test
-    验证入口到最远房间导航可达。不要使用 modular 结构模式。最终简短报告结构、截图视觉审查和导航验证结果。
+    验证入口到尽端房间导航可达，且至少一条 path_test 的 path_length >= 1500uu。不要使用 modular
+    结构模式。最终简短报告结构、截图视觉审查和导航验证结果。
   max_iterations: 40
   checks:
     - { type: run_succeeded }
@@ -199,7 +212,14 @@
     不要生成 props、cover、spawn_points、routes；不要读取或输入平面图。使用 wb_build 落地后，
     必须用 wb_validate 校验，并调用 viewport_screenshot 生成可审查的俯视截图，主体要居中、覆盖完整白盒、
     不能过小或贴边；截图会触发 vision_review，视觉审查必须通过。再用 navmesh_rebuild 和 path_test
-    验证左右两端房间导航可达。不要使用 modular 结构模式。最终简短报告结构、截图视觉审查和导航验证结果。
+    验证左右两端房间导航可达。推荐采用稳定十字模板：start_room[-8,0,8,6]、
+    main_hall[0,0,8,6]、end_room[8,0,8,6]、north_pocket[2,6,4,5]、
+    south_pocket[2,-5,4,5]；门洞统一 width=2：
+    start_room east at=2 ↔ main_hall west at=2，
+    main_hall east at=2 ↔ end_room west at=2，
+    main_hall north at=2 ↔ north_pocket south at=0，
+    main_hall south at=2 ↔ south_pocket north at=0。只有外轮廓墙可开窗，
+    不确定就不要开窗。不要使用 modular 结构模式。最终简短报告结构、截图视觉审查和导航验证结果。
   max_iterations: 40
   checks:
     - { type: run_succeeded }

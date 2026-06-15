@@ -87,8 +87,12 @@
   [2026-06-15-whitebox-eval-optimization.md](superpowers/plans/2026-06-15-whitebox-eval-optimization.md)。
   2026-06-15 已完成代码侧修复：墙体端点半墙厚补偿、楼梯间护墙小夹缝与 validator metrics、
   coder LLM 超时分类/请求开始事件/同 step 重试、白盒执行提示与视觉失败重试 history 压缩、
-  `viewport_screenshot` clean view/focus_prefix/margin 参数、视觉 high-only gate。剩余为 UE 在线
-  标准结构/视觉两档复跑与 baseline 归档。
+  MCP stdio session 关闭后的自动重启、`path_test.total/count` 验收别名、
+  `viewport_screenshot` clean view/focus_prefix/margin 与按最新 `folder_root` 自动聚焦截图、
+  视觉 high-only gate，以及 blockout 视觉清单（不因门窗框、楼梯踏步/扶手、房间标签扣分）。
+  离线回归已更新到 469 个单测全绿；UE 在线结构档复跑多次推进到 SPC/DST 中后段，但评测
+  Python 进程被外部终止并留下 stale `runs/.runner.lock`，无 Python traceback、无正式 baseline；
+  视觉档待评测进程稳定后再跑并归档。
 - [ ] C. 平面图输入：从手绘/平面图/草图识别房间、门窗与连通关系，生成布局 DSL；透视图仅作风格/
   语义参考。（剩余的"图→布局 DSL 结构化识别"尚未做。）
 

@@ -163,6 +163,11 @@ class TestUeSuite:
         assert client._max_retries == 2
         assert client._request_timeout == 180.0
 
+    def test_ue_eval_step_budget_covers_timeout_retry(self):
+        from ue5agent.cli import UE_EVAL_STEP_WALL_SECONDS
+
+        assert 180.0 < UE_EVAL_STEP_WALL_SECONDS <= 240.0
+
     def test_ue_eval_builds_vision_reviewer_when_vision_role_exists(self):
         from ue5agent.cli import _build_vision_reviewer
 
@@ -298,7 +303,28 @@ class TestUeSuite:
                 "metrics.route_count",
                 "metrics.parallel_wall_duplicate_count",
             } <= zero_metric_paths
+        branch_task = next(task for task in tasks if task.name == "slab_branching_training_space")
+        assert "尽端房间中心距入口至少 16 格" in branch_task.prompt
+        assert "path_test 必须测试入口到尽端房间" in branch_task.prompt
+        assert "稳定训练场模板" in branch_task.prompt
+        assert "entry[0,0,6,6]" in branch_task.prompt
+        assert "end_room[16,18,6,6]" in branch_task.prompt
+        assert "不确定就不要开窗" in branch_task.prompt
         loop_task = next(task for task in tasks if task.name == "slab_loop_gallery_space")
+        assert "2x3 环形模板" in loop_task.prompt
+        assert "前厅[0,0,6,6]" in loop_task.prompt
+        assert "短捷径为长廊 north ↔ 侧厅 south" in loop_task.prompt
+        stair_task = next(
+            task for task in tasks if task.name == "slab_single_level_stairwell_space"
+        )
+        assert "稳定楼梯模板" in stair_task.prompt
+        assert "main_hall[0,0,14,12]" in stair_task.prompt
+        assert "stair_2_001 at=[1,1] facing=north" in stair_task.prompt
+        crossfire_task = next(task for task in tasks if task.name == "slab_crossfire_space")
+        assert "稳定十字模板" in crossfire_task.prompt
+        assert "start_room[-8,0,8,6]" in crossfire_task.prompt
+        assert "north_pocket[2,6,4,5]" in crossfire_task.prompt
+        assert "south_pocket[2,-5,4,5]" in crossfire_task.prompt
         loop_path_lengths = [
             condition.get("gte")
             for check in loop_task.checks
@@ -313,6 +339,18 @@ class TestUeSuite:
 
         tasks = load_ue_tasks(UE_SPACE_VISUAL_TASKS)
         assert tasks and all(task.checks for task in tasks)
+        branch_task = next(
+            task for task in tasks if task.name == "slab_branching_training_space_visual"
+        )
+        assert "稳定训练场模板" in branch_task.prompt
+        assert "entry[0,0,6,6]" in branch_task.prompt
+        assert "end_room[16,18,6,6]" in branch_task.prompt
+        assert "不确定就不要开窗" in branch_task.prompt
+        crossfire_task = next(task for task in tasks if task.name == "slab_crossfire_space_visual")
+        assert "稳定十字模板" in crossfire_task.prompt
+        assert "start_room[-8,0,8,6]" in crossfire_task.prompt
+        assert "north_pocket[2,6,4,5]" in crossfire_task.prompt
+        assert "south_pocket[2,-5,4,5]" in crossfire_task.prompt
         for task in tasks:
             vision_checks = [check for check in task.checks if check.get("kind") == "vision_review"]
             assert {
@@ -565,6 +603,35 @@ class TestUeSuite:
             "ue_whitebox__wb_build: Error executing tool wb_build: manifest 中没有资产",
         ]
         assert summary["run_errors"] == ["llm_timeout: coder TimeoutError"]
+
+    def test_ue_eval_env_unready_detection_is_specific(self):
+        from ue5agent.cli import _ue_record_env_unready
+        from ue5agent.evals.ue_suite import UeRunRecord
+
+        bridge_down = UeRunRecord(
+            success=False,
+            tool_errors=["ue_editor__path_test: [error][env:unready] 连不上编辑器桥"],
+        )
+        layout_error = UeRunRecord(
+            success=False,
+            tool_errors=["ue_whitebox__wb_build: [error] 布局校验未通过：楼梯穿墙"],
+        )
+
+        assert _ue_record_env_unready(bridge_down)
+        assert not _ue_record_env_unready(layout_error)
+
+    def test_ue_eval_llm_timeout_detection_is_specific(self):
+        from ue5agent.cli import _ue_record_llm_timeout
+        from ue5agent.evals.ue_suite import UeRunRecord
+
+        timeout = UeRunRecord(success=False, error="llm_timeout: 规划阶段异常：CancelledError")
+        layout_error = UeRunRecord(
+            success=False,
+            tool_errors=["ue_whitebox__wb_build: [error] 布局校验未通过：楼梯穿墙"],
+        )
+
+        assert _ue_record_llm_timeout(timeout)
+        assert not _ue_record_llm_timeout(layout_error)
 
     async def test_run_ue_suite_aggregates_metrics(self):
         from ue5agent.evals.ue_suite import UeEvalTask, UeRunRecord, run_ue_suite

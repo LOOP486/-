@@ -122,7 +122,7 @@ def _reconcile_split_whitebox_build_steps(steps: list[PlanStep]) -> None:
 
 
 def _reconcile_split_whitebox_repair_tools(steps: list[PlanStep]) -> None:
-    """白盒导航验证拆步时，验证步保留重建工具，允许 agent 自我修复布局。"""
+    """白盒验证拆步时保留对应修复工具，允许 agent 自我修复布局。"""
     seen_whitebox_build = False
     for step in steps:
         if _looks_like_whitebox_build(step.intent) and _step_allows_tool(step, "wb_build"):
@@ -130,7 +130,10 @@ def _reconcile_split_whitebox_repair_tools(steps: list[PlanStep]) -> None:
             continue
         if not seen_whitebox_build or not _looks_like_whitebox_validation(step):
             continue
-        for tool in ("wb_clear", "wb_build", "wb_validate", "navmesh_rebuild", "path_test"):
+        tools = ["wb_clear", "wb_build", "wb_validate"]
+        if _looks_like_whitebox_nav_validation(step):
+            tools.extend(["navmesh_rebuild", "path_test"])
+        for tool in tools:
             _ensure_allowed_tool(step, tool)
 
 
