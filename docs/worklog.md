@@ -35,6 +35,9 @@
 > 同时自动 focus 未覆盖模型手写相机导致截图上下贴边；已修为视觉审查只阻断截图可见的 blockout
 > 空间问题，导航/path_length 继续由 facts 验收，runner 自动 focus 时会丢弃手写 `location`/`rotation`，
 > 贴边图也会被本地快检拦下。
+> 再次受控重跑已确认首个视觉任务通过截图/vision gate；随后导航步骤暴露 `navmesh_rebuild`
+> 因 git checkpoint 前置失败被连续拒绝。已把 `navmesh_rebuild` 标成无需 git checkpoint 的
+> `write_project` 工具（权限仍在，git 快照不再阻断编辑器运行态 NavMesh 构建）。
 
 ## 项目一句话
 

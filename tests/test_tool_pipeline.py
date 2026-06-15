@@ -97,6 +97,8 @@ class TestToolEffects:
     def test_known_table_lookup_and_fallback(self):
         wb = effects_for("wb_build", PermissionLevel.WRITE_SAFE)
         assert not wb.idempotent and wb.rollback_tool == "wb_clear"
+        navmesh = effects_for("navmesh_rebuild", PermissionLevel.WRITE_PROJECT)
+        assert navmesh.idempotent and not navmesh.requires_checkpoint
         unknown = effects_for("never_heard", PermissionLevel.WRITE_PROJECT)
         assert unknown.requires_checkpoint and unknown.idempotent
 

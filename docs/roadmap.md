@@ -105,6 +105,9 @@
   后续受控视觉重跑确认 crop 生效，但暴露 vision 把 `path_length`/NavMesh/path_test 等非视觉指标提前
   判为 high，以及自动 focus 未覆盖模型手写相机导致截图贴边；已改为视觉 high 只看截图可见的 blockout
   空间问题，确定性导航指标仍交给 facts 验收，自动 focus 也会丢弃手写 `location`/`rotation`。
+  继续受控重跑时，首个视觉任务已通过截图/vision gate，但导航步骤暴露 `navmesh_rebuild` 被 git
+  checkpoint 前置条件误拒；现已把该工具声明为不要求 git checkpoint 的 `write_project` 工具，
+  保留权限分级，同时避免编辑器运行态 NavMesh 副作用被 git 快照机制挡住。
 - [ ] C. 平面图输入：从手绘/平面图/草图识别房间、门窗与连通关系，生成布局 DSL；透视图仅作风格/
   语义参考。（剩余的"图→布局 DSL 结构化识别"尚未做。）
 

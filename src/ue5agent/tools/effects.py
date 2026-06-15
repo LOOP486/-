@@ -55,10 +55,12 @@ KNOWN_TOOL_EFFECTS: dict[str, ToolEffects] = {
     # repo_tools：restore 覆盖未提交改动且不可撤销 → 非幂等（dangerous 级别不变）
     "repo_checkpoint": ToolEffects(idempotent=True, resources=("git_index",)),
     "repo_restore": ToolEffects(idempotent=False, resources=("source_files", "git_index")),
+    # ue_editor：navmesh_rebuild 会改编辑器里的导航体积/NavMesh 状态，但 git checkpoint
+    # 保护不了这类运行态关卡副作用；权限仍由配置保持 write_project。
+    "navmesh_rebuild": ToolEffects(
+        idempotent=True, requires_checkpoint=False, resources=("level_actors",)
+    ),
     # ue_lifecycle：editor_launch 幂等（已运行即返回）。
-    # navmesh_rebuild 故意不进表：它的 checkpoint 语义应跟随配置的权限级
-    # （真实配置标 write_project → 等级默认打快照；read 级配置则不强求），
-    # 表里写死任一值都会在另一种配置下改变现有行为。
     "editor_launch": ToolEffects(idempotent=True, resources=("editor_process",)),
 }
 

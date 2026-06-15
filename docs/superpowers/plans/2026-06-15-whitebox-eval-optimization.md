@@ -331,6 +331,11 @@ Expected: high blocking 仍失败，medium/low 不阻断。
 > 过于贴边。已停止 eval，改修 agent 侧：视觉审查提示和解析层禁止把 `path_length`/NavMesh/path_test
 > 等非视觉指标作为 high 阻断；runner 自动注入 `focus_prefix` 时丢弃手写 `location`/`rotation`，
 > 截图本地快检会把居中但贴边的图判为不可审查。
+>
+> 2026-06-15 继续受控重跑：首个视觉任务已越过截图与 vision gate，`vision_review` 返回通过；
+> 随后在导航步骤暴露 `navmesh_rebuild` 被 `前置 checkpoint 失败` 连续拒绝，导致模型反复更换参数。
+> 已停止 eval 并修工具效果声明：`navmesh_rebuild` 仍是 `write_project`，但不要求 git checkpoint，
+> 因为 NavMesh/导航体积是编辑器运行态副作用，git 快照无法保护，后续由 facts 验收。
 
 - [x] **Step 1: 跑结构测试**
 
@@ -355,6 +360,10 @@ focus 截图在宽屏下仍可能包含相邻旧结构。上述问题均已转�
 Follow-up 2: 后续受控重跑确认 crop 已生效，但又暴露 vision 把 `path_length` 这类非视觉验收指标
 提前判 high，以及自动 focus 没有覆盖模型手写相机导致截图贴边；已转为 agent 侧修复。视觉 baseline
 仍待下一次完整通过后再归档。
+
+Follow-up 3: 新一轮受控重跑确认首个视觉任务可通过截图/vision gate，但导航步骤被
+`navmesh_rebuild` 的 git checkpoint 前置条件挡住。已把 `navmesh_rebuild` 标为无需 git checkpoint
+的 write_project 工具，避免 path_test 前的导航构建被权限链路误拒。
 
 - [x] **Step 3: 更新文档**
 
