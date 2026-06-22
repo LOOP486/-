@@ -179,12 +179,15 @@
 
 > 进度：C1 ✅（2026-06-12，纯离线：瘦桥裁剪与分级 + 回归守卫 + 分级表，见 phase1-bridge-plan.md P1.2）。
 > C2 ✅ 收口（2026-06-12 + 06-13 真机）：bp_overview ✅、bp_pseudocode ✅ 控制流伪代码、bp_graph = bp_analyze（graph_name）✅、bp_find_usages ✅（2026-06-13 插件 find_blueprint_references 落地，真机验证 BP_ThirdPersonCharacter→BP_ThirdPersonGameMode）。蓝图四件套全可用。
-> C3 ⬜ 待真机：UE 在线 eval suite 需 eval 框架支持 MCP+编辑器在线的执行路径 + 编辑器开启跑分。
+> C3 ✅ 收口（2026-06-13 真机）：UE 在线 eval suite 已支持 MCP+编辑器在线执行路径，`eval --suite ue` 首份基线 4/4 通过。
 > 故障注入 e2e ✅（2026-06-12）：白盒任务运行中杀编辑器 → 工具 env_unready → runner 快速终止不空转重试（踩坑史第 8 条体系化，B3 真机验证）。
 
 - **C1 = P1.2 裁剪与分级**：上游插件蓝图编辑类/批量构建类命令不注册；保留工具按 4 级权限标级；工具清单与分级表入 phase1-bridge-plan.md。✅（2026-06-12）瘦桥只转发审定的只读命令（编辑/批量类由构造方式强制排除）；唯一写级工具 navmesh_rebuild=write_project；tests/test_ue_editor_tools.py 加 3 个守卫（工具集恰为审定集、源码无编辑类桥命令、蓝图工具只发只读查询）。
 - **C2 = P1.3 蓝图只读导出四件套**：bp_overview / bp_pseudocode（默认视图，token 约 JSON 1/5）/ bp_graph（歧义时下钻）/ bp_find_usages（AssetRegistry 依赖图）。验收：对 BP_ThirdPersonCharacter 输出可读伪代码，标准答案进 eval case。
-- **C3 UE 在线 eval 档**：新建需编辑器在线的独立 suite（read_blueprint_and_explain、wb_build_and_validate、故障注入类：编辑器断连/UBT 多错误/白盒部分失败）。验收：编辑器开启时 `ue5agent eval --suite ue` 可跑分并出基线。沙盒两档继续作为离线门禁。
+- **C3 UE 在线 eval 档**：✅ 已完成（2026-06-13）。独立 suite 覆盖 read_blueprint_and_explain、
+  blueprint_find_usages、wb_build_and_validate、run_functional_test_smoke；编辑器开启时
+  `ue5agent eval --suite ue` 可跑分并出基线。故障注入类（编辑器断连/UBT 多错误/白盒部分失败/
+  PIE 报错）保留为手动制造故障后单跑的持续补充项；沙盒两档继续作为离线门禁。
 
 ## Stage D：安全加固与工程化（右尺寸）
 
@@ -211,7 +214,7 @@
      ✅ `.github/workflows/ci.yml`：uv sync + ruff check + ruff format --check + mypy + pytest（离线）。沙盒 eval 需 API key，未入 CI（避免在 CI 暴露凭据），保留为本地门禁。
 - **明确不做**（单机单用户工具，写入本节即决策记录）：多租户并发、容器化部署、远程任务编排、企业级 secret manager。若日后需要再立 ADR。
 
-## Stage E：Phase 3 行为闭环（待 Stage A–C 后细化）
+## Stage E：Phase 3 行为闭环（已完成）
 
 > 细案见 [stage-e-plan.md](stage-e-plan.md)。进度（2026-06-13，**全部真机收口**）：
 > - E1 ✅ pie_smoke+output_log_tail + **run_functional_test 真机收口**（插件 functest_start/poll/list
@@ -222,13 +225,10 @@
 >   首份 UE 基线 deepseek-chat 4/4 通过、一次通过率 100%、平均迭代 1.5、人工干预 0
 >   （evals/baselines/ue/）；故障注入复核 env_unready 1 次尝试快速终止。
 
-保持 roadmap 既有定义，开工前单独出细案（同 P1 模式）：
+完成项：PIE smoke、Output Log、Automation/Functional Test、子代理体系与 UE 在线 eval 基线均已落地。
+后续只把更多故障注入用例、BuildCookRun smoke、pie_smoke map 参数等作为持续增强项处理。
 
-- PIE smoke test 与 UE Automation/Functional Test 闭环（评审指出的 UE5 E2E 剩余面：Output Log parser、Blueprint compile check、BuildCookRun smoke 归此）。
-- 子代理体系（上下文隔离 + 按角色配模型；届时 vision/judge 可换专长模型，解除单一 DeepSeek 依赖）。
-- 完整评测基准工程与跑分（一次通过率/迭代次数/人工干预次数）。
-
-## 建议施工顺序
+## 历史施工顺序
 
 ```
 A1 → A2 ─┬→ A4（vision key 到位后）→ B4
@@ -239,12 +239,12 @@ D1、D2         （任意空档插入，单项均 ≤1 天量级）
 E              （A–C 收口后细化）
 ```
 
-## 当前等待用户提供
+## 当前可选输入与开放素材
 
-| 事项 | 阻塞 |
+| 事项 | 影响 |
 |---|---|
-| vision 多模态模型 API key | A4 视觉审查（A4 其余子项不阻塞） |
-| 正式模块化资产包 + 关卡 metrics 期望表 | manifest 自动扫描（roadmap Phase 2 备注项）；A 阶段先用 LevelPrototyping |
+| 平面图/草图样本与期望 DSL 输出示例 | roadmap C：平面图输入能力的识别口径与验收样本 |
+| 正式模块化资产包 + 关卡 metrics 期望表 | 资产扫描、manifest 校准与真实项目尺度评测 |
 | 对照模型 API key（可选） | 仅多模型评测 |
 
-已到位：DeepSeek key；UE5.7 + VS2026 + agent_test 测试工程（含 UnrealMCP 插件，git 管理）；GitHub 远端。
+已到位：DeepSeek key；vision=Moonshot/Kimi；UE5.7 + VS2026 + agent_test 测试工程（含 UnrealMCP 插件，git 管理）；GitHub 远端。

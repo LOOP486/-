@@ -41,7 +41,7 @@ agent 能回答「这个蓝图做了什么、谁在用它」，并具备资产�
 | `bp_analyze` | analyze_blueprint_graph | read | 蓝图节点图分析（graph_name 选图） |
 | `bp_overview` | read_blueprint_content | read | 紧凑概览（C2 默认视图） |
 | `bp_pseudocode` | analyze_blueprint_graph | read | 控制流伪代码（无连接退回摘要） |
-| `bp_find_usages` | find_blueprint_references | read | 引用查找（插件命令待真机） |
+| `bp_find_usages` | find_blueprint_references | read | 引用查找（真机验证 2026-06-13） |
 | `viewport_screenshot` | viewport_screenshot | read | 视口截图存 PNG |
 | `navmesh_rebuild` | navmesh_rebuild | **write_project** | 重建 NavMesh（改关卡） |
 | `path_test` | path_test | read | 两点导航可达性 |
@@ -71,27 +71,23 @@ checkpoint 语义）；其余全部 read。
   BP_ThirdPersonCharacter → BP_ThirdPersonGameMode。
 - 验收：对 BP_ThirdPersonCharacter 输出可读概览/伪代码 ✅、谁在用它 ✅；标准答案进 eval case → 移交 C3。
 
-#### 待真机的插件侧 C++ 增强（C2 收尾 + D1.1）—— ✅ 已完成（2026-06-13，commit agent_test 4d280a5）
+#### 插件侧 C++ 增强（C2 收尾 + D1.1）—— ✅ 已完成（2026-06-13，commit agent_test 4d280a5）
 1. ~~analyze_blueprint_graph 补 pin 连接端点 / 按函数图返回~~——已确认插件本就支持，
    经 graph_name 参数修正后无需插件改动（2026-06-12 二次修订）。
 2. ✅ 新增 AssetRegistry 引用查找命令（find_blueprint_references），支撑 bp_find_usages。
-3. ✅ D1.1 服务端：插件生成 token 写 Saved/ + 握手校验 protocol/token（详见 stage-e-plan.md E1 批次）。
-3. （D1.1）插件启动生成 token 写 Saved/，bridge 握手出示 + 协议版本握手。
-   **客户端侧已就绪（2026-06-12）**：bridge.py 每条命令握手带 `protocol`（PROTOCOL_VERSION=1），
-   并在配了 `UE_MCP_TOKEN` 或 `UE_MCP_TOKEN_FILE`（指向插件写的 token 文件）时附 `token` 字段；
-   未配则不带，与无 token 插件兼容（已单测）。**服务端侧待真机 C++**：插件启动生成随机 token 写
-   `Saved/ue5agent_bridge_token.txt`，握手时校验 payload 的 token 与 protocol（不匹配返回明确
-   error 而非静默错乱）；agent.yaml/.env 配 `UE_MCP_TOKEN_FILE` 指向该文件。
+3. ✅ D1.1 服务端：插件生成 token 写 `Saved/ue5agent_bridge_token.txt`，bridge 握手出示
+   protocol+token，服务端校验协议版本与 token；无 token 被拒、带 token 放行、protocol 不符报错。
 
-> Stage E（PIE/Automation/子代理/基准）细案见 [stage-e-plan.md](stage-e-plan.md)；其中 E1 的
-> PIE/Functional/Output Log 三命令与上述 C2 收尾、D1.1 服务端同属一次插件 C++ 改动，建议合并编译。
+> Stage E（PIE/Automation/子代理/基准）细案见 [stage-e-plan.md](stage-e-plan.md)；E1 的
+> PIE/Functional/Output Log 三命令已与上述 C2 收尾、D1.1 服务端在同批插件 C++ 改动中完成。
 
 ### P1.4 验证与评测
 
 - [x] navmesh_rebuild + path_test + viewport_screenshot（✅ 2026-06-12 以 Stage A1 完成：
   插件 C++ 三命令 + ue_editor 注册 + 真机三房间验证，见 development-plan.md A1）
-- [ ] eval 新增 UE 依赖档（read_blueprint_and_explain 等，需编辑器在线，单独 suite）→ 移交 Stage C3
-- 验收：UE 档 eval 在编辑器开启时可跑分
+- [x] eval 新增 UE 依赖档（read_blueprint_and_explain 等，需编辑器在线，单独 suite）——
+  ✅ Stage C3/E3 已完成，首份 UE 基线 4/4 通过。
+- 验收：UE 档 eval 在编辑器开启时可跑分 ✅
 
 ## 风险
 

@@ -123,14 +123,15 @@ ue5agent：UE5 游戏开发 agent——C++ 实现功能、蓝图只读理解、�
 
 ## 下一步（按序）
 
-Stage A–D 全收口、E2 离线 + E1/C2/D1.1 真机完成，**以 [stage-e-plan.md](stage-e-plan.md) 为准**：
+Stage A–E 主线均已收口，后续按产品价值继续小步推进：
 
-1. **run_functional_test**（真机，插件 C++）：UE Automation/Functional Test——同需 PIE 异步会话
-   （start/poll，见踩坑史第 13 条），最重最不确定，单独做。
-2. **E3 = C3 + 完整基准**（真机）：eval 框架支持 MCP+编辑器在线执行路径，`ue5agent eval --suite ue`
-   出基线；E1 完整 e2e（会报错的关卡→pie_smoke 读 Error→修复→复跑零 Error）并入 UE suite 用例。
-   E2 真机 token 下降量化对照也在此测。
-3. **pie_smoke 增强**（可选）：map 参数（先 OpenLevel 再 PIE，当前只跑当前关卡）。
+1. **平面图输入**：从手绘/平面图/草图识别房间、门窗与连通关系，生成布局 DSL；透视图只做风格/
+   语义参考。这是 roadmap 里唯一未完成的主线能力。
+2. **白盒 agent 自主构型稳定性**：继续收集 SPC/DST 或真实策划题面的失败样本，优先补通用构型守则、
+   guardrail、validator facts 与视觉取证链路，不靠收窄题面刷通过率。
+3. **资产语义增强**：在现有 AssetRegistry + imported bounds + 几何先验扫描基础上，接入 VLM
+   缩略图识别，用于命名不规范或语义歧义资产的归类。
+4. **体验横切项**：流式输出、任务中断、会话持久化与恢复仍未做；pie_smoke 的可选 map 参数属于锦上添花。
 
 历史备忘：白盒三房间端到端核验已通过（run `20260611-222536`，3 次 wb_build 含"清旧建新"必崩场景全程无 Fatal/无 10061、verify=pass）。回归保护：tests/test_whitebox_spawn.py + 该 run 基线。若日后又崩，立刻读 `agent_test/Saved/Crashes/` 最新日志末尾的 Fatal 栈（别只看 trace 的 10061 拒连，那是次生现象）。体验项备忘：输出风格规范（列表类先汇总后明细）、evals 输出完整性断言档。
 

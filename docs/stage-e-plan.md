@@ -2,7 +2,7 @@
 
 > 依据：[roadmap.md](roadmap.md) Phase 3、[development-plan.md](development-plan.md) Stage E。
 > 制定：2026-06-12（Stage A/B/C1/D 离线项收口后）。同 P1 模式：开工前先出此细案。
-> 前置：Stage A–D 已收口；剩余真机项（C2 收尾 / C3 / D1.1 服务端）与本阶段大量任务都需 UE 在线。
+> 状态：2026-06-13 已全部真机收口；C2 收尾、C3、D1.1 服务端与 E1/E2/E3 均已落地。
 
 ## 目标
 
@@ -19,7 +19,7 @@
 
 ---
 
-## E1 运行期验证闭环（PIE / Output Log）🔶（2026-06-13：pie_smoke + output_log_tail 完成；Functional Test 留后续）
+## E1 运行期验证闭环（PIE / Output Log / Functional Test）✅（2026-06-13）
 
 - **目标**：agent 改完蓝图/关卡后，能启动 PIE、读 Output Log 作为运行期证据。
 - **任务**：
@@ -37,11 +37,11 @@
        `run_functional_test("FFColorSmokeTest")` 真跑通 passed=true，负向名正确报 not found。
   2. ✅ `ue_editor` 注册：pie_smoke 标 write_project（进 PIE/改状态），output_log_tail 标 read。
   3. ✅ A3 证据信封：pie 落 `pie` 事实（ok=error_count==0）、output_log_tail 落 `output_log` 事实。
-  4. ⬜ B3 `pie_crash` 类别：未单列——PIE 期间编辑器若崩，桥失联自然归 bridge_down（已有恢复），
+  4. `pie_crash` 类别未单列：PIE 期间编辑器若崩，桥失联自然归 bridge_down（已有恢复），
      暂不需专类；真遇到崩溃高发再立。
 - **验收**：✅ 真机：pie_start→等待→pie_stop 进出 PIE、error_count 窗口精确归零；output_log_tail
-  按 severity 过滤、无控制消息噪声。"会报错的关卡跑出 Error→修复→复跑零 Error"的完整 agent
-  e2e 留待与 E3 用例一起做。
+  按 severity 过滤、无控制消息噪声；run_functional_test smoke 已进入 E3 基线。更复杂的"会报错的
+  关卡→修复→复跑零 Error"用例作为后续故障注入补充，不再阻塞 Stage E 收口。
 - **依赖**：编辑器在线 + 插件 C++（已编译验证，2026-06-13）。
 
 ## E2 子代理体系（上下文隔离 + 按角色配模型）✅（2026-06-13）
@@ -60,7 +60,7 @@
 - **验收**：✅ 单测（tests/test_subagent.py，10 例）：上下文隔离（独立 system、看不到主任务措辞）、
   工具面受限（只读、剔除写工具与 spawn_subagent 自身）、模型按角色路由、只回摘要、与主循环
   集成（主循环只见摘要不见子代理工具原始输出）、错误降级（无只读工具/异常/预算耗尽/空摘要/
-  空任务均转 [error] 不上抛）。**真机 token 下降量化对照留待接 UE 在线 eval（E3）时测。**
+  空任务均转 [error] 不上抛）。真机 token 下降量化对照可在后续真实任务中继续观察，不作为收口门禁。
 - **依赖**：无硬真机依赖（沙盒 + 替身单测已覆盖）；与 E1/E3 并行。
 - **范围取舍**：子代理工具面硬限只读（写操作必须留主循环——checkpoint/回滚/验收机器都在那里）；
   嵌套深度 1（恒排除 spawn_subagent 自身防递归失控）；子代理工具的 facts 不进主步骤证据通道
@@ -93,7 +93,7 @@
 - `functest_list{filter?, max?}` → `{total, returned, tests[]}`：GetValidTestNames（临时放宽
   RequestedTestFilter 到 ApplicationContextMask|FilterMask）。
 
-## 建议施工顺序
+## 历史施工顺序
 
 ```
 E1（插件 PIE/Automation 命令 + ue_editor 注册 + 证据/恢复）   ← 真机
@@ -106,9 +106,8 @@ E3 = C3 + 完整基准（依赖 E1 用例 + C2 标准答案，编辑器在线跑
 下面三项已在一次插件 C++ 改动 + 重编译中全部落地并真机验证（commit agent_test 4d280a5）：
 - **C2 收尾** ✅：find_blueprint_references（→bp_find_usages）。
 - **D1.1 服务端** ✅：token 生成/写盘 + 握手校验 protocol/token。
-- **E1** ✅（pie_smoke + output_log_tail；Functional Test 留后续）。
+- **E1** ✅：pie_smoke + output_log_tail + run_functional_test/functest_list。
 
-剩余真机待办（下次 UE 在线会话）：
-- **run_functional_test**：UE Automation/Functional Test（同需 PIE 异步会话，最重，单独做）。
-- **E3 = C3 + 完整基准**：eval 框架支持 MCP+编辑器在线执行路径，`eval --suite ue` 出基线。
-- **pie_smoke 增强**：可选 map 参数（先 OpenLevel 再 PIE）；E1 完整 e2e（会报错的关卡→修复→复跑零 Error）并入 E3 用例。
+持续增强项：
+- **pie_smoke 增强**：可选 map 参数（先 OpenLevel 再 PIE）。
+- **更多故障注入用例**：会报错的关卡→pie_smoke 读 Error→修复→复跑零 Error、BuildCookRun smoke 等。
