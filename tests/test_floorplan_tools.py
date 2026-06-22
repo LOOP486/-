@@ -33,6 +33,10 @@ def test_build_floorplan_tools_exposes_wall_extraction_tool(tmp_path):
     assert spec.effects.requires_checkpoint is False
     assert spec.parameters["required"] == ["image_path"]
     assert specs["floorplan_svg_to_grid_dsl"].parameters["required"] == ["line_svg"]
+    assert specs["floorplan_calibrate_doors_to_grid_dsl"].parameters["required"] == [
+        "line_svg",
+        "door_candidates",
+    ]
 
 
 async def test_floorplan_extract_walls_tool_writes_outputs_and_facts(tmp_path):
@@ -90,3 +94,37 @@ async def test_floorplan_svg_to_grid_dsl_tool_writes_layout_and_report(tmp_path)
     assert facts["wall_count_after"] == 2
     assert (tmp_path / "runs" / "svg-grid-test" / "layout_walls.json").exists()
     assert (tmp_path / "runs" / "svg-grid-test" / "snap_report.json").exists()
+
+
+async def test_floorplan_calibrate_doors_to_grid_dsl_tool_writes_calibrated_layout(tmp_path):
+    svg = tmp_path / "wall_lines.svg"
+    svg.write_text(
+        """<svg xmlns="http://www.w3.org/2000/svg" width="120" height="90">
+  <line id="wall_001" x1="0" y1="0" x2="60" y2="0" data-axis="h"/>
+</svg>
+""",
+        encoding="utf-8",
+    )
+    spec = {spec.name: spec for spec in build_floorplan_tools(tmp_path)}[
+        "floorplan_calibrate_doors_to_grid_dsl"
+    ]
+
+    text = await spec.handler(
+        line_svg=str(svg),
+        door_candidates=[{"id": "door_a", "x1": 24, "y1": 0, "x2": 36, "y2": 0}],
+        output_dir="runs/door-calibration-test",
+        apply_openings=True,
+    )
+    visible, facts = extract_facts(text)
+
+    assert "门宽标定" in visible
+    assert facts is not None
+    assert facts["kind"] == "floorplan_door_scale_calibration"
+    assert facts["units_per_grid"] == 12
+    assert facts["applied_opening_count"] == 1
+    layout_path = tmp_path / "runs" / "door-calibration-test" / "layout_walls.json"
+    report_path = tmp_path / "runs" / "door-calibration-test" / "door_calibration_report.json"
+    layout = json.loads(layout_path.read_text(encoding="utf-8"))
+    assert layout["source"]["calibration"]["method"] == "door_width"
+    assert layout["walls"][0]["openings"] == [{"at": 2, "width": 1}]
+    assert report_path.exists()

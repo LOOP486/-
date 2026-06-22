@@ -15,6 +15,9 @@
 - 新增内置 agent 工具 `floorplan_svg_to_grid_dsl`：直接读取 `wall_lines.svg` 的 `<line>` 精确坐标，
   映射到整数格 `walls` DSL，并输出 `snap_report.json` 记录每条墙段的 SVG→格子误差；墙线算法成功时
   也统一走这条 SVG→DSL 路径。
+- 新增内置 agent 工具 `floorplan_calibrate_doors_to_grid_dsl`：接收 vision/图像算法输出的门洞端点
+  候选，以常规门宽约 1m/1 格为尺度锚点反推 `units_per_grid`，重新生成整数格 `walls` DSL；
+  可选把能投影到连续墙段的门写入 `walls[].openings`，并输出 `door_calibration_report.json`。
 - `--floorplan` 墙线算法成功时会写入 `floorplan_wall_extraction` fact，并把 SVG/PNG/DSL/snap report/summary
   存入 run artifacts；vision 回退结果仍会作为 `floorplan_recognition` fact 写入 trace，并保存输入图、
   原始回答与规范化后的 `layout.json`。

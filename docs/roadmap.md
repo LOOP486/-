@@ -139,6 +139,10 @@
     墙体 SVG、半透明原图叠加预览、`layout_walls.json` 与 `floorplan_wall_extraction` facts；新增
     `floorplan_svg_to_grid_dsl`，可直接把已确认的 `wall_lines.svg` line 坐标映射为整数格 `walls`
     DSL，并输出 `snap_report.json` 供后续白盒构建步骤调用。
+  - [x] 门宽尺度标定工具（2026-06-22）：新增 `floorplan_calibrate_doors_to_grid_dsl`，允许
+    vision/图像算法先输出门洞端点候选，再用常规平开门约 1m/1 格反推 `units_per_grid`，重新生成
+    `walls` DSL；可选把匹配到连续墙段的门写入 `walls[].openings`，并输出
+    `door_calibration_report.json` 记录使用/剔除的门候选和未匹配开口。
   - [x] UE 在线验收（2026-06-22，run
     `20260622-121606_根据这张平面图生成默认-slab-白盒-拓扑优先`）：真实 `test.png` 跑通
     `floorplan_recognition.ok=true`、`wb_validate.ok=true`、`screenshot.framing_ok=true`、

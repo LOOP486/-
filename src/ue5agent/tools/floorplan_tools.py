@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from ue5agent.core.permissions import PermissionLevel
+from ue5agent.floorplan.door_calibration import calibrate_wall_svg_to_grid_dsl
 from ue5agent.floorplan.wall_extractor import (
     convert_wall_svg_to_grid_dsl,
     extract_floorplan_walls,
@@ -91,6 +92,37 @@ def build_floorplan_tools(project_root: Path) -> list[ToolSpec]:
             f"[facts] {json.dumps(facts, ensure_ascii=False)}"
         )
 
+    async def floorplan_calibrate_doors_to_grid_dsl(
+        line_svg: str,
+        door_candidates: list[dict[str, Any]] | str,
+        output_dir: str | None = None,
+        target_door_width_grid: float = 1.0,
+        min_confidence: float = 0.5,
+        outlier_ratio: float = 0.35,
+        apply_openings: bool = False,
+    ) -> str:
+        svg = Path(line_svg)
+        candidates = _load_door_candidates(door_candidates, root)
+        result = calibrate_wall_svg_to_grid_dsl(
+            svg,
+            _safe_output_dir(output_dir, svg),
+            door_candidates=candidates,
+            target_door_width_grid=target_door_width_grid,
+            min_confidence=min_confidence,
+            outlier_ratio=outlier_ratio,
+            apply_openings=apply_openings,
+        )
+        facts = result.facts()
+        opening_text = f"，并写入 {result.applied_opening_count} 个门洞" if apply_openings else ""
+        return (
+            f"已用 {result.used_door_count} 个门候选完成门宽标定，"
+            f"units_per_grid={result.units_per_grid:g}{opening_text}。\n"
+            f"- walls DSL：{result.layout_json}\n"
+            f"- snap 报告：{result.snap_report_json}\n"
+            f"- 门宽标定报告：{result.calibration_report_json}\n"
+            f"[facts] {json.dumps(facts, ensure_ascii=False)}"
+        )
+
     return [
         ToolSpec(
             "floorplan_extract_walls",
@@ -159,7 +191,91 @@ def build_floorplan_tools(project_root: Path) -> list[ToolSpec]:
             floorplan_svg_to_grid_dsl,
             effects=_FLOORPLAN_EFFECTS,
         ),
+        ToolSpec(
+            "floorplan_calibrate_doors_to_grid_dsl",
+            (
+                "读取墙线 SVG 与视觉/图像算法输出的门洞端点候选，用标准门宽反推 "
+                "units_per_grid，重新生成整数格 walls DSL；可选把能匹配到连续墙段的门"
+                "写入 openings。"
+            ),
+            _schema(
+                line_svg={
+                    "type": "string",
+                    "description": "wall_lines.svg 路径，坐标系需与门候选一致",
+                    "_required": True,
+                },
+                door_candidates={
+                    "anyOf": [
+                        {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {"type": "string"},
+                                    "x1": {"type": "number"},
+                                    "y1": {"type": "number"},
+                                    "x2": {"type": "number"},
+                                    "y2": {"type": "number"},
+                                    "confidence": {"type": "number"},
+                                },
+                            },
+                        },
+                        {"type": "string"},
+                    ],
+                    "description": (
+                        "门洞端点候选数组，或包含数组/door_candidates 字段的 JSON 字符串/"
+                        "JSON 文件路径；端点为 SVG 坐标"
+                    ),
+                    "_required": True,
+                },
+                output_dir={
+                    "type": "string",
+                    "description": (
+                        "输出目录，缺省写入 runs/floorplan_wall_extract/；必须在工程根内"
+                    ),
+                },
+                target_door_width_grid={
+                    "type": "number",
+                    "description": "标准门宽对应的 DSL 格数，默认 1，即 1m/1格",
+                },
+                min_confidence={
+                    "type": "number",
+                    "description": "参与标定的门候选最低置信度，默认 0.5",
+                },
+                outlier_ratio={
+                    "type": "number",
+                    "description": "门宽离群剔除比例，默认 0.35",
+                },
+                apply_openings={
+                    "type": "boolean",
+                    "description": "是否把匹配到连续墙段的门候选写入 walls[].openings",
+                },
+            ),
+            PermissionLevel.WRITE_PROJECT,
+            floorplan_calibrate_doors_to_grid_dsl,
+            effects=_FLOORPLAN_EFFECTS,
+        ),
     ]
+
+
+def _load_door_candidates(raw: list[dict[str, Any]] | str, root: Path) -> list[dict[str, Any]]:
+    if isinstance(raw, list):
+        return raw
+    candidate = Path(raw)
+    if not candidate.is_absolute():
+        candidate = root / candidate
+    if candidate.exists() and candidate.is_file():
+        payload = json.loads(candidate.read_text(encoding="utf-8"))
+    else:
+        payload = json.loads(raw)
+    if isinstance(payload, list):
+        return payload
+    if isinstance(payload, dict):
+        for key in ("door_candidates", "doors", "items"):
+            value = payload.get(key)
+            if isinstance(value, list):
+                return value
+    raise ValueError("door_candidates 必须是数组，或包含 door_candidates/doors/items 数组字段")
 
 
 def _schema(**props: dict[str, Any]) -> dict[str, Any]:

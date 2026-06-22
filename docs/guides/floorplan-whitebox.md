@@ -36,12 +36,32 @@ floorplan_svg_to_grid_dsl(line_svg="runs/wall-extract/wall_lines.svg", units_per
 `units_per_grid` 是“1 个 DSL 格对应多少 SVG 坐标单位”，传数字可固定比例，传 `"auto"` 会在候选
 比例中选择不丢墙、重复少、snap 误差小的一档。
 
+如果 vision 或图像算法已经识别出门洞两侧端点，可用标准门宽反推真实比例。默认约定
+`target_door_width_grid=1`，即常规平开门宽约 1m，对应当前 realistic 尺度下 1 个 DSL 格：
+
+```text
+floorplan_calibrate_doors_to_grid_dsl(
+  line_svg="runs/wall-extract/wall_lines.svg",
+  door_candidates=[
+    {"id": "door_a", "x1": 240, "y1": 318, "x2": 252, "y2": 318, "confidence": 0.9}
+  ],
+  apply_openings=true
+)
+```
+
+该工具只把门候选当作尺度锚点：先取门宽中位数并剔除明显离群值，反推出
+`units_per_grid`，再复用 SVG→DSL 转换。`apply_openings=true` 时，会把能投影到连续墙段上的
+门写入 `walls[].openings`；若墙线本身已经在门洞处断开，可能只完成尺度标定而不写开口，
+这类未匹配门会记录在 `door_calibration_report.json`。
+
 ## v1 行为
 
 - 先用确定性图像算法提取墙线：深色像素阈值 → 墙体主厚度估计 → 只保留厚度一致的
   水平/垂直墙段 → 导出统一线宽中心线 SVG。
 - `walls` DSL 不从图片像素扫描结果直接生成，而是读取 `wall_lines.svg` 的精确 line 坐标，
   再映射到整数格；这样 SVG 是可审查、可复用的几何源数据。
+- 门宽标定工具接受视觉/图像算法输出的门洞端点候选，用常规门宽反推 `units_per_grid`，
+  解决不同图片分辨率下默认比例不稳定的问题；最终 DSL 坐标仍由确定性几何 snapping 生成。
 - 墙线算法结果会写入 `runs/<session>/artifacts/floorplans/wall_extraction/`：完整墙体
   `wall_body.svg`、统一线宽 `wall_lines.svg`、叠加预览 PNG、`layout_walls.json` 和
   `snap_report.json`、`summary.json`。
@@ -79,6 +99,12 @@ floorplan_svg_to_grid_dsl(line_svg="runs/wall-extract/wall_lines.svg", units_per
 
 ```powershell
 uv run pytest tests/test_floorplan_wall_extractor.py tests/test_floorplan_tools.py tests/test_floorplan_intake.py tests/test_evals.py::TestUeSuite::test_ue_task_loads_floorplan_image_field -q
+```
+
+门宽尺度标定可单独回归：
+
+```powershell
+uv run pytest tests/test_floorplan_door_calibration.py tests/test_floorplan_tools.py -q
 ```
 
 全量离线回归可用：
