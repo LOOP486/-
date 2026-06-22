@@ -11,6 +11,7 @@ from ue5agent.whitebox.compiler import (
     Placement,
     Room,
     compile_layout,
+    layout_from_dict,
 )
 from ue5agent.whitebox.manifest import load_manifest
 
@@ -64,6 +65,51 @@ def parallel_duplicate_wall_pairs(
 
 
 class TestGeometry:
+    def test_explicit_wall_segments_compile_without_rooms(self):
+        """墙体拓扑模式：可只用显式墙段表达平面图骨架，不强行转房间矩形。"""
+        spec = layout_from_dict(
+            {
+                "name": "wall-topology",
+                "structure_mode": "slab",
+                "walls": [
+                    {
+                        "name": "main_axis",
+                        "from": [0, 0],
+                        "to": [20, 0],
+                        "openings": [{"at": 8, "width": 3}],
+                    },
+                    {"name": "left_partition", "from": [4, -4], "to": [4, 4]},
+                ],
+            }
+        )
+
+        placements = compile_layout(spec, MANIFEST)
+
+        assert spec.rooms == []
+        assert [wall.name for wall in spec.walls] == ["main_axis", "left_partition"]
+        walls = [p for p in placements if p.kind == "wall"]
+        assert [p.name for p in walls] == [
+            "main_axis_0",
+            "main_axis_1",
+            "left_partition_0",
+        ]
+        assert walls[0].target_min == (-10.0, -10.0, 0.0)
+        assert walls[0].target_size == (810.0, 20.0, 300.0)
+        assert walls[1].target_min == (1100.0, -10.0, 0.0)
+        assert walls[1].target_size == (910.0, 20.0, 300.0)
+        assert walls[2].target_min == (390.0, -410.0, 0.0)
+        assert walls[2].target_size == (20.0, 820.0, 300.0)
+
+    def test_explicit_wall_segment_rejects_diagonal_geometry(self):
+        with pytest.raises(LayoutError, match="只支持水平或垂直"):
+            layout_from_dict(
+                {
+                    "name": "bad-wall",
+                    "structure_mode": "slab",
+                    "walls": [{"name": "diagonal", "from": [0, 0], "to": [4, 3]}],
+                }
+            )
+
     def test_single_room_counts_and_floor(self):
         spec = LayoutSpec(name="t", rooms=[Room(name="a", rect=(0, 0, 4, 3))])
         placements = compile_layout(spec, MANIFEST)

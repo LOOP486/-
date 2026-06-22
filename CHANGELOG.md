@@ -4,6 +4,31 @@
 
 ## [未发布]
 
+### 新增（平面图生成白盒）
+
+- `ue5agent run` 的 `--floorplan PATH` 改为墙线算法优先：先按黑色粗墙体像素提取水平/垂直墙段，
+  生成完整墙体 SVG、统一线宽中心线 SVG、叠加预览 PNG 与可传给 `wb_build` 的 `walls`
+  `layout_json`；算法失败时才回退到 vision 角色识别房间拓扑。
+- 新增内置 agent 工具 `floorplan_extract_walls`：普通任务可直接从本地平面图图片生成
+  `wall_body.svg`、`wall_lines.svg`、`wall_lines_overlay.png`、`layout_walls.json` 与
+  `floorplan_wall_extraction` facts，方便后续白盒流程复用。
+- 新增内置 agent 工具 `floorplan_svg_to_grid_dsl`：直接读取 `wall_lines.svg` 的 `<line>` 精确坐标，
+  映射到整数格 `walls` DSL，并输出 `snap_report.json` 记录每条墙段的 SVG→格子误差；墙线算法成功时
+  也统一走这条 SVG→DSL 路径。
+- `--floorplan` 墙线算法成功时会写入 `floorplan_wall_extraction` fact，并把 SVG/PNG/DSL/snap report/summary
+  存入 run artifacts；vision 回退结果仍会作为 `floorplan_recognition` fact 写入 trace，并保存输入图、
+  原始回答与规范化后的 `layout.json`。
+- 平面图识别新增容错与保守回退：支持提取首个 JSON object、`label/id -> name` 房间字段归一化、
+  失败时也保存 raw artifact；多房间几何重叠/连通失败时会过滤明显室外空间并生成紧凑连通的
+  slab 拓扑安全布局，同时降低 confidence 并写入 warning；未知 layout 顶层字段会在进入
+  `wb_build` 前裁剪，避免 `corridor`、`spawn_points`、`cover` 等非白盒 DSL 字段污染后续验收。
+- `--floorplan` 增强任务会提示截图使用 `focus_prefix="WB"`、`margin=6.0`、`clean_view=true`，
+  降低宽屏编辑器视口下俯视白盒贴边导致的截图硬证据重试。
+- UE 在线 eval 任务支持 `floorplan_image` 字段；相对路径按任务 YAML 所在目录解析，评测可直接用
+  `fact_equals/fact_gte` 检查 `floorplan_recognition` 事实。
+- 新增 [平面图生成白盒指南](docs/guides/floorplan-whitebox.md)，记录 v1 的拓扑优先范围、命令入口、
+  artifacts 与验收标准。
+
 ### 修复（SPC/DST 白盒评测稳定性）
 
 - slab 墙体编译新增外角半墙厚端点补偿，避免水平/垂直墙都冲到轴线交点造成亮边、错位或视觉重叠。

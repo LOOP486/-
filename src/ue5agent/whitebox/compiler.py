@@ -74,6 +74,22 @@ class Door:
 
 
 @dataclass
+class WallOpening:
+    at: int
+    """沿显式墙段方向的起始格（从低坐标端数起）。"""
+    width: int = 1
+
+
+@dataclass
+class WallSegment:
+    name: str
+    start: tuple[int, int]
+    end: tuple[int, int]
+    level: int = 0
+    openings: list[WallOpening] = field(default_factory=list)
+
+
+@dataclass
 class Room:
     name: str
     rect: tuple[int, int, int, int]
@@ -114,6 +130,7 @@ class GameplaySpec:
 class LayoutSpec:
     name: str
     rooms: list[Room]
+    walls: list[WallSegment] = field(default_factory=list)
     structure_mode: str = "slab"
     scale_profile: str = "realistic"
     wall_height: float = 300.0
@@ -167,7 +184,7 @@ def layout_from_dict(data: dict) -> LayoutSpec:
             profiles = "、".join(sorted(_SCALE_PROFILES))
             raise LayoutError(f"scale_profile 只支持 {profiles}，收到：{scale_profile}")
         rooms = []
-        for raw in data["rooms"]:
+        for raw in data.get("rooms", []):
             room_name = str(raw["name"])
             rect = tuple(
                 _grid_int(v, f"房间 {room_name} 的 rect[{index}]")
@@ -210,6 +227,31 @@ def layout_from_dict(data: dict) -> LayoutSpec:
                     ],
                 )
             )
+        walls = []
+        for index, raw in enumerate(data.get("walls", []), start=1):
+            wall_name = str(raw.get("name", f"wall_{index}")).strip() or f"wall_{index}"
+            wall_start = _xy_int(raw.get("from", raw.get("start")), f"墙段 {wall_name} 的 from")
+            wall_end = _xy_int(raw.get("to", raw.get("end")), f"墙段 {wall_name} 的 to")
+            if wall_start[0] != wall_end[0] and wall_start[1] != wall_end[1]:
+                raise LayoutError(f"墙段 {wall_name} 只支持水平或垂直")
+            walls.append(
+                WallSegment(
+                    name=wall_name,
+                    start=wall_start,
+                    end=wall_end,
+                    level=int(raw.get("level", 0)),
+                    openings=[
+                        WallOpening(
+                            at=_grid_int(o["at"], f"墙段 {wall_name} 的开口 at"),
+                            width=_grid_int(
+                                o.get("width", 1),
+                                f"墙段 {wall_name} 的开口 width",
+                            ),
+                        )
+                        for o in raw.get("openings", [])
+                    ],
+                )
+            )
         raw_origin = data.get("origin", (0, 0, 0))
         origin = (float(raw_origin[0]), float(raw_origin[1]), float(raw_origin[2]))
         gameplay = None
@@ -232,13 +274,17 @@ def layout_from_dict(data: dict) -> LayoutSpec:
                     else None
                 ),
             )
+        default_wall_height = 300 if walls and not rooms else 400
         return LayoutSpec(
             name=str(data.get("name", "layout")),
             rooms=rooms,
+            walls=walls,
             structure_mode=structure_mode,
             scale_profile=scale_profile,
-            wall_height=float(data.get("wall_height", 400)),
-            level_height=float(data.get("level_height", data.get("wall_height", 400))),
+            wall_height=float(data.get("wall_height", default_wall_height)),
+            level_height=float(
+                data.get("level_height", data.get("wall_height", default_wall_height))
+            ),
             wall_thickness=float(data.get("wall_thickness", 20)),
             origin=origin,
             stairs=[
@@ -315,8 +361,61 @@ def _compile_layout_slab(spec: LayoutSpec, manifest: Manifest) -> list[Placement
             g,
             center_walls=True,
         )
+    placements += _compile_explicit_walls(spec, _ENGINE_SLAB_ASSET, g)
     placements = _dedupe_shared_walls(placements)
     placements += _compile_native_layers(spec, manifest)
+    return placements
+
+
+def _compile_explicit_walls(spec: LayoutSpec, wall_asset: AssetDef, grid: float) -> list[Placement]:
+    placements: list[Placement] = []
+    for wall in spec.walls:
+        x0, y0 = wall.start
+        x1, y1 = wall.end
+        horizontal = y0 == y1
+        lo = min(x0, x1) if horizontal else min(y0, y1)
+        hi = max(x0, x1) if horizontal else max(y0, y1)
+        length = hi - lo
+        openings = [(opening.at, opening.at + opening.width) for opening in wall.openings]
+        base_z = spec.origin[2] + wall.level * spec.level_height
+        for segment_index, (start, end) in enumerate(
+            _segments(length, openings, wall.name, "segment")
+        ):
+            start_offset = -spec.wall_thickness / 2 if start == 0 else 0.0
+            end_offset = spec.wall_thickness / 2 if end == length else 0.0
+            run = (end - start) * grid
+            if horizontal:
+                tmin = (
+                    spec.origin[0] + (lo + start) * grid + start_offset,
+                    spec.origin[1] + y0 * grid - spec.wall_thickness / 2,
+                    base_z,
+                )
+                tsize = (
+                    run - start_offset + end_offset,
+                    spec.wall_thickness,
+                    spec.wall_height,
+                )
+            else:
+                tmin = (
+                    spec.origin[0] + x0 * grid - spec.wall_thickness / 2,
+                    spec.origin[1] + (lo + start) * grid + start_offset,
+                    base_z,
+                )
+                tsize = (
+                    spec.wall_thickness,
+                    run - start_offset + end_offset,
+                    spec.wall_height,
+                )
+            placements.append(
+                _fit_placement(
+                    f"{wall.name}_{segment_index}",
+                    wall_asset,
+                    tmin=tmin,
+                    tsize=tsize,
+                    kind="wall",
+                    metadata={"wall": wall.name},
+                )
+            )
     return placements
 
 
@@ -1949,11 +2048,47 @@ def _validate(spec: LayoutSpec, manifest: Manifest) -> None:
     if spec.structure_mode not in _STRUCTURE_MODES:
         modes = "、".join(sorted(_STRUCTURE_MODES))
         raise LayoutError(f"structure_mode 只支持 {modes}，收到：{spec.structure_mode}")
-    if not spec.rooms:
-        raise LayoutError("布局至少要有一个房间")
+    if not spec.rooms and not spec.walls:
+        raise LayoutError("布局至少要有一个房间或墙段")
+    if spec.walls and spec.structure_mode != "slab":
+        raise LayoutError("显式 walls 只支持 slab 模式")
     names = [room.name for room in spec.rooms]
     if len(names) != len(set(names)):
         raise LayoutError("房间 name 必须唯一")
+    wall_names = [wall_segment.name for wall_segment in spec.walls]
+    if len(wall_names) != len(set(wall_names)):
+        raise LayoutError("墙段 name 必须唯一")
+    for wall_segment in spec.walls:
+        if spec.structure_mode == "slab" and wall_segment.level != 0:
+            raise LayoutError(
+                "默认 slab 模式只支持 wall.level=0；"
+                f"墙段 {wall_segment.name} 的 level={wall_segment.level}。"
+            )
+        _require_xy_grid_int(wall_segment.start, f"墙段 {wall_segment.name} 的 from")
+        _require_xy_grid_int(wall_segment.end, f"墙段 {wall_segment.name} 的 to")
+        x0, y0 = wall_segment.start
+        x1, y1 = wall_segment.end
+        if x0 != x1 and y0 != y1:
+            raise LayoutError(f"墙段 {wall_segment.name} 只支持水平或垂直")
+        length = abs(x1 - x0) if y0 == y1 else abs(y1 - y0)
+        if length < 1:
+            raise LayoutError(f"墙段 {wall_segment.name} 太短，至少 1 格")
+        cursor = 0
+        for wall_opening in sorted(wall_segment.openings, key=lambda item: item.at):
+            _require_grid_int(wall_opening.at, f"墙段 {wall_segment.name} 的开口 at")
+            _require_grid_int(wall_opening.width, f"墙段 {wall_segment.name} 的开口 width")
+            if (
+                wall_opening.width < 1
+                or wall_opening.at < 0
+                or wall_opening.at + wall_opening.width > length
+            ):
+                raise LayoutError(
+                    f"墙段 {wall_segment.name} 的开口超出范围："
+                    f"at={wall_opening.at} width={wall_opening.width}（墙长 {length} 格）"
+                )
+            if wall_opening.at < cursor:
+                raise LayoutError(f"墙段 {wall_segment.name} 的开口重叠")
+            cursor = wall_opening.at + wall_opening.width
     for room in spec.rooms:
         if spec.structure_mode == "slab" and room.level != 0:
             raise LayoutError(
@@ -1967,27 +2102,31 @@ def _validate(spec: LayoutSpec, manifest: Manifest) -> None:
             raise LayoutError(f"房间 {room.name} 太小（{w}x{d}），至少 2x2 格")
         openings_by_wall: dict[str, list[tuple[int, int, str]]] = {wall: [] for wall in WALLS}
         for label, openings in (("门", room.doors), ("窗", room.windows)):
-            for opening in openings:
-                _require_grid_int(opening.at, f"房间 {room.name} 的{label} at")
-                _require_grid_int(opening.width, f"房间 {room.name} 的{label} width")
-                if opening.wall not in WALLS:
-                    raise LayoutError(f"房间 {room.name} 的{label}朝向非法：{opening.wall}")
-                length = w if opening.wall in ("north", "south") else d
-                if opening.width < 1 or opening.at < 0 or opening.at + opening.width > length:
+            for door_opening in openings:
+                _require_grid_int(door_opening.at, f"房间 {room.name} 的{label} at")
+                _require_grid_int(door_opening.width, f"房间 {room.name} 的{label} width")
+                if door_opening.wall not in WALLS:
+                    raise LayoutError(f"房间 {room.name} 的{label}朝向非法：{door_opening.wall}")
+                length = w if door_opening.wall in ("north", "south") else d
+                if (
+                    door_opening.width < 1
+                    or door_opening.at < 0
+                    or door_opening.at + door_opening.width > length
+                ):
                     raise LayoutError(
                         f"房间 {room.name} 的{label}超出墙体范围："
-                        f"at={opening.at} width={opening.width}（墙长 {length} 格）"
+                        f"at={door_opening.at} width={door_opening.width}（墙长 {length} 格）"
                     )
-                openings_by_wall[opening.wall].append(
-                    (opening.at, opening.at + opening.width, label)
+                openings_by_wall[door_opening.wall].append(
+                    (door_opening.at, door_opening.at + door_opening.width, label)
                 )
-        for wall, spans in openings_by_wall.items():
+        for wall_side, spans in openings_by_wall.items():
             cursor = 0
             for start, end, _label in sorted(spans):
                 if start < cursor:
                     labels = {label for _s, _e, label in spans}
                     word = "门洞" if labels == {"门"} else "开口"
-                    raise LayoutError(f"房间 {room.name} 的 {wall} 墙{word}重叠")
+                    raise LayoutError(f"房间 {room.name} 的 {wall_side} 墙{word}重叠")
                 cursor = end
     _validate_windows_are_exterior(spec)
     _validate_internal_doors_are_paired(spec)

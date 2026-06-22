@@ -128,7 +128,23 @@
   `equals=true` 反复判失败。完整视觉档最终一次通过，两个可恢复 `wb_build` LayoutError 均由 agent
   自行回退重建后收口，没有人工介入。
 - [ ] C. 平面图输入：从手绘/平面图/草图识别房间、门窗与连通关系，生成布局 DSL；透视图仅作风格/
-  语义参考。（剩余的"图→布局 DSL 结构化识别"尚未做。）
+  语义参考。
+  - [x] v1 前置链路（2026-06-22）：`run --floorplan` 接入本地图片，已从 vision 优先改为
+    图像算法优先：按黑色粗墙体像素提取水平/垂直墙段，生成完整墙体 SVG、统一线宽中心线 SVG、
+    叠加预览 PNG 与 `walls` `layout_json`，写入 `floorplan_wall_extraction` fact 与 artifacts；
+    算法失败时回退到 vision 房间拓扑识别，继续支持 `label/id -> name` 归一化、首个 JSON object
+    容错、失败 raw 留证，以及多房间几何错误时回退为拓扑优先的连通 slab 安全布局。真实 `test.png`
+    已通过前置链路并进入 runner。
+  - [x] agent 工具化（2026-06-22）：新增内置 `floorplan_extract_walls` 工具，普通任务可直接生成
+    墙体 SVG、半透明原图叠加预览、`layout_walls.json` 与 `floorplan_wall_extraction` facts；新增
+    `floorplan_svg_to_grid_dsl`，可直接把已确认的 `wall_lines.svg` line 坐标映射为整数格 `walls`
+    DSL，并输出 `snap_report.json` 供后续白盒构建步骤调用。
+  - [x] UE 在线验收（2026-06-22，run
+    `20260622-121606_根据这张平面图生成默认-slab-白盒-拓扑优先`）：真实 `test.png` 跑通
+    `floorplan_recognition.ok=true`、`wb_validate.ok=true`、`screenshot.framing_ok=true`、
+    `vision_review.high_count=0`、`path_test.reachable=true`；本轮同时收敛截图参数为
+    `focus_prefix="WB"` + `margin=6.0`，并补上未知顶层字段裁剪，避免 `corridor` 等非 DSL 字段误导后续验收。
+  - [ ] 精细识别：减少安全布局回退，稳定识别门窗、真实连通关系与房间语义，避免仅按房间序号生成拓扑。
 
 ## Phase 3：行为闭环与编排
 

@@ -35,6 +35,9 @@ EVENT_TYPES = frozenset(
         # A4 视觉审查
         "vision_review",
         "vision_review_error",
+        # 平面图输入识别
+        "floorplan_recognition",
+        "floorplan_wall_extraction",
         # B4 上下文工程
         "context_brief",
         # E2 子代理

@@ -27,6 +27,8 @@ class UeEvalTask(BaseModel):
     name: str
     prompt: str
     checks: list[dict[str, Any]] = Field(min_length=1)
+    floorplan_image: str | None = None
+    """本地平面图图片路径；相对路径按任务 YAML 所在目录解析。"""
     max_iterations: int = 40
     prompt_id: str | None = None
     """标准评测的提示词版本；用于固定 SPC/DST 初始题面。"""
@@ -118,7 +120,14 @@ def load_ue_tasks(path: Path) -> list[UeEvalTask]:
         raw = yaml.safe_load(handle)
     if not isinstance(raw, list):
         raise ValueError(f"{path} 应为任务列表")
-    return [UeEvalTask.model_validate(item) for item in raw]
+    tasks = [UeEvalTask.model_validate(item) for item in raw]
+    for task in tasks:
+        if not task.floorplan_image:
+            continue
+        image = Path(task.floorplan_image)
+        if not image.is_absolute():
+            task.floorplan_image = str((path.parent / image).resolve())
+    return tasks
 
 
 def evaluate_ue_check(check: dict[str, Any], record: UeRunRecord) -> str | None:

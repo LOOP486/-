@@ -309,9 +309,20 @@ async def _run_ue_eval(
             async def run_one_once(task: UeEvalTask) -> UeRunRecord:
                 writer = RunWriter(Path("runs"), TaskSession.new(task.name), secrets=secrets)
                 try:
+                    prompt = task.prompt
+                    if task.floorplan_image:
+                        from ue5agent.agent.floorplan import prepare_floorplan_task
+
+                        prompt = await prepare_floorplan_task(
+                            llm,
+                            writer,
+                            task.floorplan_image,
+                            user_goal=task.prompt,
+                        )
                     # UE 在线任务耗时长，stdio MCP session 偶发在单任务后关闭；每个任务独立挂载
                     # server，避免一条坏 session 污染整套评测。
                     registry = ToolRegistry(_build_gate(settings, assume_yes=True))  # 评测无人值守
+                    _register_builtin_tools(registry, Path.cwd())
                     async with McpManager(
                         settings.mcp_servers, env=build_runtime_env(settings)
                     ) as manager:
@@ -324,7 +335,7 @@ async def _run_ue_eval(
                             step_wall_seconds=UE_EVAL_STEP_WALL_SECONDS,
                             vision_reviewer=vision_reviewer,
                         )
-                        outcome = await runner.run(task.prompt)
+                        outcome = await runner.run(prompt)
                 except asyncio.CancelledError as exc:
                     task_obj = asyncio.current_task()
                     if task_obj is not None and task_obj.cancelling():
@@ -598,6 +609,11 @@ def run_command(
     task: str,
     models: Path = DEFAULT_MODELS,
     agent: Path = DEFAULT_AGENT,
+    floorplan: Path | None = typer.Option(
+        None,
+        "--floorplan",
+        help="本地平面图图片路径（png/jpg/jpeg/webp）：先识别为白盒 DSL，再执行任务",
+    ),
     yes: bool = typer.Option(
         False,
         "--yes",
@@ -608,11 +624,16 @@ def run_command(
     """一次性执行单个任务并输出报告（脚本与排查友好）。"""
     config = _require_models(models)
     settings = load_agent_settings(agent) if agent.exists() else AgentSettings()
-    asyncio.run(_run_single(config, settings, task, assume_yes=yes))
+    asyncio.run(_run_single(config, settings, task, assume_yes=yes, floorplan=floorplan))
 
 
 async def _run_single(
-    config: ModelsConfig, settings: AgentSettings, task: str, *, assume_yes: bool = False
+    config: ModelsConfig,
+    settings: AgentSettings,
+    task: str,
+    *,
+    assume_yes: bool = False,
+    floorplan: Path | None = None,
 ) -> None:
     from ue5agent.core.runlock import RunLockError, run_lock
     from ue5agent.llm.client import LiteLLMClient
@@ -623,9 +644,17 @@ async def _run_single(
         with run_lock(Path("runs") / ".runner.lock"):  # D2.1 同工程单 runner
             llm = LiteLLMClient(config)
             registry = ToolRegistry(_build_gate(settings, assume_yes=assume_yes))
+            _register_builtin_tools(registry, Path.cwd())
             async with McpManager(settings.mcp_servers, env=build_runtime_env(settings)) as manager:
                 await manager.register_all(registry)
-                await _execute_task(llm, registry, settings, task, config=config)
+                await _execute_task(
+                    llm,
+                    registry,
+                    settings,
+                    task,
+                    config=config,
+                    floorplan=floorplan,
+                )
     except RunLockError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(1) from exc
@@ -686,6 +715,14 @@ def _build_checkpoint_hook(settings: AgentSettings):
     return hook
 
 
+def _register_builtin_tools(registry: Any, project_root: Path) -> None:
+    """注册不依赖外部 MCP server 的内置工具。"""
+    from ue5agent.tools.floorplan_tools import build_floorplan_tools
+
+    for spec in build_floorplan_tools(project_root):
+        registry.register(spec, replace=True)
+
+
 async def _chat(config: ModelsConfig, settings: AgentSettings) -> None:
     # litellm 导入耗时数秒，放到真正需要时再加载
     from ue5agent.core.runlock import RunLockError, run_lock
@@ -702,6 +739,7 @@ async def _chat(config: ModelsConfig, settings: AgentSettings) -> None:
     try:
         llm = LiteLLMClient(config)
         registry = ToolRegistry(_build_gate(settings))
+        _register_builtin_tools(registry, Path.cwd())
         async with McpManager(settings.mcp_servers, env=build_runtime_env(settings)) as manager:
             await manager.register_all(registry)
             console.print(f"[dim]已加载 {len(registry)} 个工具；输入 exit 退出[/dim]")
@@ -718,7 +756,13 @@ async def _chat(config: ModelsConfig, settings: AgentSettings) -> None:
 
 
 async def _execute_task(
-    llm: Any, registry: Any, settings: AgentSettings, text: str, *, config: Any = None
+    llm: Any,
+    registry: Any,
+    settings: AgentSettings,
+    text: str,
+    *,
+    config: Any = None,
+    floorplan: Path | None = None,
 ) -> None:
     """执行单个任务：实时回显进度，结束打印报告。"""
     from ue5agent.agent.events import RunWriter
@@ -757,6 +801,19 @@ async def _execute_task(
 
     _safe_console_print("[dim]任务执行中（规划→执行→验收）…[/dim]")
     writer = ConsoleRunWriter(Path("runs"), TaskSession.new(text[:40]), secrets=secrets)
+    if floorplan is not None:
+        from ue5agent.agent.floorplan import FloorplanRecognitionError, prepare_floorplan_task
+
+        try:
+            text = await prepare_floorplan_task(llm, writer, floorplan, user_goal=text)
+        except FloorplanRecognitionError as exc:
+            writer.event(
+                "run_error",
+                error=f"{type(exc).__name__}: {exc}",
+                failure_type="floorplan_recognition",
+            )
+            writer.write_report(f"# 平面图识别失败\n\n{exc}\n")
+            raise
     vision_reviewer = _build_vision_reviewer(llm)
 
     # E2：注册子代理能力——步内可 spawn 上下文隔离的只读探索子代理（闭包指向本次 writer，

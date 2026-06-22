@@ -252,6 +252,66 @@ class TestUeSuite:
         assert tasks and all(task.checks for task in tasks)
         assert any(t.name == "read_blueprint_and_explain" for t in tasks)
 
+    def test_ue_task_loads_floorplan_image_field(self, tmp_path):
+        from ue5agent.evals.ue_suite import load_ue_tasks
+
+        tasks_file = tmp_path / "floorplan_tasks.yaml"
+        tasks_file.write_text(
+            """
+- name: floorplan_smoke
+  floorplan_image: test.png
+  prompt: 根据这张平面图生成白盒
+  checks:
+    - { type: run_succeeded }
+    - { type: fact_equals, kind: floorplan_recognition, path: ok, equals: true }
+""",
+            encoding="utf-8",
+        )
+
+        tasks = load_ue_tasks(tasks_file)
+
+        assert tasks[0].floorplan_image == str((tmp_path / "test.png").resolve())
+
+    def test_ue_eval_can_check_floorplan_recognition_fact(self):
+        from ue5agent.evals.ue_suite import UeRunRecord, evaluate_ue_check
+
+        record = UeRunRecord(
+            success=True,
+            facts=[
+                {
+                    "kind": "floorplan_recognition",
+                    "ok": True,
+                    "room_count": 4,
+                    "confidence": 0.8,
+                }
+            ],
+        )
+
+        assert (
+            evaluate_ue_check(
+                {
+                    "type": "fact_equals",
+                    "kind": "floorplan_recognition",
+                    "path": "ok",
+                    "equals": True,
+                },
+                record,
+            )
+            is None
+        )
+        assert (
+            evaluate_ue_check(
+                {
+                    "type": "fact_gte",
+                    "kind": "floorplan_recognition",
+                    "path": "room_count",
+                    "value": 3,
+                },
+                record,
+            )
+            is None
+        )
+
     def test_ue_space_yaml_loads(self):
         from ue5agent.evals.ue_suite import load_ue_tasks
 
