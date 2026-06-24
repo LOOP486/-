@@ -227,6 +227,42 @@ def test_spawn_static_mesh_uses_prototype_grid_material(monkeypatch):
     assert spawn["material"] == "/Game/LevelPrototyping/Materials/MI_PrototypeGrid_Gray"
 
 
+def test_spawn_retries_when_editor_is_autosaving(monkeypatch):
+    """插件返回 editor_busy 时，spawner 应等待重试，避免自动保存期继续硬打编辑器。"""
+    import ue5agent.whitebox.spawner as sp
+    from ue5agent.whitebox.compiler import Placement
+
+    calls: list[tuple[str, dict]] = []
+    sleeps: list[float] = []
+
+    def fake_send(command, params=None, **_kwargs):
+        params = params or {}
+        calls.append((command, params))
+        if command == "spawn_actor" and len(calls) == 1:
+            return {
+                "status": "error",
+                "error": "editor_busy: editor is saving packages/autosaving; retry later",
+            }
+        return {"status": "success", "result": {"name": params.get("name")}}
+
+    monkeypatch.setattr(sp, "send_command", fake_send)
+    monkeypatch.setattr(sp.time, "sleep", lambda seconds: sleeps.append(seconds))
+
+    p = Placement(
+        name="Room_floor",
+        asset_path="/Engine/BasicShapes/Cube.Cube",
+        location=(0, 0, 0),
+        scale=(1, 1, 1),
+        actor_type="StaticMeshActor",
+    )
+
+    names = sp.spawn_layout([p], prefix="WB")
+
+    assert names
+    assert [command for command, _params in calls] == ["spawn_actor", "spawn_actor"]
+    assert sleeps == [sp._EDITOR_BUSY_BACKOFF_SECONDS]
+
+
 def test_wb_build_tool_doc_allows_eval_prefix_and_discourages_gameplay_for_space_eval():
     """工具说明要支持并排评测前缀，并约束纯空间测试不要默认生成玩法层。"""
     doc = wb_server.wb_build.__doc__ or ""

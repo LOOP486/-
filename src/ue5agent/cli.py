@@ -718,8 +718,11 @@ def _build_checkpoint_hook(settings: AgentSettings):
 def _register_builtin_tools(registry: Any, project_root: Path) -> None:
     """注册不依赖外部 MCP server 的内置工具。"""
     from ue5agent.tools.floorplan_tools import build_floorplan_tools
+    from ue5agent.tools.whitebox_render_tools import build_whitebox_render_tools
 
     for spec in build_floorplan_tools(project_root):
+        registry.register(spec, replace=True)
+    for spec in build_whitebox_render_tools(project_root):
         registry.register(spec, replace=True)
 
 

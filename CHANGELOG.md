@@ -4,6 +4,17 @@
 
 ## [未发布]
 
+### 修正（UE 编辑器稳定性）
+
+- 白盒批量落地增加 UE 自动保存/GC 保护：UnrealMCP 插件在保存包或垃圾回收期间对写命令返回
+  `editor_busy` 可重试错误，agent 侧识别后等待重试，避免 `spawn_actor` 撞上自动保存导致编辑器 Fatal。
+
+### 修正（白盒资产标签）
+
+- 修正 ArchKit 中 `table_1_2_0_6_0_001`、`table_1_2_0_6_0_002` 的语义：
+  二者实际为椅类资产，不再按 `Table_` 文件名前缀标为桌子；同步补齐 `table_*` 桌椅资产的
+  `filler`/`chair`/`table` 标签，供本地预览和人工分类使用。
+
 ### 新增（平面图生成白盒）
 
 - `ue5agent run` 的 `--floorplan PATH` 改为墙线算法优先：先按黑色粗墙体像素提取水平/垂直墙段，
@@ -21,16 +32,48 @@
 - `--floorplan` 墙线算法成功时会写入 `floorplan_wall_extraction` fact，并把 SVG/PNG/DSL/snap report/summary
   存入 run artifacts；vision 回退结果仍会作为 `floorplan_recognition` fact 写入 trace，并保存输入图、
   原始回答与规范化后的 `layout.json`。
+- 白盒 `wb_build` / `wb_validate` 在 runner 工具面受控支持 `layout_path` / `layout_artifact`：
+  普通 agent 任务中，`floorplan_extract_walls` 产出的 `layout_walls.json` 可直接作为路径交给后续
+  白盒工具，runner 只会读取当前 run 或 `runs/` 目录下的 JSON layout，再转成远端工具需要的
+  `layout_json`，不需要给模型开放通用文件读取工具。
 - 平面图识别新增容错与保守回退：支持提取首个 JSON object、`label/id -> name` 房间字段归一化、
   失败时也保存 raw artifact；多房间几何重叠/连通失败时会过滤明显室外空间并生成紧凑连通的
   slab 拓扑安全布局，同时降低 confidence 并写入 warning；未知 layout 顶层字段会在进入
   `wb_build` 前裁剪，避免 `corridor`、`spawn_points`、`cover` 等非白盒 DSL 字段污染后续验收。
-- `--floorplan` 增强任务会提示截图使用 `focus_prefix="WB"`、`margin=6.0`、`clean_view=true`，
-  降低宽屏编辑器视口下俯视白盒贴边导致的截图硬证据重试。
+- `--floorplan` 增强任务默认走 compiler 本地预览视觉门禁，并先检查
+  `render_preview.wall_topology`；若任务明确要求 UE 视口截图，仍会提示 `focus_prefix="WB"`、
+  `margin=6.0`、`clean_view=true`，降低宽屏编辑器视口下俯视白盒贴边导致的截图硬证据重试。
 - UE 在线 eval 任务支持 `floorplan_image` 字段；相对路径按任务 YAML 所在目录解析，评测可直接用
   `fact_equals/fact_gte` 检查 `floorplan_recognition` 事实。
 - 新增 [平面图生成白盒指南](docs/guides/floorplan-whitebox.md)，记录 v1 的拓扑优先范围、命令入口、
   artifacts 与验收标准。
+
+### 新增（白盒本地视觉预览）
+
+- 新增内置 agent 工具 `whitebox_render_preview`：读取 `layout_json`、`layout_path` 或
+  `layout_artifact`，经白盒 compiler 生成 placements，再用本地 Pillow 输出 top/iso 多角度
+  `contact_sheet.png`，并回传 `render_preview` fact。默认每个视图为 1024×768，contact sheet 为
+  3072×768；facts 同时携带三张独立视图路径，runner 会优先把单图送给视觉模型，避免横向拼图被
+  多模态请求压缩后丢失墙体细节。
+- `wb_asset_scan(apply=true)` 会在 manifest 同目录额外写出 `asset_preview_cache.json`（若桥端
+  `scan_assets` 返回 `preview.top_silhouette`、`preview.simplified_mesh` 或 `thumbnail_path`），
+  作为本地 renderer 的资产外形 proxy cache。
+- `whitebox_render_preview` 会自动加载 `config/whitebox/asset_preview_cache.json`：命中
+  `simplified_mesh` 时按 mesh proxy 绘制，命中 `top_silhouette` 时按 silhouette 挤出体绘制；
+  未命中 cache 的资产仍回退 AABB。`render_preview` facts 会标记
+  `geometry_fidelity`、`mesh_fidelity`、`preview_cache_assets`、`silhouette_proxy_count`、
+  `mesh_proxy_count` 与 `asset_shape_exact=false`，明确这是简化 proxy，不是 UE 视口截图。
+- `whitebox_render_preview` 对显式 `walls[]` DSL 额外执行 compiler 级墙图拓扑检查，识别断角近距
+  未连接、孤立墙段、共线重叠与 T/cross junction metrics；高危拓扑问题会让
+  `render_preview.ok=false`，并在 facts 中写入 `wall_topology`，使 agent 在视觉审查前先阻断
+  明确坏的墙线输入。
+- 白盒视觉门禁默认由 `render_preview + vision_review` 满足；planner 会自动加入
+  `whitebox_render_preview`，不再默认要求 `viewport_screenshot` 或 `editor_online`。
+  只有用户明确要求 UE 视口截图、`viewport_screenshot`、真机截图或编辑器截图时，才走旧的
+  `screenshot + vision_review` 链路。
+- runner 的 `vision_review` 现在可以消费本次 attempt 新产生的 `render_preview` contact sheet；
+  `layout_path` / `layout_artifact` 受控展开也覆盖 `whitebox_render_preview`，方便平面图工具产物
+  直接进入本地视觉检查。
 
 ### 修复（SPC/DST 白盒评测稳定性）
 

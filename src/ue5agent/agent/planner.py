@@ -23,18 +23,21 @@ PLAN_PROMPT = """\
 - 修改类任务的最后一步必须包含验证（编译/测试/检查）；
 - 步骤只做任务直接需要的事——不要安排环境检查、状态确认等无关步骤；
 - 任务一个工具能完成时就规划成 1-2 步，不要为了凑步骤而拆分。
-- 白盒搭建若要求俯视截图自查/视觉审查：把"搭建 + 俯视截图自查"放在**同一步**，
-  该步 allowed_tools 同时含 wb_build、wb_clear、viewport_screenshot——视觉审查会对
-  本步截图判定，发现布局问题需就地用 wb_build 重建，截图与重建分到两步会让该步无法修正。
-
+- 白盒搭建若要求视觉审查/自查：默认把"搭建 + 本地白盒预览自查"放在**同一步**，
+  该步 allowed_tools 同时含 wb_build、wb_clear、whitebox_render_preview——视觉审查会对
+  compiler 级 contact sheet 判定，发现布局问题需就地用 wb_build 重建；
+  预览与重建分到两步会让该步无法修正。
+  只有用户明确要求 UE 视口截图 / viewport_screenshot 时，才使用
+  viewport_screenshot 并声明 editor_online。
 每步还可附加可选契约字段（不确定就省略，省略即不限制）：
 - "allowed_tools": [本步允许用的工具名]——仅当你确定该步只需这几个工具；
 - "permission_ceiling": "read"——只读步骤（查询/分析）建议声明，防止误改；
 - "preconditions": ["editor_online"]——需要 UE 编辑器在线的步骤建议声明；
-- "success_checks": [{"kind": "compile|wb_validate|path_test", "field": "ok", "equals": true}]
-  ——仅当该步会调用对应验证工具（ubt_compile/wb_validate/path_test）时才声明，
-  查询类步骤和没有这些工具的任务不要写；
-- "required_evidence": ["screenshot", "vision_review"]——白盒搭建要求截图/视觉门禁时声明；
+- "success_checks": [{"kind": "compile|wb_validate|path_test", ...}]
+  ——仅当该步会调用对应工具（ubt_compile/wb_validate/path_test）
+  时才声明，查询类步骤和没有这些工具的任务不要写；
+- "required_evidence": ["render_preview", "vision_review"]——白盒搭建要求视觉门禁时默认声明；
+  只有显式 UE 视口截图才用 ["screenshot", "vision_review"]；
 - "rollback_policy": "wb_clear"——白盒搭建类步骤失败时整批回滚。
 """
 
@@ -133,7 +136,7 @@ def _reconcile_split_whitebox_repair_tools(steps: list[PlanStep]) -> None:
             continue
         tools = ["wb_clear", "wb_build", "wb_validate"]
         if _looks_like_whitebox_nav_validation(step):
-            tools.extend(["navmesh_rebuild", "path_test"])
+            tools.append("path_test")
         for tool in tools:
             _ensure_allowed_tool(step, tool)
 
@@ -217,7 +220,11 @@ def _path_length_threshold(text: str) -> int | None:
 def _step_allows_tool(step: PlanStep, tool_name: str) -> bool:
     if not step.allowed_tools:
         return True
-    return any(tool == tool_name or tool.endswith(f"__{tool_name}") for tool in step.allowed_tools)
+    return _allowed_tool_list_contains(step.allowed_tools, tool_name)
+
+
+def _allowed_tool_list_contains(tools: list[str], tool_name: str) -> bool:
+    return any(tool == tool_name or tool.endswith(f"__{tool_name}") for tool in tools)
 
 
 def _ensure_allowed_tool(step: PlanStep, tool_name: str) -> None:
@@ -258,14 +265,23 @@ def _looks_like_whitebox_visual_step(step: PlanStep) -> bool:
     ).lower()
     return any(
         token in text
-        for token in ("viewport_screenshot", "vision_review", "screenshot", "截图", "视觉")
+        for token in (
+            "whitebox_render_preview",
+            "render_preview",
+            "viewport_screenshot",
+            "vision_review",
+            "screenshot",
+            "截图",
+            "视觉",
+        )
     )
 
 
 def _reconcile_whitebox_visual_gate(goal: str, steps: list[PlanStep]) -> None:
-    """白盒视觉门禁绑定到实际截图步骤；单步计划才回退到 build 步。"""
+    """白盒视觉门禁绑定到实际视觉步骤；单步计划才回退到 build 步。"""
     if not _needs_whitebox_visual_gate(goal, steps):
         return
+    use_ue_viewport = _goal_requests_ue_viewport_screenshot(goal)
     build_index, build_step = next(
         (
             (index, step)
@@ -290,25 +306,42 @@ def _reconcile_whitebox_visual_gate(goal: str, steps: list[PlanStep]) -> None:
         build_step,
     )
 
-    visual_evidence = {"screenshot", "vision_review"}
+    visual_evidence = {"render_preview", "screenshot", "vision_review"}
     if target_step is not build_step:
         build_step.required_evidence = [
             evidence for evidence in build_step.required_evidence if evidence not in visual_evidence
         ]
-    for evidence in ("screenshot", "vision_review"):
+    target_step.required_evidence = [
+        evidence for evidence in target_step.required_evidence if evidence not in visual_evidence
+    ]
+    required = (
+        ("screenshot", "vision_review") if use_ue_viewport else ("render_preview", "vision_review")
+    )
+    for evidence in required:
         if evidence not in target_step.required_evidence:
             target_step.required_evidence.append(evidence)
-    tools: tuple[str, ...] = ("wb_build", "wb_clear", "wb_validate", "viewport_screenshot")
+    visual_tools = {"whitebox_render_preview", "viewport_screenshot"}
+    target_step.allowed_tools = [
+        tool
+        for tool in target_step.allowed_tools
+        if not any(tool == name or tool.endswith(f"__{name}") for name in visual_tools)
+    ]
+    preview_tool = "viewport_screenshot" if use_ue_viewport else "whitebox_render_preview"
+    tools: tuple[str, ...] = ("wb_build", "wb_clear", "wb_validate", preview_tool)
     if target_step is build_step:
-        tools = ("wb_build", "wb_clear", "viewport_screenshot")
+        tools = ("wb_build", "wb_clear", preview_tool)
     for tool in tools:
         if not any(
             existing == tool or existing.endswith(f"__{tool}")
             for existing in target_step.allowed_tools
         ):
             target_step.allowed_tools.append(tool)
-    if "editor_online" not in target_step.preconditions:
+    if use_ue_viewport and "editor_online" not in target_step.preconditions:
         target_step.preconditions.append("editor_online")
+    if not use_ue_viewport:
+        target_step.preconditions = [
+            condition for condition in target_step.preconditions if condition != "editor_online"
+        ]
     if target_step.rollback_policy == "none":
         target_step.rollback_policy = "wb_clear"
 
@@ -324,8 +357,8 @@ def _strip_unrequested_whitebox_visual_gate(goal: str, steps: list[PlanStep]) ->
     """用户未明确要求截图/视觉时，撤掉 planner 幻觉出的视觉硬门禁。"""
     if _goal_requests_visual_gate(goal):
         return
-    visual_evidence = {"screenshot", "vision_review"}
-    visual_tools = {"viewport_screenshot"}
+    visual_evidence = {"render_preview", "screenshot", "vision_review"}
+    visual_tools = {"whitebox_render_preview", "viewport_screenshot"}
     for step in steps:
         if not (_looks_like_whitebox_build(step.intent) or _looks_like_whitebox_validation(step)):
             continue
@@ -365,6 +398,24 @@ def _goal_requests_visual_gate(goal: str) -> bool:
     return any(
         token in text
         for token in ("截图", "视觉", "vision_review", "viewport_screenshot", "screenshot")
+    )
+
+
+def _goal_requests_ue_viewport_screenshot(goal: str) -> bool:
+    text = goal.lower()
+    return any(
+        token in text
+        for token in (
+            "viewport_screenshot",
+            "ue 视口截图",
+            "ue视口截图",
+            "视口截图",
+            "真机截图",
+            "编辑器截图",
+            "editor viewport",
+            "viewport screenshot",
+            "ue screenshot",
+        )
     )
 
 

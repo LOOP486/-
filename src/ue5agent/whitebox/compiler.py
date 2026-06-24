@@ -95,6 +95,9 @@ class Room:
     rect: tuple[int, int, int, int]
     """(x, y, 宽, 深)，单位格"""
     level: int = 0
+    purpose: str = ""
+    generate_floor: bool = True
+    generate_walls: bool = True
     doors: list[Door] = field(default_factory=list)
     windows: list[Door] = field(default_factory=list)
     props: list[PropSpec] = field(default_factory=list)
@@ -197,6 +200,9 @@ def layout_from_dict(data: dict) -> LayoutSpec:
                     name=room_name,
                     rect=rect,
                     level=int(raw.get("level", 0)),
+                    purpose=str(raw.get("purpose", "")).strip(),
+                    generate_floor=bool(raw.get("generate_floor", True)),
+                    generate_walls=bool(raw.get("generate_walls", True)),
                     doors=[
                         Door(
                             wall=str(d["wall"]),
@@ -1080,7 +1086,7 @@ def _compile_explicit_props(
                 raise LayoutError(f"房间 {room.name} 的道具 {prop.key or prop.category} {reason}")
             out.append(
                 _place_native(
-                    f"{room.name}_prop_{prop.key or prop.category or index}",
+                    f"{room.name}_prop_{index}_{prop.key or prop.category or 'asset'}",
                     asset,
                     _local_tmin(spec, room, prop.at, room.level, manifest.grid),
                     rotation,
@@ -2180,10 +2186,12 @@ def _validate_stairs(spec: LayoutSpec, manifest: Manifest) -> None:
 def _validate_windows_are_exterior(spec: LayoutSpec) -> None:
     """窗只允许开在外墙；共享墙开窗会造成一侧切洞、一侧留墙的双墙/错轴。"""
     for room in spec.rooms:
+        if not room.generate_walls:
+            continue
         for window in room.windows:
             axis, coord, lo, hi = _door_world_segment(room, window)
             for other in spec.rooms:
-                if other.name == room.name or other.level != room.level:
+                if other.name == room.name or other.level != room.level or not other.generate_walls:
                     continue
                 for wall in WALLS:
                     other_axis, other_coord, other_lo, other_hi = _wall_world_segment(other, wall)
@@ -2200,12 +2208,14 @@ def _validate_windows_are_exterior(spec: LayoutSpec) -> None:
 def _validate_internal_doors_are_paired(spec: LayoutSpec) -> None:
     """内部共享墙门洞必须两侧同轴同宽，避免一侧切洞一侧留墙。"""
     for room in spec.rooms:
+        if not room.generate_walls:
+            continue
         for door in room.doors:
             axis, coord, lo, hi = _door_world_segment(room, door)
             adjacent_room: Room | None = None
             paired = False
             for other in spec.rooms:
-                if other.name == room.name or other.level != room.level:
+                if other.name == room.name or other.level != room.level or not other.generate_walls:
                     continue
                 for wall in WALLS:
                     other_axis, other_coord, other_lo, other_hi = _wall_world_segment(other, wall)
@@ -2301,6 +2311,8 @@ def _gameplay_route_cells(spec: LayoutSpec) -> set[tuple[int, int, int]]:
 
 def _validate_connectivity(spec: LayoutSpec) -> None:
     """门图连通性：多房间布局必须通过对齐的门洞连成一体（设计 §6.3 校验环）。"""
+    if any(not room.generate_walls for room in spec.rooms):
+        return
     if len(spec.rooms) < 2:
         return
     adjacency = _room_graph(spec)
@@ -2322,6 +2334,8 @@ def _validate_connectivity(spec: LayoutSpec) -> None:
 
 def _validate_realistic_entry_route_span(spec: LayoutSpec) -> None:
     """真实尺度多房间训练场需要有足够的入口到尽端跨度，避免全挤成短团块。"""
+    if any(not room.generate_walls for room in spec.rooms):
+        return
     if spec.structure_mode != "slab" or spec.scale_profile != "realistic" or len(spec.rooms) < 7:
         return
     anchors = [room for room in spec.rooms if _looks_like_entry_room(room.name)]
@@ -2440,16 +2454,20 @@ def _compile_room(
     h, t = spec.wall_height, spec.wall_thickness
     ox, oy, oz = spec.origin
     base_z = oz + room.level * spec.level_height
-    out = [
-        _fit_placement(  # 地板：顶面在 z=0，向下 _FLOOR_THICKNESS
-            f"{room.name}_floor",
-            floor_asset,
-            tmin=(ox + x * g, oy + y * g, base_z - _FLOOR_THICKNESS),
-            tsize=(w * g, d * g, _FLOOR_THICKNESS),
-            kind="floor",
-            metadata={"room": room.name},
+    out: list[Placement] = []
+    if room.generate_floor:
+        out.append(
+            _fit_placement(  # 地板：顶面在 z=0，向下 _FLOOR_THICKNESS
+                f"{room.name}_floor",
+                floor_asset,
+                tmin=(ox + x * g, oy + y * g, base_z - _FLOOR_THICKNESS),
+                tsize=(w * g, d * g, _FLOOR_THICKNESS),
+                kind="floor",
+                metadata={"room": room.name},
+            )
         )
-    ]
+    if not room.generate_walls:
+        return out
     openings_by_wall: dict[str, list[tuple[int, int]]] = {wall: [] for wall in WALLS}
     for door in room.doors:
         openings_by_wall[door.wall].append((door.at, door.at + door.width))

@@ -8,11 +8,12 @@ SVG、叠加预览和 `walls` DSL；只有算法提不出墙线时，才回退�
 ## 使用方式
 
 ```powershell
-uv run ue5agent run --floorplan .\test.png "根据这张平面图生成默认 slab 白盒，拓扑优先，做截图和导航验证" --yes
+uv run ue5agent run --floorplan .\test.png "根据这张平面图生成默认 slab 白盒，拓扑优先，做视觉验证" --yes
 ```
 
 `--floorplan` 只接受单张本地图片：`.png`、`.jpg`、`.jpeg`、`.webp`。
-如果墙线算法成功，不要求配置 `vision` 角色；若算法失败且需要回退识别，则必须在
+如果墙线算法成功且任务不要求视觉审查，不要求配置 `vision` 角色；若算法失败需要回退识别，
+或任务要求 `vision_review` 审查本地 contact sheet / UE 截图，则必须在
 `config/models.yaml` 配置 `vision` 角色。
 
 agent 也可以在普通任务中直接调用内置工具：
@@ -23,6 +24,9 @@ floorplan_extract_walls(image_path="C:/path/to/plan.png", output_dir="runs/wall-
 
 工具会输出完整墙体 SVG、统一线宽中心线 SVG、半透明原图叠加 PNG、`layout_walls.json`
 、`snap_report.json` 和 `summary.json`，并回传 `floorplan_wall_extraction` facts。
+后续 `wb_build` / `wb_validate` 可以直接传 `layout_path` 或 `layout_artifact`，引用这些
+`layout_walls.json` 产物；runner 会在本地受控读取当前 run 或 `runs/` 目录下的 JSON，
+再转成远端白盒工具需要的 `layout_json`。不要为此让模型调用通用文件读取工具。
 
 如果已有经人工或算法确认的 `wall_lines.svg`，可跳过图像检测阶段，直接把 SVG line 坐标映射到
 整数格 DSL：
@@ -60,6 +64,9 @@ floorplan_calibrate_doors_to_grid_dsl(
   水平/垂直墙段 → 导出统一线宽中心线 SVG。
 - `walls` DSL 不从图片像素扫描结果直接生成，而是读取 `wall_lines.svg` 的精确 line 坐标，
   再映射到整数格；这样 SVG 是可审查、可复用的几何源数据。
+- 普通 agent 工具链支持 artifact 直连：模型在 `floorplan_extract_walls` 后可以把
+  `layout_json` fact 中的路径作为 `wb_build(layout_path=...)`，或把当前 run artifact 作为
+  `wb_build(layout_artifact=...)`，无需重新粘贴完整 JSON。
 - 门宽标定工具接受视觉/图像算法输出的门洞端点候选，用常规门宽反推 `units_per_grid`，
   解决不同图片分辨率下默认比例不稳定的问题；最终 DSL 坐标仍由确定性几何 snapping 生成。
 - 墙线算法结果会写入 `runs/<session>/artifacts/floorplans/wall_extraction/`：完整墙体
@@ -80,16 +87,19 @@ floorplan_calibrate_doors_to_grid_dsl(
   `cover` 等额外字段不会进入后续 `wb_build` 提示。
 - 若识别失败，仍会保存输入图和 `recognition_raw.txt`，trace 中记录 `ok=false` 的
   `floorplan_recognition` fact，便于调 prompt 或手工排查。
-- 识别成功后，任务文本会被增强为：优先使用该 `walls` layout_json 调 `wb_build`，再执行
-  `wb_validate`、`viewport_screenshot`、`vision_review`、`navmesh_rebuild` 和 `path_test`。
-  v1 会提示截图使用 `focus_prefix="WB"`、`margin=6.0`、`clean_view=true`，减少宽屏视口下
-  俯视白盒贴边造成的截图重试。
+- 识别成功后，structure-only 任务文本会被增强为：优先使用该 `walls` layout_json 调 `wb_build`，
+  再执行 `wb_validate`、`whitebox_render_preview` 和 `vision_review`；默认不再调用
+  `navmesh_rebuild` 或 `path_test`。
+- v1 默认使用 compiler 级 contact sheet 作为视觉硬证据；显式 `walls[]` DSL 会先做墙图拓扑检查，
+  将断角近距未连接、孤立墙段、共线重叠等问题写入 `render_preview.wall_topology`。只有任务明确
+  要求 UE 视口截图时，才改用 `viewport_screenshot`，并提示 `focus_prefix="WB"`、
+  `margin=6.0`、`clean_view=true`。
 
 ## 范围限制
 
 - 墙线算法只支持水平/垂直墙段；斜墙/曲墙需要后续人工或 vision 辅助归一化。
 - 默认 `structure_mode="slab"`、`scale_profile="realistic"`。
-- 不生成 gameplay、props、cover、spawn_points、routes。
+- structure-only 流程不生成 gameplay、props、cover、spawn_points、routes；本轮不包含 props/cover 自动生成链路。
 - 门洞优先成对生成；不确定窗户时省略 `windows`。
 - 不支持多图融合、chat 中隐式粘贴图片路径、曲墙/斜墙/非正交空间精确还原。
 
@@ -120,6 +130,7 @@ UE 在线验收使用真实平面图跑 `run --floorplan`。通过标准：
 - trace 有 `floorplan_wall_extraction.ok=true`；若走 vision 回退，则有
   `floorplan_recognition.ok=true`。
 - `wb_validate.ok=true`。
-- 截图 fact 中 `framing_ok=true`。
+- `render_preview.ok=true`，`render_preview.wall_topology.ok=true`（若输入是 `walls[]` DSL），并且
+  contact sheet 路径存在；若显式要求 UE 视口截图，则检查 `screenshot.framing_ok=true`。
 - `vision_review.high_count=0`。
-- 至少一条 `path_test.reachable=true`。
+- 若任务显式要求导航可达性，再检查至少一条 `path_test.reachable=true`。

@@ -16,7 +16,7 @@ cd ue5agent
 
 ## 配置
 
-1. `config/models.yaml`：填角色路由。至少配 `planner`；要用截图视觉验证必须配 `vision`（多模态模型）。
+1. `config/models.yaml`：填角色路由。至少配 `planner`；要用白盒视觉审查必须配 `vision`（多模态模型）。
 2. `.env`：填各 provider 的 API key，以及 `UE_ENGINE_ROOT` / `UE_UPROJECT`。
 3. `config/agent.yaml`（可选）：调整 MCP server 挂载与运行限额。
 
@@ -99,12 +99,27 @@ slab 模式只允许 `room.level=0`；楼梯可以写 `from_level=0,to_level=1` 
 required prop 冲突会报错，optional prop 冲突会跳过。楼梯会额外避开同房间对穿门的直通
 corridor，避免把穿堂动线切断。
 
+如果输入是平面图直出的
+`walls[]`，传 `infer_rooms_from_walls=true` 可先从闭合墙线推导不重复生成墙体的 floor-only
+rooms。当前不会根据 walls 自动补 props/cover。
+
 白盒搭建前可用 `wb_asset_audit` 对照 manifest 与 UE 导入后的 StaticMesh bounds；搭建后用
 `wb_validate` 检查 actor transform、visual AABB、残留批次、route blocker、空间尺度 warnings 与
-metrics。若任务要求
-截图/视觉自查，计划步骤应声明 `required_evidence=["screenshot", "vision_review"]`，缺硬证据时
-runner 不会只凭 `wb_validate` 放行。`viewport_screenshot` 会对落盘 PNG 做轻量取景快检：截图文件
-不存在、主体占比过小或主体贴在画面边缘时，`screenshot` fact 会标为 `ok=false`，该步需要重新取景。
+metrics。若任务要求视觉自查，默认计划步骤应声明
+`required_evidence=["render_preview", "vision_review"]`，由 `whitebox_render_preview` 在 compiler
+层生成 top/iso contact sheet 与三张 1024×768 独立视图，runner 送审时优先传独立视图，避免
+横向拼图被压缩后丢失墙体细节。若 `wb_asset_scan(apply=true)` 写出了
+`config/whitebox/asset_preview_cache.json`，本地预览会优先按 `simplified_mesh` 或
+`top_silhouette` 画资产外形 proxy；未命中 cache 的资产仍回退 AABB。facts 会标记
+`geometry_fidelity`、`mesh_fidelity`、`silhouette_proxy_count`、`mesh_proxy_count` 与
+`asset_shape_exact=false`，因此它适合 agent 快速检查外形/占位，但不是 UE 最终材质、碰撞或
+真实视口截图。显式 `walls[]` DSL 还会写入
+`wall_topology` fact，先在 compiler 层拦截断角、孤立墙段和近距未连接问题。runner 不会只凭
+`wb_validate` 放行。
+只有明确要求 UE 视口截图时，才改用 `required_evidence=["screenshot", "vision_review"]`
+与 `viewport_screenshot`。
+`viewport_screenshot` 会对落盘 PNG 做轻量取景快检：截图文件不存在、主体占比过小或主体贴在
+画面边缘时，`screenshot` fact 会标为 `ok=false`，该步需要重新取景。
 `wb_build` 在 spawn 中途失败时会自动按同前缀回滚半批次；若错误文本提示自动回滚失败，先执行
 `wb_clear(prefix=...)` 清干净现场，再重新 `wb_build`。
 

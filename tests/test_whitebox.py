@@ -119,6 +119,81 @@ class TestGeometry:
         assert floor.location == (200.0, 150.0, -10.0)
         assert floor.scale == (4.0, 3.0, 0.2)
 
+    def test_room_purpose_is_parsed_as_optional_dsl_field(self):
+        spec = layout_from_dict(
+            {
+                "name": "purpose-demo",
+                "rooms": [{"name": "Office", "purpose": "office", "rect": [0, 0, 6, 5]}],
+            }
+        )
+
+        assert spec.rooms[0].purpose == "office"
+        assert compile_layout(spec, MANIFEST)
+
+    def test_room_can_generate_floor_and_props_without_duplicate_walls(self):
+        spec = layout_from_dict(
+            {
+                "name": "inferred-room-demo",
+                "structure_mode": "slab",
+                "walls": [
+                    {"name": "south", "from": [0, 0], "to": [6, 0]},
+                    {"name": "east", "from": [6, 0], "to": [6, 4]},
+                    {"name": "north", "from": [6, 4], "to": [0, 4]},
+                    {"name": "west", "from": [0, 4], "to": [0, 0]},
+                ],
+                "rooms": [
+                    {
+                        "name": "Inferred_A",
+                        "rect": [0, 0, 6, 4],
+                        "generate_floor": True,
+                        "generate_walls": False,
+                        "props": [{"key": "cube", "at": [2, 2], "optional": True}],
+                    }
+                ],
+            }
+        )
+
+        placements = compile_layout(spec, MANIFEST)
+
+        assert spec.rooms[0].generate_floor is True
+        assert spec.rooms[0].generate_walls is False
+        assert any(p.name == "Inferred_A_floor" for p in placements)
+        assert any(p.kind == "prop" and p.metadata["room"] == "Inferred_A" for p in placements)
+        assert not any(p.name.startswith("Inferred_A_") and p.kind == "wall" for p in placements)
+        assert {p.name for p in placements if p.kind == "wall"} == {
+            "south_0",
+            "east_0",
+            "north_0",
+            "west_0",
+        }
+
+    def test_repeated_props_have_unique_placement_names(self):
+        spec = layout_from_dict(
+            {
+                "name": "repeat-props",
+                "rooms": [
+                    {
+                        "name": "Office",
+                        "rect": [0, 0, 6, 5],
+                        "props": [
+                            {"key": "cube", "at": [1, 1], "optional": True},
+                            {"key": "cube", "at": [3, 1], "optional": True},
+                            {"key": "cube", "at": [1, 3], "optional": True},
+                        ],
+                    }
+                ],
+            }
+        )
+
+        prop_names = [
+            placement.name
+            for placement in compile_layout(spec, MANIFEST)
+            if placement.kind == "prop"
+        ]
+
+        assert len(prop_names) == 3
+        assert len(set(prop_names)) == 3
+
     def test_slab_wall_endpoints_compensate_half_thickness_at_corners(self):
         spec = LayoutSpec(name="t", rooms=[Room(name="a", rect=(0, 0, 4, 3))])
         placements = compile_layout(spec, MANIFEST)

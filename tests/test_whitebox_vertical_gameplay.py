@@ -568,7 +568,9 @@ def test_explicit_prop_overlap_required_fails_and_optional_is_skipped():
 
     props = [p for p in compile_layout(optional_overlap, KIT) if p.kind == "prop"]
 
-    assert [p.name for p in props] == ["A_prop_smallwoodencrate_001"]
+    assert [(p.name, p.asset_key) for p in props] == [
+        ("A_prop_0_smallwoodencrate_001", "smallwoodencrate_001")
+    ]
 
 
 def test_explicit_props_cannot_block_room_door_to_door_route_without_gameplay():
@@ -632,7 +634,7 @@ def test_explicit_props_conflicting_with_generated_route_respect_optional_flag()
 
     placements = compile_layout(optional_on_route, KIT)
 
-    assert not [p for p in placements if p.name == "A_prop_smallwoodencrate_001"]
+    assert not [p for p in placements if p.kind == "prop" and p.asset_key == "smallwoodencrate_001"]
 
 
 def test_empty_gameplay_generates_playerstarts_route_and_native_cover():

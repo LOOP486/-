@@ -1,6 +1,7 @@
 """资产扫描：几何反推、名称+几何混合归类、合并保留 curation、YAML 往返、wb_asset_scan 工具。"""
 
 import ue5agent.mcp_servers.ue_whitebox.server as wb_server
+from ue5agent.whitebox.asset_preview_cache import load_asset_preview_cache
 from ue5agent.whitebox.manifest import load_manifest
 from ue5agent.whitebox.scanner import (
     AssetRecord,
@@ -212,6 +213,23 @@ _SCAN_RESULT = {
     },
 }
 
+_SCAN_RESULT_WITH_PREVIEW = {
+    "status": "success",
+    "result": {
+        "assets": [
+            {
+                "path": "/Game/LevelPrototyping/Meshes/ArchKit/prop/Crate_L",
+                "min": [0, 0, 0],
+                "max": [100, 100, 100],
+                "preview": {
+                    "top_silhouette": [[0, 0], [1, 0], [1, 0.45], [0.45, 1], [0, 1]],
+                    "thumbnail_path": "Saved/WhiteboxPreviews/Crate_L.png",
+                },
+            }
+        ]
+    },
+}
+
 
 def test_wb_asset_scan_preview_does_not_write(monkeypatch, tmp_path):
     manifest_path = tmp_path / "kit.yaml"
@@ -245,6 +263,23 @@ def test_wb_asset_scan_apply_writes_loadable_manifest(monkeypatch, tmp_path):
     loaded = load_manifest(manifest_path)
     assert loaded.require("wall1_4").size == (100.0, 20.0, 400.0)
     assert loaded.require("blob_017").needs_review is True
+
+
+def test_wb_asset_scan_apply_writes_preview_cache(monkeypatch, tmp_path):
+    manifest_path = tmp_path / "kit.yaml"
+    manifest_path.write_text("version: 2\ngrid: 100\nassets: {}\n", encoding="utf-8")
+    monkeypatch.setattr(wb_server, "_MANIFEST", manifest_path)
+    monkeypatch.setattr(wb_server, "send_command", lambda *a, **k: _SCAN_RESULT_WITH_PREVIEW)
+
+    out = wb_server.wb_asset_scan(apply=True)
+    cache_path = tmp_path / "asset_preview_cache.json"
+    cache = load_asset_preview_cache(cache_path)
+
+    assert "已写出 preview cache" in out
+    assert cache_path.exists()
+    assert "crate_l" in cache.items
+    assert cache.items["crate_l"].thumbnail_path == "Saved/WhiteboxPreviews/Crate_L.png"
+    assert '"preview_asset_count": 1' in out
 
 
 def test_wb_asset_scan_falls_back_to_get_mesh_bounds(monkeypatch, tmp_path):

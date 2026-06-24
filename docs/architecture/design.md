@@ -115,7 +115,7 @@ MCP 工具层与 loop 解耦意味着：自研 loop 还没好之前，同一批 
 不做蓝图写操作。需要新逻辑时走 C++（`BlueprintCallable`），由人或后续在编辑器里手工接线。
 
 **资产与场景**
-`asset_search` / `asset_dependencies` / `asset_referencers`、`datatable_read/write`、`config_read`；`level_actors`、`actor_inspect/spawn/modify/delete`、`actors_spawn_batch`（白盒搭建主力，吃放置指令列表）、`viewport_screenshot`（支持正交俯视与指定相机位）。
+`asset_search` / `asset_dependencies` / `asset_referencers`、`datatable_read/write`、`config_read`；`level_actors`、`actor_inspect/spawn/modify/delete`、`actors_spawn_batch`（白盒搭建主力，吃放置指令列表）、`whitebox_render_preview`（compiler 级白盒 contact sheet；若存在 `asset_preview_cache.json` 则按 mesh/silhouette proxy 绘制资产外形，显式 `walls[]` DSL 会附带 `wall_topology` 拓扑检查）、`viewport_screenshot`（显式需要 UE 视口时使用，支持正交俯视与指定相机位）。
 
 **编辑器控制**
 `exec_python`（万能逃生舱）、`exec_console`、`pie_start/stop/status`、`get_output_log`（按等级/分类过滤）、`navmesh_rebuild`、`path_test(start, end)`（可达性测试，白盒校验用）。
@@ -150,14 +150,14 @@ MCP 工具层与 loop 解耦意味着：自研 loop 还没好之前，同一批 
 ### 6.2 布局 DSL（关键设计：LLM 不直接产出坐标）
 让 LLM 直接吐 float transform 错误率极高且不可校验。两级中间表示：
 
-1. **空间规划层**（LLM 的主要输出）：房间（格子单位的矩形/多边形 footprint）、走廊、楼层、门/连接关系、功能标注（出生点、战斗区、掩体带、狙击位）。这一层是纯拓扑+2.5D 布局，可程序化校验、可整体 diff、可局部重生成。
+1. **空间规划层**（LLM 的主要输出）：房间（格子单位的矩形/多边形 footprint）、走廊、楼层、门/连接关系、功能标注（出生点、战斗区、掩体带、狙击位）。资产密集摆放暂不进入当前默认链路；这一层先保持纯拓扑+2.5D 布局，后续再重新设计可校验的资产布置接口。这一层是纯拓扑+2.5D 布局，可程序化校验、可整体 diff、可局部重生成。
 2. **放置指令层**（编译产物）：布局编译器把规划层 + manifest 解析成 `(asset, grid_x, grid_y, floor, rot90)` 列表——选哪面墙、墙段如何分割、楼梯朝向，都是确定性算法而非 LLM 决定。工具层换算 world transform 后 `actors_spawn_batch` 落地。
 
 ### 6.3 校验与迭代闭环
 - **程序化校验**（spawn 前）：footprint 重叠检测、墙体封闭性、门连通图、楼梯首尾层高匹配；
 - **关卡 metrics 硬约束**：策划提供 metrics 表（走廊最小宽、净空高度、跳跃可达高/距、掩体高度档位），校验器按表拦截违规布局——这是策划知识进系统的入口；
 - **运行时校验**（spawn 后）：`navmesh_rebuild` + `path_test` 验证出生点到各目标可达；
-- **视觉迭代**：正交俯视截图（看布局）+ 玩家视角漫游截图（看尺度与遮挡，场景里放一个人形 mannequin 做比例参照）→ vision 模型审查 → 产出空间规划层的局部修改 → 重编译落地。
+- **视觉迭代**：默认使用 compiler 级 top/iso contact sheet（看布局、拓扑与 placement）→ vision 模型审查 → 产出空间规划层的局部修改 → 重编译落地。明确要求真实 UE 视口时，再补正交俯视截图/玩家视角截图（看尺度、遮挡与最终画面）。
 
 ### 6.4 与 PCG 的边界
 主体白盒结构走显式放置（可控、可 diff、可局部改）；重复性填充（栏杆阵列、柱列、散布装饰）可由 agent 调用预制 PCG 规则或生成 PCG 参数。
@@ -182,7 +182,7 @@ agent 的能力上限 = 它能自主验证什么。三级闭环：
 |---|---|---|
 | `cpp-engineer` | 写 C++、修编译错、Build.cs 配置 | 文件读写 + 编译工具 + 引擎源码检索 |
 | `blueprint-analyst` | 读蓝图、追逻辑链、定位蓝图侧问题 | 编辑器桥只读工具 |
-| `level-builder` | 白盒搭建全流程（规划→落地→校验→视觉迭代） | manifest + 布局编译器 + 场景工具 + 截图 |
+| `level-builder` | 白盒搭建全流程（规划→落地→校验→视觉迭代） | manifest + 布局编译器 + 场景工具 + 本地预览/截图 |
 | `debugger` | 复现、日志分析、二分定位 | PIE 控制 + 日志 + console |
 | `engine-researcher` | 引擎源码检索、API 版本仲裁 | 只读检索（指向引擎源码） |
 

@@ -19,6 +19,7 @@ from ue5agent.core.errors import ErrorCategory, mark_env_unready, mark_error
 from ue5agent.core.permissions import PermissionGate, PermissionLevel
 from ue5agent.llm.client import LLMUnavailable
 from ue5agent.llm.types import AssistantTurn, ToolCall
+from ue5agent.tools.effects import ToolEffects
 from ue5agent.tools.registry import ScopedRegistry, ToolRegistry, ToolSpec
 
 
@@ -1150,6 +1151,18 @@ def test_required_evidence_fails_when_screenshot_frame_fact_is_false():
     assert "screenshot" in result.reason
 
 
+def test_required_evidence_accepts_render_preview_for_visual_gate():
+    result = evaluate_required_evidence(
+        ["render_preview", "vision_review"],
+        [
+            {"kind": "render_preview", "ok": True, "path": "/tmp/contact_sheet.png"},
+            {"kind": "vision_review", "ok": True},
+        ],
+    )
+
+    assert result is None
+
+
 async def test_required_evidence_blocks_whitebox_pass_without_screenshot_and_vision(tmp_path):
     """白盒硬门禁：即使 wb_validate PASS，缺截图/视觉证据也不能收口。"""
     registry = _facts_tool_registry(
@@ -1174,7 +1187,7 @@ async def test_required_evidence_blocks_whitebox_pass_without_screenshot_and_vis
     writer = RunWriter(tmp_path, TaskSession.new("白盒硬门禁"))
     runner = TaskRunner(FakeModel(script), registry, writer, max_step_attempts=1)
 
-    outcome = await runner.run("搭一个白盒并截图自查")
+    outcome = await runner.run("搭一个白盒并使用 UE 视口截图自查")
 
     assert not outcome.success
     verifies = [e for e in read_events(writer.trace_path) if e["event"] == "verify_result"]
@@ -1650,6 +1663,48 @@ def _vision_registry() -> ToolRegistry:
     return registry
 
 
+def _render_preview_registry() -> ToolRegistry:
+    """注册会落 render_preview/wb_validate 事实的工具（compiler 本地视觉链路用）。"""
+    registry = ToolRegistry(PermissionGate())
+
+    async def whitebox_render_preview(layout_json: str = "") -> str:
+        return (
+            "本地白盒预览完成\n"
+            '[facts] {"kind": "render_preview", "ok": true, '
+            '"path": "/tmp/contact_sheet.png", '
+            '"paths": ["/tmp/top.png", "/tmp/iso_ne.png", "/tmp/iso_sw.png"], '
+            '"view_count": 3, "source": "compiler"}'
+        )
+
+    async def wb_validate(layout_json: str = "") -> str:
+        return '校验PASS\n[facts] {"kind": "wb_validate", "ok": true, "violations": 0}'
+
+    registry.register(
+        ToolSpec(
+            name="whitebox_render_preview",
+            description="",
+            parameters={"type": "object", "properties": {"layout_json": {"type": "string"}}},
+            level=PermissionLevel.WRITE_PROJECT,
+            handler=whitebox_render_preview,
+            effects=ToolEffects(
+                idempotent=True,
+                requires_checkpoint=False,
+                resources=("build_artifacts",),
+            ),
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="ue_whitebox__wb_validate",
+            description="",
+            parameters={"type": "object", "properties": {"layout_json": {"type": "string"}}},
+            level=PermissionLevel.READ,
+            handler=wb_validate,
+        )
+    )
+    return registry
+
+
 async def test_viewport_screenshot_auto_focus_uses_latest_wb_build_folder(tmp_path):
     """模型裸调截图时，runner 用最新 wb_build.folder_root 精确聚焦本批白盒。"""
     registry = ToolRegistry(PermissionGate())
@@ -1733,6 +1788,175 @@ async def test_viewport_screenshot_auto_focus_uses_latest_wb_build_folder(tmp_pa
             "rotation": None,
         }
     ]
+
+
+async def test_whitebox_build_accepts_layout_artifact_path_from_prior_tool(tmp_path):
+    """普通 agent 流程里，平面图工具产出的 layout artifact 应能直接喂给 wb_build。"""
+    from ue5agent.agent.runner import _AutoScreenshotFocusRegistry, _EvidenceTee
+
+    writer = RunWriter(tmp_path / "runs", TaskSession.new("artifact-layout"))
+    layout = {
+        "name": "from_artifact",
+        "structure_mode": "slab",
+        "scale_profile": "realistic",
+        "walls": [{"id": "w1", "from": [0, 0], "to": [4, 0]}],
+    }
+    artifact = writer.save_artifact(
+        "floorplan_wall_layout",
+        "floorplans/wall_extraction/layout_walls.json",
+        json.dumps(layout, ensure_ascii=False),
+    )
+    captured: dict[str, str] = {}
+
+    async def wb_build(layout_json: str, prefix: str = "WB") -> str:
+        captured["layout_json"] = layout_json
+        captured["prefix"] = prefix
+        return '搭建完成\n[facts] {"kind": "wb_build", "ok": true}'
+
+    registry = ToolRegistry(PermissionGate())
+    registry.register(
+        ToolSpec(
+            name="ue_whitebox__wb_build",
+            description="",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "layout_json": {"type": "string"},
+                    "prefix": {"type": "string"},
+                },
+                "required": ["layout_json"],
+            },
+            level=PermissionLevel.WRITE_SAFE,
+            handler=wb_build,
+        )
+    )
+    wrapped = _AutoScreenshotFocusRegistry(registry, _EvidenceTee(writer))
+
+    outcome = await wrapped.run(
+        "ue_whitebox__wb_build",
+        json.dumps({"layout_artifact": artifact.path, "prefix": "FP1"}),
+    )
+
+    assert outcome.ok, outcome.text
+    assert captured["prefix"] == "FP1"
+    assert json.loads(captured["layout_json"]) == layout
+
+
+async def test_whitebox_build_accepts_layout_path_under_runs_root(tmp_path):
+    """floorplan_extract_walls 普通工具输出在 runs/ 下，wb_build 可受控读取该路径。"""
+    from ue5agent.agent.runner import _AutoScreenshotFocusRegistry, _EvidenceTee
+
+    writer = RunWriter(tmp_path / "runs", TaskSession.new("path-layout"))
+    layout = {
+        "name": "from_floorplan_tool",
+        "structure_mode": "slab",
+        "scale_profile": "realistic",
+        "walls": [{"id": "w1", "from": [0, 0], "to": [0, 3]}],
+    }
+    layout_path = tmp_path / "runs" / "floorplan_wall_extract" / "sample" / "layout_walls.json"
+    layout_path.parent.mkdir(parents=True)
+    layout_path.write_text(json.dumps(layout, ensure_ascii=False), encoding="utf-8")
+    captured: dict[str, str] = {}
+
+    async def wb_build(layout_json: str, prefix: str = "WB") -> str:
+        captured["layout_json"] = layout_json
+        captured["prefix"] = prefix
+        return '搭建完成\n[facts] {"kind": "wb_build", "ok": true}'
+
+    registry = ToolRegistry(PermissionGate())
+    registry.register(
+        ToolSpec(
+            name="ue_whitebox__wb_build",
+            description="",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "layout_json": {"type": "string"},
+                    "prefix": {"type": "string"},
+                },
+                "required": ["layout_json"],
+            },
+            level=PermissionLevel.WRITE_SAFE,
+            handler=wb_build,
+        )
+    )
+    wrapped = _AutoScreenshotFocusRegistry(registry, _EvidenceTee(writer))
+
+    outcome = await wrapped.run(
+        "ue_whitebox__wb_build",
+        json.dumps({"layout_path": str(layout_path), "prefix": "FP2"}),
+    )
+
+    assert outcome.ok, outcome.text
+    assert captured["prefix"] == "FP2"
+    assert json.loads(captured["layout_json"]) == layout
+
+
+async def test_whitebox_build_rejects_layout_path_outside_runs(tmp_path):
+    """layout_path 只服务 run artifact 传递，不能退化成任意文件读取。"""
+    from ue5agent.agent.runner import _AutoScreenshotFocusRegistry, _EvidenceTee
+
+    writer = RunWriter(tmp_path / "runs", TaskSession.new("path-escape"))
+    outside = tmp_path / "outside_layout.json"
+    outside.write_text('{"walls": []}', encoding="utf-8")
+
+    async def wb_build(layout_json: str, prefix: str = "WB") -> str:
+        return "不应执行到这里"
+
+    registry = ToolRegistry(PermissionGate())
+    registry.register(
+        ToolSpec(
+            name="ue_whitebox__wb_build",
+            description="",
+            parameters={
+                "type": "object",
+                "properties": {"layout_json": {"type": "string"}},
+                "required": ["layout_json"],
+            },
+            level=PermissionLevel.WRITE_SAFE,
+            handler=wb_build,
+        )
+    )
+    wrapped = _AutoScreenshotFocusRegistry(registry, _EvidenceTee(writer))
+
+    outcome = await wrapped.run(
+        "ue_whitebox__wb_build",
+        json.dumps({"layout_path": str(outside)}),
+    )
+
+    assert not outcome.ok
+    assert "路径越界" in outcome.text
+
+
+def test_whitebox_layout_tools_expose_artifact_path_aliases(tmp_path):
+    """工具 schema 要告诉模型可用 layout_path/layout_artifact，避免它臆造 read 工具。"""
+    from ue5agent.agent.runner import _AutoScreenshotFocusRegistry, _EvidenceTee
+
+    async def wb_build(layout_json: str, prefix: str = "WB") -> str:
+        return "ok"
+
+    registry = ToolRegistry(PermissionGate())
+    registry.register(
+        ToolSpec(
+            name="ue_whitebox__wb_build",
+            description="按布局 JSON 在编辑器里搭白盒结构。",
+            parameters={
+                "type": "object",
+                "properties": {"layout_json": {"type": "string"}},
+                "required": ["layout_json"],
+            },
+            level=PermissionLevel.WRITE_SAFE,
+            handler=wb_build,
+        )
+    )
+    writer = RunWriter(tmp_path / "runs", TaskSession.new("schema"))
+
+    spec = _AutoScreenshotFocusRegistry(registry, _EvidenceTee(writer)).specs()[0]
+    params = spec["function"]["parameters"]
+
+    assert "layout_path" in params["properties"]
+    assert "layout_artifact" in params["properties"]
+    assert "layout_json" not in params.get("required", [])
 
 
 async def test_viewport_screenshot_auto_focus_keeps_explicit_focus_prefix(tmp_path):
@@ -1854,14 +2078,71 @@ async def test_whitebox_visual_step_stops_after_build_validate_and_screenshot(tm
     writer = RunWriter(tmp_path, TaskSession.new("视觉早停"))
     runner = TaskRunner(model, registry, writer, vision_reviewer=reviewer, max_step_attempts=1)
 
-    outcome = await runner.run("搭建白盒并截图视觉审查")
+    outcome = await runner.run("搭建白盒并使用 UE 视口截图视觉审查")
 
     assert outcome.success
     assert len(model.seen_messages) == 4  # plan + 三轮工具调用；截图后没有额外总结请求
-    assert reviewer.calls == [(["/tmp/shot.png"], "搭建白盒并截图视觉审查")]
+    assert reviewer.calls == [(["/tmp/shot.png"], "搭建白盒并使用 UE 视口截图视觉审查")]
     events = read_events(writer.trace_path)
     early_stops = [e for e in events if e["event"] == "run_end" and e.get("early_stop")]
     assert early_stops
+    verifies = [e for e in events if e["event"] == "verify_result"]
+    assert verifies[0]["verdict"] == "pass"
+
+
+async def test_whitebox_visual_step_defaults_to_render_preview(tmp_path):
+    """白盒视觉门禁默认用 compiler 本地预览，不依赖 UE viewport_screenshot。"""
+    registry = _render_preview_registry()
+
+    async def wb_build(layout_json: str = "") -> str:
+        return (
+            '搭建完成\n[facts] {"kind": "wb_build", "ok": true, '
+            '"prefix": "SPC1V", "folder_root": "SPC1V/batch"}'
+        )
+
+    registry.register(
+        ToolSpec(
+            name="ue_whitebox__wb_build",
+            description="",
+            parameters={"type": "object", "properties": {"layout_json": {"type": "string"}}},
+            level=PermissionLevel.WRITE_SAFE,
+            handler=wb_build,
+        )
+    )
+    reviewer = _FakeReviewer([parse_review('{"issues": []}')])
+    model = FakeModel(
+        [
+            plan_raw(
+                "standard",
+                [
+                    {
+                        "intent": "使用 wb_build 搭建白盒结构并视觉自查",
+                        "acceptance": "wb_validate 与 vision_review 均通过",
+                        "allowed_tools": [
+                            "ue_whitebox__wb_build",
+                            "ue_whitebox__wb_validate",
+                            "whitebox_render_preview",
+                        ],
+                        "success_checks": [{"kind": "wb_validate", "field": "ok", "equals": True}],
+                        "required_evidence": ["render_preview", "vision_review"],
+                    }
+                ],
+            ),
+            tool_turn("ue_whitebox__wb_build", '{"layout_json": "{}"}'),
+            tool_turn("ue_whitebox__wb_validate", '{"layout_json": "{}"}'),
+            tool_turn("whitebox_render_preview", '{"layout_json": "{}"}'),
+        ]
+    )
+    writer = RunWriter(tmp_path, TaskSession.new("本地视觉早停"))
+    runner = TaskRunner(model, registry, writer, vision_reviewer=reviewer, max_step_attempts=1)
+
+    outcome = await runner.run("搭建白盒并做视觉审查")
+
+    assert outcome.success
+    assert reviewer.calls == [
+        (["/tmp/top.png", "/tmp/iso_ne.png", "/tmp/iso_sw.png"], "搭建白盒并做视觉审查")
+    ]
+    events = read_events(writer.trace_path)
     verifies = [e for e in events if e["event"] == "verify_result"]
     assert verifies[0]["verdict"] == "pass"
 
@@ -1920,7 +2201,7 @@ async def test_whitebox_visual_early_stop_answers_all_same_turn_tool_calls(tmp_p
     writer = RunWriter(tmp_path, TaskSession.new("视觉早停多工具"))
     runner = TaskRunner(model, registry, writer, vision_reviewer=reviewer, max_step_attempts=1)
 
-    outcome = await runner.run("搭建白盒并截图视觉审查")
+    outcome = await runner.run("搭建白盒并使用 UE 视口截图视觉审查")
 
     assert outcome.success
     events = read_events(writer.trace_path)
@@ -2177,7 +2458,7 @@ async def test_later_nav_step_does_not_review_carried_screenshot(tmp_path):
     writer = RunWriter(tmp_path, TaskSession.new("视觉后导航"))
     runner = TaskRunner(model, registry, writer, vision_reviewer=reviewer, max_step_attempts=1)
 
-    outcome = await runner.run("白盒空间需要截图通过视觉审查，然后验证导航")
+    outcome = await runner.run("白盒空间需要 UE 视口截图通过视觉审查，然后验证导航")
 
     assert outcome.success
     assert len(reviewer.calls) == 1
@@ -2220,7 +2501,7 @@ async def test_visual_step_with_failed_review_cannot_cached_contract_pass(tmp_pa
     writer = RunWriter(tmp_path, TaskSession.new("视觉失败后重试"))
     runner = TaskRunner(model, _vision_registry(), writer, vision_reviewer=reviewer)
 
-    outcome = await runner.run("白盒空间需要截图并通过视觉审查")
+    outcome = await runner.run("白盒空间需要 UE 视口截图并通过视觉审查")
 
     assert outcome.success
     assert writer.session.plan[0].attempts == 2
@@ -2340,17 +2621,18 @@ async def test_planner_reconciles_whitebox_build_with_visual_gate():
         ]
     )
 
-    _, steps = await make_plan(model, "搭建白盒并截图视觉审查")
+    _, steps = await make_plan(model, "搭建白盒并视觉审查")
 
     build = steps[0]
     visual = steps[1]
     assert build.required_evidence == []
-    assert visual.required_evidence == ["screenshot", "vision_review"]
+    assert visual.required_evidence == ["render_preview", "vision_review"]
     assert "wb_build" in visual.allowed_tools
     assert "wb_clear" in visual.allowed_tools
     assert "wb_validate" in visual.allowed_tools
-    assert "viewport_screenshot" in visual.allowed_tools
-    assert visual.preconditions == ["editor_online"]
+    assert "whitebox_render_preview" in visual.allowed_tools
+    assert "viewport_screenshot" not in visual.allowed_tools
+    assert visual.preconditions == []
     assert visual.rollback_policy == "wb_clear"
 
 
@@ -2369,14 +2651,15 @@ async def test_planner_keeps_whitebox_visual_gate_on_single_build_step():
         ]
     )
 
-    _, steps = await make_plan(model, "搭建白盒并截图视觉审查")
+    _, steps = await make_plan(model, "搭建白盒并视觉审查")
 
     build = steps[0]
-    assert build.required_evidence == ["screenshot", "vision_review"]
+    assert build.required_evidence == ["render_preview", "vision_review"]
     assert "wb_build" in build.allowed_tools
     assert "wb_clear" in build.allowed_tools
-    assert "viewport_screenshot" in build.allowed_tools
-    assert build.preconditions == ["editor_online"]
+    assert "whitebox_render_preview" in build.allowed_tools
+    assert "viewport_screenshot" not in build.allowed_tools
+    assert build.preconditions == []
     assert build.rollback_policy == "wb_clear"
 
 
@@ -2416,13 +2699,14 @@ async def test_planner_puts_visual_gate_on_split_screenshot_step_not_build_step(
         ]
     )
 
-    _, steps = await make_plan(model, "搭建白盒训练场，必须截图并通过视觉审查")
+    _, steps = await make_plan(model, "搭建白盒训练场，必须通过视觉审查")
 
     assert steps[0].required_evidence == []
     assert {"kind": "wb_build", "field": "ok", "equals": True} in steps[0].success_checks
     assert {"kind": "wb_validate", "field": "ok", "equals": True} in steps[0].success_checks
-    assert steps[1].required_evidence == ["screenshot", "vision_review"]
-    assert "ue_editor__viewport_screenshot" in steps[1].allowed_tools
+    assert steps[1].required_evidence == ["render_preview", "vision_review"]
+    assert "whitebox_render_preview" in steps[1].allowed_tools
+    assert "ue_editor__viewport_screenshot" not in steps[1].allowed_tools
     assert "wb_build" in steps[1].allowed_tools
     assert "wb_validate" in steps[1].allowed_tools
 
@@ -2451,10 +2735,34 @@ async def test_planner_adds_visual_gate_when_step_mentions_visual_but_not_wb_bui
         ]
     )
 
-    _, steps = await make_plan(model, "搭建白盒空间，必须截图并通过 vision_review 视觉审查")
+    _, steps = await make_plan(model, "搭建白盒空间，必须通过 vision_review 视觉审查")
+
+    assert steps[0].required_evidence == ["render_preview", "vision_review"]
+    assert _tool_allowed(steps[0].allowed_tools, "whitebox_render_preview")
+    assert not _tool_allowed(steps[0].allowed_tools, "viewport_screenshot")
+
+
+async def test_planner_uses_viewport_screenshot_when_user_explicitly_requests_ue_viewport():
+    model = FakeModel(
+        [
+            plan_raw(
+                "standard",
+                [
+                    {
+                        "intent": "使用 wb_build 搭建白盒并拍摄 UE 视口截图",
+                        "acceptance": "UE viewport_screenshot 与 vision_review 通过",
+                    }
+                ],
+            )
+        ]
+    )
+
+    _, steps = await make_plan(model, "搭建白盒，必须使用 UE 视口截图并通过 vision_review")
 
     assert steps[0].required_evidence == ["screenshot", "vision_review"]
     assert _tool_allowed(steps[0].allowed_tools, "viewport_screenshot")
+    assert not _tool_allowed(steps[0].allowed_tools, "whitebox_render_preview")
+    assert steps[0].preconditions == ["editor_online"]
 
 
 async def test_planner_strips_unrequested_whitebox_visual_gate():
@@ -2674,11 +2982,8 @@ async def test_planner_keeps_repair_tools_for_split_wb_validate():
     assert not _tool_allowed(validate.allowed_tools, "path_test")
 
 
-async def test_planner_keeps_navmesh_rebuild_for_split_path_validation():
-    """path_test 单独成步时，仍要允许重建 NavMesh。
-
-    否则该步即使能 wb_build 重搭布局，也不能对新布局重建导航。
-    """
+async def test_planner_does_not_auto_add_navmesh_rebuild_for_split_path_validation():
+    """path_test 单独成步时，不再由规划器自动补 navmesh_rebuild。"""
     model = FakeModel(
         [
             plan_raw(
@@ -2710,8 +3015,9 @@ async def test_planner_keeps_navmesh_rebuild_for_split_path_validation():
     _, steps = await make_plan(model, "搭建白盒空间，重建导航后测试路径")
 
     path_step = steps[2]
-    assert "navmesh_rebuild" in path_step.allowed_tools
-    assert "wb_build" in path_step.allowed_tools
+    assert not _tool_allowed(path_step.allowed_tools, "navmesh_rebuild")
+    assert _tool_allowed(path_step.allowed_tools, "path_test")
+    assert _tool_allowed(path_step.allowed_tools, "wb_build")
 
 
 # ---------- B4 上下文工程 ----------

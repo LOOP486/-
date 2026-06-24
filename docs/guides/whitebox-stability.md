@@ -8,8 +8,9 @@
 - B7 已归档两份正式 baseline：
   - `evals/baselines/ue/space-agent-test-20260615-205313.json`：SPC/DST 结构档 6/6 通过。
   - `evals/baselines/ue/space-agent-test-visual-20260616-001231.json`：SPC/DST 视觉档 6/6 通过。
-- 现有防线覆盖：共享墙门洞 guardrail、外墙窗预检、楼梯 footprint 收拢、视觉 high-only gate、
-  `viewport_screenshot` 自动聚焦/裁剪、MCP 断链重连、跨步骤成功 facts 复用、同轮 tool_calls 完整回包。
+- 现有防线覆盖：共享墙门洞 guardrail、外墙窗预检、楼梯 footprint 收拢、compiler 本地
+  `whitebox_render_preview`、视觉 high-only gate、显式 `viewport_screenshot` 自动聚焦/裁剪、
+  MCP 断链重连、跨步骤成功 facts 复用、同轮 tool_calls 完整回包。
 - 后续重点：真实失败样本的分类、最小复现和回归测试，而不是继续修改冻结评测题面。
 
 ## 失败样本台账
@@ -23,12 +24,13 @@
 | `No active editor viewport` 截图失败 | 模型反复换截图参数，history 膨胀 | 映射为 `env_unready` 快速终止；截图无 facts 不触发 vision | 环境类失败只补分类和提示，不让模型用布局重建解决 |
 | 同轮 `wb_validate + viewport_screenshot` | early-stop 跳过截图 tool 回包，污染下一步 history | loop 等同轮所有 tool_calls 回包后再 early-stop | 若再见 provider 的 tool message 顺序错误，先查 trace 的最后一轮 tool_calls |
 | 导航步骤复审旧截图 | 非视觉步骤被历史截图触发随机 vision high | vision 只审本 attempt 新截图；纯重复验证步可用历史 success checks 本地收口 | 新增跨步骤证据逻辑时，必须区分“验证 facts 复用”和“视觉证据复用” |
+| UE 活动视口卡住默认视觉门禁 | 本应检查 DSL/placement，却被编辑器视口状态阻塞 | 默认视觉硬证据改为 `render_preview` contact sheet；UE 截图仅显式 opt-in | 默认先查 `render_preview.ok` 与 contact sheet；只有任务明确要求 UE 视口时再排查 `viewport_screenshot` |
 
 ## 处理流程
 
 1. 保存失败证据：
    - baseline JSON 放在 `evals/baselines/ue/`，诊断产物可保留但不要冒充正式 baseline。
-   - trace 路径写入复盘记录；截图或 contact sheet 写绝对路径或 run artifact 路径。
+   - trace 路径写入复盘记录；contact sheet 或截图写绝对路径或 run artifact 路径。
 2. 先分桶：
    - `llm_timeout`：看 `llm_request_start` 的 role、消息数、估算字符量。
    - `layout_error`：看 `wb_build` 错误文本，优先判断是否能在 planner/guardrail 层预防。
@@ -39,7 +41,8 @@
    - planner/runner 漂移：优先改 `tests/test_runner.py`。
    - eval 分类或检查器：改 `tests/test_evals.py`。
    - 视觉误判：改 `tests/test_vision_review.py`。
-   - 截图取证：改 `tests/test_ue_editor_tools.py`。
+   - 本地预览取证：改 `tests/test_whitebox_preview_renderer.py` / `tests/test_whitebox_render_tools.py`。
+   - 显式 UE 截图取证：改 `tests/test_ue_editor_tools.py`。
    - 几何/楼梯/墙体：改 `tests/test_whitebox.py`、`tests/test_whitebox_validator.py` 或
      `tests/test_whitebox_vertical_gameplay.py`。
 4. 再做最小实现：

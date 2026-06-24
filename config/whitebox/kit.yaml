@@ -656,8 +656,8 @@ assets:
     local_bounds_max: [23, 22, 59]
     calibrated: true
     footprint: [1, 1]
-    tags: [prop]
-    desc: "桌子"
+    tags: [prop, filler, chair]
+    desc: "单人椅"
   table_1_2_0_6_0_002:
     path: /Game/LevelPrototyping/Meshes/ArchKit/Table_1_2_0_6_0_002
     size: [165, 49, 93]
@@ -667,8 +667,8 @@ assets:
     local_bounds_max: [83, 22, 59]
     calibrated: true
     footprint: [2, 1]
-    tags: [prop]
-    desc: "桌子"
+    tags: [prop, filler, chair]
+    desc: "长椅/双人椅"
   table_1_2_0_6_0_75:
     path: /Game/LevelPrototyping/Meshes/ArchKit/Table_1_2_0_6_0_75
     size: [120, 60, 80]
@@ -678,8 +678,8 @@ assets:
     local_bounds_max: [60, 30, 35]
     calibrated: true
     footprint: [1, 1]
-    tags: [prop]
-    desc: "桌子"
+    tags: [prop, filler, table]
+    desc: "小桌"
   table_1_4_0_7_0_75:
     path: /Game/LevelPrototyping/Meshes/ArchKit/Table_1_4_0_7_0_75
     size: [140, 70, 80]
@@ -689,8 +689,8 @@ assets:
     local_bounds_max: [70, 36, 35]
     calibrated: true
     footprint: [1, 1]
-    tags: [prop]
-    desc: "桌子"
+    tags: [prop, filler, table]
+    desc: "小桌"
   table_1_8_0_8_0_001:
     path: /Game/LevelPrototyping/Meshes/ArchKit/Table_1_8_0_8_0_001
     size: [288, 128, 80]
@@ -700,8 +700,8 @@ assets:
     local_bounds_max: [145, 63, 35]
     calibrated: true
     footprint: [3, 1]
-    tags: [prop]
-    desc: "桌子"
+    tags: [prop, filler, table]
+    desc: "长桌"
   table_1_8_0_8_0_75:
     path: /Game/LevelPrototyping/Meshes/ArchKit/Table_1_8_0_8_0_75
     size: [180, 80, 80]
@@ -711,8 +711,8 @@ assets:
     local_bounds_max: [90, 39, 35]
     calibrated: true
     footprint: [2, 1]
-    tags: [prop]
-    desc: "桌子"
+    tags: [prop, filler, table]
+    desc: "长桌"
   tallcabinet:
     path: /Game/LevelPrototyping/Meshes/ArchKit/TallCabinet
     size: [140, 45, 200]

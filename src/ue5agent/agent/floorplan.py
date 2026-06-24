@@ -1,7 +1,7 @@
 """平面图输入识别：本地图片 → 白盒布局 DSL。
 
 第一版只做拓扑优先识别：房间、相邻关系、门洞/开口连通。尺寸按现有
-slab + realistic + 整数格 DSL 收敛；不从平面图生成 gameplay/props。
+slab + realistic + 整数格 DSL 收敛；不在本阶段自动生成 props/cover。
 """
 
 from __future__ import annotations
@@ -70,7 +70,7 @@ FLOORPLAN_PROMPT = """\
 - 不要把整张图纸外框、地形等高线、泳池、剖面线 A/B 或空白区域识别成房间；
 - 默认 structure_mode="slab"，scale_profile="realistic"，单层 level=0；
 - 多房间必须连通；共享墙门洞必须两侧成对且 at/width 对齐；
-- 不生成 gameplay、spawn_points、routes、props、cover 或家具；
+- 不直接生成 gameplay、spawn_points、routes、props、cover 或家具；
 - 不确定窗户就省略 windows；窗户不参与连通性；
 - 若图像无法可靠识别，返回 ok=false，并在 warnings 写清原因。
 """
@@ -352,6 +352,7 @@ async def prepare_floorplan_task(
     layout_json = json.dumps(result.layout, ensure_ascii=False)
     assumptions = "；".join(result.assumptions) if result.assumptions else "无"
     warnings = "；".join(result.warnings) if result.warnings else "无"
+    execution = _structure_only_floorplan_execution_requirements(source="layout_json")
     return f"""\
 {user_goal}
 
@@ -363,13 +364,7 @@ async def prepare_floorplan_task(
 - layout_json 已保存到 {layout_artifact.path}，也在下方给出。
 
 [执行要求]
-1. 使用下面的 layout_json 调用 wb_build，默认 prefix="WB"；如需修复，只允许小幅调整门洞对齐、
-   房间整数格尺寸和外墙窗，不能改成与平面图拓扑不一致的新方案。
-2. 不生成 gameplay、props、cover、spawn_points、routes。
-3. wb_build 后必须调用 wb_validate；再调用 viewport_screenshot 生成居中完整截图：
-   使用 focus_prefix="WB"、margin=6.0、clean_view=true，不手写 location/rotation；
-   截图后触发 vision_review；最后调用 navmesh_rebuild 和 path_test 验证主要空间可达。
-4. 最终简短报告平面图识别、白盒校验、截图视觉审查和导航验证结果。
+{execution}
 
 layout_json:
 ```json
@@ -460,6 +455,7 @@ def _build_wall_extraction_task(
     user_goal: str,
 ) -> str:
     layout_json = result.layout_json.read_text(encoding="utf-8").strip()
+    execution = _structure_only_wall_execution_requirements()
     return f"""\
 {user_goal}
 
@@ -475,19 +471,38 @@ def _build_wall_extraction_task(
 - walls layout_json 已保存到 {result.layout_json}，也在下方给出。
 
 [执行要求]
-1. 优先使用下面的 walls layout_json 调用 wb_build，默认 prefix="WB"；
-   不要把它改写成视觉猜测的房间矩形。
-2. 只生成墙体白盒，不生成 gameplay、props、cover、spawn_points、routes。
-3. wb_build 后必须调用 wb_validate；再调用 viewport_screenshot 生成居中完整截图：
-   使用 focus_prefix="WB"、margin=6.0、clean_view=true，不手写 location/rotation；
-   截图后触发 vision_review；最后调用 navmesh_rebuild 和 path_test 验证主要空间可达。
-4. 最终简短报告墙线提取、白盒校验、截图视觉审查和导航验证结果。
+{execution}
 
 layout_json:
 ```json
 {layout_json}
 ```
 """
+
+
+def _structure_only_floorplan_execution_requirements(*, source: str) -> str:
+    return f"""1. 使用下面的 {source} 调用 wb_build，默认 prefix="WB"；如需修复，只允许小幅
+   调整门洞对齐、
+   房间整数格尺寸和外墙窗，不能改成与平面图拓扑不一致的新方案。
+2. 不生成 gameplay、props、cover、spawn_points、routes。
+3. wb_build 后必须调用 wb_validate；再调用 whitebox_render_preview 生成 compiler 本地预览，
+   检查 render_preview.ok 与 render_preview.wall_topology；通过后触发 vision_review。
+   只有用户明确要求 UE 视口截图时，才额外调用 viewport_screenshot，并使用
+   focus_prefix="WB"、margin=6.0、clean_view=true。
+4. 默认不调用 navmesh_rebuild 或 path_test；若用户明确要求导航可达性，再单独做路径验证。
+5. 最终简短报告平面图识别、白盒校验、墙图拓扑和本地视觉审查结果。"""
+
+
+def _structure_only_wall_execution_requirements() -> str:
+    return """1. 优先使用下面的 walls layout_json 调用 wb_build，默认 prefix="WB"；
+   不要把它改写成视觉猜测的房间矩形。
+2. 只生成墙体白盒，不生成 gameplay、props、cover、spawn_points、routes。
+3. wb_build 后必须调用 wb_validate；再调用 whitebox_render_preview 生成 compiler 本地预览，
+   检查 render_preview.ok 与 render_preview.wall_topology；通过后触发 vision_review。
+   只有用户明确要求 UE 视口截图时，才额外调用 viewport_screenshot，并使用
+   focus_prefix="WB"、margin=6.0、clean_view=true。
+4. 默认不调用 navmesh_rebuild 或 path_test；若用户明确要求导航可达性，再单独做路径验证。
+5. 最终简短报告墙线提取、白盒校验、墙图拓扑和本地视觉审查结果。"""
 
 
 def _loads_json_object(body: str) -> Any:

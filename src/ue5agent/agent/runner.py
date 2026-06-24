@@ -9,10 +9,12 @@ intake/plan → 逐步 [execute（步内微循环 AgentLoop）→ verify（judge
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from ue5agent.agent.events import RunWriter
@@ -39,7 +41,7 @@ KERNEL_SYSTEM_PROMPT = """\
 """
 
 VisionReviewer = Callable[[list[str], str], Awaitable[VisionReviewResult]]
-"""视觉审查钩子（A4 子任务3）：入参 (截图路径列表, 关卡需求) → 结构化审查结果。
+"""视觉审查钩子（A4 子任务3）：入参 (预览图/截图路径列表, 关卡需求) → 结构化审查结果。
 注入式解耦——runner 不直接依赖 vision_review/config，未配 vision 时传 None 即关闭。"""
 
 # B3 恢复策略表：错误类别 → 恢复动作。未列出的类别（transient/ubt_compile_error/
@@ -64,7 +66,7 @@ _ABORT_HINTS: dict[ErrorCategory, str] = {
 _EARLY_CONTRACT_PASS_KINDS = {"compile", "wb_validate", "path_test"}
 _WHITEBOX_BUILD_PROMPT_SUFFIX = (
     "\n[白盒执行约束] 不要在工具调用前展开完整设计说明；"
-    "优先一次性调用 wb_build，再按验收要求调用验证/截图工具；"
+    "优先一次性调用 wb_build，再按验收要求调用验证/预览工具；"
     "layout_json 已由 trace artifact 保存，回复中不要重复粘贴完整 JSON，"
     "最终报告再简短总结。"
     "\n[白盒构型守则] 先在脑中按整数格画 room.rect 邻接表，再写 layout_json；"
@@ -75,6 +77,16 @@ _WHITEBOX_BUILD_PROMPT_SUFFIX = (
     "遇到 wb_build 的布局校验错误时，不要质疑校验器或反复微调同一复杂布局；"
     "应退回更简单的正交连通布局，删除非必要 windows，并重新成对校准共享墙门洞。"
 )
+_WHITEBOX_LAYOUT_PATH_ARG_NAMES = (
+    "layout_artifact",
+    "layout_path",
+    "layout_file",
+    "file",
+    "path",
+    "artifact",
+    "use_artifact",
+)
+_MAX_LAYOUT_ARTIFACT_BYTES = 2_000_000
 
 
 def _execution_failure_type(exc: Exception) -> str:
@@ -144,6 +156,7 @@ def _is_report_only_step(step: PlanStep) -> bool:
         "path_test",
         "navmesh_rebuild",
         "ubt_compile",
+        "whitebox_render_preview",
         "viewport_screenshot",
     )
     return not any(marker in text for marker in tool_markers)
@@ -192,7 +205,9 @@ def _compact_vision_retry_history(
     folder_root = _latest_fact_field(facts, "wb_build", "folder_root") or _latest_fact_field(
         facts, "wb_build", "outliner_folder_root"
     )
-    shot = _latest_fact_field(facts, "screenshot", "path")
+    shot = _latest_fact_field(facts, "render_preview", "path") or _latest_fact_field(
+        facts, "screenshot", "path"
+    )
     high_issues = vision_result.high_severity
     issue_lines = (
         [f"- {issue.area}: {issue.issue}" for issue in high_issues]
@@ -203,7 +218,7 @@ def _compact_vision_retry_history(
         "视觉失败重试摘要：",
         f"原目标：{goal}",
         f"最新 wb_build.folder_root：{folder_root or '未知'}",
-        f"最新截图路径：{shot or '未知'}",
+        f"最新预览/截图路径：{shot or '未知'}",
         "vision high issues：",
         *issue_lines,
         retry_note,
@@ -244,6 +259,170 @@ def _with_auto_screenshot_focus(name: str, arguments_json: str, facts: list[dict
         arguments.pop("rotation", None)
         return json.dumps(arguments, ensure_ascii=False)
     return arguments_json
+
+
+def _with_whitebox_layout_artifact(
+    name: str, arguments_json: str, run_dir: Path
+) -> tuple[str, str | None]:
+    """把受控 layout artifact/path 参数转换成 wb_build/wb_validate 需要的 layout_json。"""
+    if not _is_whitebox_layout_consumer(name):
+        return arguments_json, None
+    try:
+        arguments = json.loads(arguments_json or "{}")
+    except json.JSONDecodeError:
+        return arguments_json, None
+    if not isinstance(arguments, dict):
+        return arguments_json, None
+
+    raw_layout = arguments.get("layout_json")
+    if isinstance(raw_layout, dict):
+        arguments["layout_json"] = json.dumps(raw_layout, ensure_ascii=False)
+    elif not (isinstance(raw_layout, str) and raw_layout.strip()):
+        path_value = _first_layout_path_argument(arguments)
+        if path_value is None:
+            return arguments_json, None
+        try:
+            arguments["layout_json"] = _load_layout_json_artifact(path_value, run_dir)
+        except ValueError as exc:
+            return arguments_json, f"[error] layout artifact 无法读取：{exc}"
+    for key in _WHITEBOX_LAYOUT_PATH_ARG_NAMES:
+        arguments.pop(key, None)
+    return json.dumps(arguments, ensure_ascii=False), None
+
+
+def _with_whitebox_layout_artifact_specs(specs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """让模型知道白盒工具除直接 JSON 外，也能消费前序 run artifact 路径。"""
+    return [_augment_whitebox_layout_artifact_spec(spec) for spec in specs]
+
+
+def _augment_whitebox_layout_artifact_spec(spec: dict[str, Any]) -> dict[str, Any]:
+    function = spec.get("function")
+    if not isinstance(function, dict):
+        return spec
+    name = str(function.get("name") or "")
+    if not _is_whitebox_layout_consumer(name):
+        return spec
+    augmented = copy.deepcopy(spec)
+    function = augmented["function"]
+    description = str(function.get("description") or "")
+    hint = (
+        "\n可直接传 layout_json；也可传 layout_path 或 layout_artifact，引用本次 runs/ "
+        "目录下由 floorplan_extract_walls / floorplan_svg_to_grid_dsl 生成的 layout_walls.json。"
+    )
+    if "layout_path" not in description:
+        function["description"] = description + hint
+    parameters = function.setdefault("parameters", {"type": "object", "properties": {}})
+    properties = parameters.setdefault("properties", {})
+    properties.setdefault(
+        "layout_path",
+        {
+            "type": "string",
+            "description": (
+                "runs/ 下已有白盒 layout JSON 文件路径，工具会受控读取后传给 layout_json"
+            ),
+        },
+    )
+    properties.setdefault(
+        "layout_artifact",
+        {
+            "type": "string",
+            "description": (
+                "当前 run artifact 相对路径，如 artifacts/floorplans/.../layout_walls.json"
+            ),
+        },
+    )
+    required = parameters.get("required")
+    if isinstance(required, list):
+        kept = [item for item in required if item != "layout_json"]
+        if kept:
+            parameters["required"] = kept
+        else:
+            parameters.pop("required", None)
+    return augmented
+
+
+def _is_whitebox_layout_consumer(name: str) -> bool:
+    return any(
+        name == tool or name.endswith(f"__{tool}")
+        for tool in ("wb_build", "wb_validate", "whitebox_render_preview")
+    )
+
+
+def _first_layout_path_argument(arguments: dict[str, Any]) -> str | None:
+    for key in _WHITEBOX_LAYOUT_PATH_ARG_NAMES:
+        value = arguments.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _load_layout_json_artifact(raw_path: str, run_dir: Path) -> str:
+    path = _resolve_layout_artifact_path(raw_path, run_dir)
+    if path.suffix.lower() != ".json":
+        raise ValueError(f"只允许读取 JSON layout：{path}")
+    try:
+        size = path.stat().st_size
+    except OSError as exc:
+        raise ValueError(f"无法读取文件状态：{path}（{exc}）") from exc
+    if size > _MAX_LAYOUT_ARTIFACT_BYTES:
+        raise ValueError(f"layout 文件过大：{path}（{size} bytes）")
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ValueError(f"无法读取文件：{path}（{exc}）") from exc
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"layout JSON 不合法：{path}（{exc}）") from exc
+    if (
+        isinstance(data, dict)
+        and "layout" in data
+        and not any(key in data for key in ("rooms", "walls"))
+    ):
+        data = data["layout"]
+    if not isinstance(data, dict):
+        raise ValueError(f"layout 文件必须是 JSON object：{path}")
+    if "rooms" not in data and "walls" not in data:
+        raise ValueError(f"layout 文件缺少 rooms 或 walls：{path}")
+    return json.dumps(data, ensure_ascii=False)
+
+
+def _resolve_layout_artifact_path(raw_path: str, run_dir: Path) -> Path:
+    run_root = run_dir.parent.resolve()
+    allowed_roots = (run_dir.resolve(), run_root)
+    raw = Path(raw_path)
+    candidates = _layout_artifact_candidates(raw, run_dir, run_root)
+    for candidate in candidates:
+        resolved = candidate.resolve()
+        if not any(resolved.is_relative_to(root) for root in allowed_roots):
+            continue
+        if resolved.exists() and resolved.is_file():
+            return resolved
+    first = candidates[0].resolve() if candidates else raw.resolve()
+    if not any(first.is_relative_to(root) for root in allowed_roots):
+        raise ValueError(f"路径越界（只允许读取当前 run 或 runs/ 下的 layout）：{raw_path}")
+    raise ValueError(f"文件不存在：{raw_path}")
+
+
+def _layout_artifact_candidates(raw: Path, run_dir: Path, run_root: Path) -> list[Path]:
+    if raw.is_absolute():
+        return [raw]
+    project_root = run_root.parent
+    parts = raw.parts
+    candidates: list[Path] = []
+    if parts and parts[0] in {"artifacts", "_generated"}:
+        candidates.append(run_dir / raw)
+    if parts and parts[0] == "runs":
+        candidates.append(project_root / raw)
+    candidates.extend((run_root / raw, run_dir / raw, project_root / raw))
+    unique: list[Path] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        key = str(candidate)
+        if key not in seen:
+            unique.append(candidate)
+            seen.add(key)
+    return unique
 
 
 def _with_whitebox_layout_guardrails(name: str, arguments_json: str) -> str:
@@ -576,6 +755,10 @@ class _EvidenceTee:
     def evidence(self, last: int = 12) -> str:
         return "\n".join(self.tool_lines[-last:])
 
+    @property
+    def run_dir(self) -> Path:
+        return self._writer.dir
+
     def reset(self) -> None:
         self.tool_lines.clear()
         self.facts.clear()
@@ -590,7 +773,7 @@ class _AutoScreenshotFocusRegistry:
         self._tee = tee
 
     def specs(self) -> list[dict[str, Any]]:
-        return self._base.specs()
+        return _with_whitebox_layout_artifact_specs(self._base.specs())
 
     def names(self) -> list[str]:
         return self._base.names()
@@ -599,6 +782,13 @@ class _AutoScreenshotFocusRegistry:
         return self._base.get(name)
 
     async def run(self, name: str, arguments_json: str) -> Any:
+        arguments_json, artifact_error = _with_whitebox_layout_artifact(
+            name, arguments_json, self._tee.run_dir
+        )
+        if artifact_error is not None:
+            from ue5agent.agent.tool_pipeline import ToolOutcome
+
+            return ToolOutcome(ok=False, text=artifact_error, error_kind="schema")
         arguments_json = _with_whitebox_layout_guardrails(name, arguments_json)
         arguments_json = _with_auto_screenshot_focus(name, arguments_json, self._tee.facts)
         return await self._base.run(name, arguments_json)
@@ -613,7 +803,10 @@ def _visual_step_ready_for_review(step: PlanStep, facts: list[dict]) -> bool:
         return False
     if not step.required_evidence and not step.success_checks:
         return False
-    if not _latest_fact_passed(facts, "screenshot", require_framing=True):
+    if "screenshot" in step.required_evidence:
+        if not _latest_fact_passed(facts, "screenshot", require_framing=True):
+            return False
+    elif not _latest_fact_passed(facts, "render_preview"):
         return False
     if _is_whitebox_build_step(step) and not _latest_fact_passed(facts, "wb_build"):
         return False
@@ -637,7 +830,15 @@ def _step_mentions_visual_review(step: PlanStep) -> bool:
     ).lower()
     return any(
         token in text
-        for token in ("viewport_screenshot", "vision_review", "screenshot", "截图", "视觉")
+        for token in (
+            "whitebox_render_preview",
+            "render_preview",
+            "viewport_screenshot",
+            "vision_review",
+            "screenshot",
+            "截图",
+            "视觉",
+        )
     )
 
 
@@ -728,7 +929,7 @@ class TaskRunner:
     def _early_contract_pass_summary(self, step: PlanStep, tee: _EvidenceTee) -> str | None:
         """工具事实已满足步骤契约时，直接结束本步，避免为一句总结再打 LLM。"""
         if _visual_step_ready_for_review(step, tee.facts):
-            return "[工具证据已满足视觉审查前置] 白盒搭建、校验和截图已完成，进入视觉审查。"
+            return "[工具证据已满足视觉审查前置] 白盒搭建、校验和预览/截图已完成，进入视觉审查。"
         if _step_mentions_visual_review(step):
             return None
         if step.required_evidence or not step.success_checks:
@@ -903,20 +1104,26 @@ class TaskRunner:
     async def _run_vision_review(
         self, step: PlanStep, goal: str, tee: _EvidenceTee, *, new_fact_start: int = 0
     ) -> VisionReviewResult | None:
-        """A4 子任务3：对本步产出的截图做视觉审查，结果并入 tee.facts 驱动验收。
+        """A4 子任务3：对本步产出的预览图做视觉审查，结果并入 tee.facts 驱动验收。
 
-        触发条件：注入了 vision_reviewer（已配 vision 角色）且本次 attempt 实际产出了截图
-        （viewport_screenshot 落地的 screenshot 事实）。两者缺一则跳过——视觉审查是
-        增量证据，绝不改变"没截图任务"的既有行为。审查结果以 vision_review 事实并入
-        证据通道：存在 high 问题或解析失败 → ok=False，被 deterministic_verdict 判 fail。
+        触发条件：注入了 vision_reviewer（已配 vision 角色）且本次 attempt 实际产出了
+        render_preview 或 screenshot 事实。审查结果以 vision_review 事实并入证据通道：
+        存在 high 问题或解析失败 → ok=False，被 deterministic_verdict 判 fail。
         审查链路本身故障（vision 模型不可用等）只记 trace、不炸步骤验收。
         """
         if self._vision_reviewer is None:
             return None
         new_facts = tee.facts[new_fact_start:]
-        shots = [
-            str(f["path"]) for f in new_facts if f.get("kind") == "screenshot" and f.get("path")
-        ]
+        shots: list[str] = []
+        for fact in new_facts:
+            kind = fact.get("kind")
+            if kind == "render_preview":
+                paths = fact.get("paths")
+                if isinstance(paths, list):
+                    shots.extend(str(path) for path in paths if isinstance(path, str) and path)
+                    continue
+            if kind in {"render_preview", "screenshot"} and fact.get("path"):
+                shots.append(str(fact["path"]))
         if not shots:
             return None
         # 硬超时兜底：litellm 对某些多模态端点（实测 moonshot）的调用会阻塞事件循环、
@@ -935,7 +1142,7 @@ class TaskRunner:
             return None
         try:
             result = task.result()
-        except Exception as exc:  # 视觉审查故障不应改变步骤命运，降级为"截图存档供人看"
+        except Exception as exc:  # 视觉审查故障不应改变步骤命运，降级为"预览/截图存档供人看"
             self._writer.event(
                 "vision_review_error",
                 step_id=step.id,
@@ -1125,7 +1332,7 @@ class TaskRunner:
                     )
                 self._writer.event("phase_exit", phase="execute", step_id=step.id)
 
-                # A4：对本步截图做视觉审查，结果并入 tee.facts（驱动下方确定性验收）
+                # A4：对本步预览图/截图做视觉审查，结果并入 tee.facts（驱动下方确定性验收）
                 vision_result = None
                 if execution_verdict is None:
                     vision_result = await self._run_vision_review(

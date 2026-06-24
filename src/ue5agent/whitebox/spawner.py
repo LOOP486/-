@@ -30,6 +30,15 @@ from ue5agent.whitebox.compiler import Placement
 
 _CLEAR_MAX_ROUNDS = 4  # 删后复查重试轮数上限
 _DEFAULT_PROTOTYPE_MATERIAL = "/Game/LevelPrototyping/Materials/MI_PrototypeGrid_Gray"
+_EDITOR_BUSY_RETRIES = 24
+_EDITOR_BUSY_BACKOFF_SECONDS = 0.5
+_EDITOR_BUSY_MARKERS = (
+    "editor_busy",
+    "saving package",
+    "saving packages",
+    "autosaving",
+    "garbage collecting",
+)
 
 
 def _find_actor_names(pattern: str) -> list[str]:
@@ -52,6 +61,27 @@ def _batch_token() -> str:
     彻底绕开引擎"指定名重名即 Fatal"的硬 check。
     """
     return format(int(time.time() * 1000) & 0xFFFFFFF, "x")
+
+
+def _is_editor_busy_response(response: dict) -> bool:
+    """识别 UE 插件返回的可重试编辑器忙状态。"""
+    if response.get("status") != "error":
+        return False
+    error = str(response.get("error", "")).lower()
+    return any(marker in error for marker in _EDITOR_BUSY_MARKERS)
+
+
+def _send_mutation_command(command: str, params: dict) -> dict:
+    """发送会修改关卡的命令；遇到自动保存/GC 短暂阻塞时等待重试。"""
+    response: dict | None = None
+    for attempt in range(_EDITOR_BUSY_RETRIES + 1):
+        response = send_command(command, params)
+        if not _is_editor_busy_response(response):
+            return response
+        if attempt < _EDITOR_BUSY_RETRIES:
+            time.sleep(_EDITOR_BUSY_BACKOFF_SECONDS)
+            continue
+    return response or {"status": "error", "error": "editor_busy: retry exhausted"}
 
 
 def batch_from_actor_name(actor_name: str, prefix: str) -> str | None:
@@ -112,7 +142,7 @@ def spawn_layout(placements: list[Placement], *, prefix: str = "WB") -> list[str
             params["static_mesh"] = placement.asset_path
             params["scale"] = list(placement.scale)
             params["material"] = _DEFAULT_PROTOTYPE_MATERIAL
-        response = send_command(
+        response = _send_mutation_command(
             "spawn_actor",
             params,
         )
@@ -137,7 +167,7 @@ def clear_layout(*, prefix: str = "WB") -> int:
         if not names:
             return removed
         for name in names:
-            send_command("delete_actor", {"name": name})
+            _send_mutation_command("delete_actor", {"name": name})
             removed += 1
     remaining = _find_actor_names(pattern)
     if remaining:

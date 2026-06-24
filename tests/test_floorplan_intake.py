@@ -372,8 +372,9 @@ async def test_prepare_floorplan_task_saves_artifacts_and_trace_fact(tmp_path):
     assert "layout_json" in enhanced
     assert "wb_build" in enhanced
     assert "wb_validate" in enhanced
+    assert "whitebox_render_preview" in enhanced
+    assert "render_preview.wall_topology" in enhanced
     assert "vision_review" in enhanced
-    assert "margin=6.0" in enhanced
     artifacts = {artifact.kind: artifact for artifact in writer.session.artifacts}
     assert artifacts["floorplan_image"].path.endswith("/plan.png")
     assert artifacts["floorplan_layout"].path.endswith(".json")
@@ -406,6 +407,8 @@ async def test_prepare_floorplan_task_prefers_wall_extraction_without_vision(tmp
     assert "平面图墙线算法结果" in enhanced
     assert "walls" in enhanced
     assert "floorplan_wall_lines" in enhanced
+    assert "whitebox_render_preview" in enhanced
+    assert "render_preview.wall_topology" in enhanced
     artifacts = {artifact.kind: artifact for artifact in writer.session.artifacts}
     assert artifacts["floorplan_wall_line_svg"].path.endswith(".svg")
     assert artifacts["floorplan_wall_layout"].path.endswith("layout_walls.json")
@@ -417,6 +420,24 @@ async def test_prepare_floorplan_task_prefers_wall_extraction_without_vision(tmp
     assert rec[0]["facts"]["line_count"] >= 2
     assert rec[0]["facts"]["snap_report_artifact"] == artifacts["floorplan_wall_snap_report"].path
     assert rec[0]["snap_report_artifact"] == artifacts["floorplan_wall_snap_report"].path
+
+
+async def test_prepare_floorplan_wall_task_keeps_structure_only_when_goal_requests_assets(tmp_path):
+    image = _make_wall_png(tmp_path)
+    llm = _FakeLLM()
+    writer = RunWriter(tmp_path / "runs", TaskSession.new("floorplan"))
+
+    enhanced = await prepare_floorplan_task(
+        llm,
+        writer,
+        image,
+        user_goal="根据墙体生成白盒，并按空间理解摆放扫描后的资产",
+    )
+
+    assert "asset_graph" not in enhanced
+    assert "whitebox_fill_assets" not in enhanced
+    assert "infer_rooms_from_walls" not in enhanced
+    assert "只生成墙体白盒，不生成 gameplay、props" in enhanced
 
 
 async def test_prepare_floorplan_task_saves_failure_artifacts_when_model_says_not_ok(tmp_path):

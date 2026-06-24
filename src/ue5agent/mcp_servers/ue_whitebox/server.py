@@ -14,6 +14,12 @@ from mcp.server.fastmcp import FastMCP
 
 from ue5agent.core.errors import mark_env_unready
 from ue5agent.mcp_servers.ue_editor.bridge import send_command
+from ue5agent.whitebox.asset_preview_cache import (
+    AssetPreviewCache,
+    preview_cache_from_scan_items,
+    preview_cache_path_for_manifest,
+    write_asset_preview_cache,
+)
 from ue5agent.whitebox.compiler import LayoutError, compile_layout, layout_from_dict
 from ue5agent.whitebox.level_metrics import load_level_metrics
 from ue5agent.whitebox.manifest import AssetDef, Manifest, load_manifest
@@ -448,22 +454,28 @@ _BRIDGE_DOWN = "编辑器桥连接被拒。请先启动 UE 编辑器并加载工
 def _gather_scan_records(content_path: str, existing: Manifest | None):
     """取扫描记录：优先桥命令 scan_assets（含新件），不可用则回退 get_mesh_bounds 刷新存量。
 
-    返回 (records_or_error, mode, note)；records_or_error 为 str 时表示错误/环境未就绪，直接回传。
+    返回 (records_or_error, mode, note, preview_cache)；
+    records_or_error 为 str 时表示错误/环境未就绪。
     """
     try:
         response = send_command(
             "scan_assets", {"content_path": content_path, "recursive": True}, timeout=120
         )
     except ConnectionRefusedError:
-        return mark_env_unready(_BRIDGE_DOWN), "", ""
+        return mark_env_unready(_BRIDGE_DOWN), "", "", AssetPreviewCache(items={})
     except (OSError, ConnectionError, TimeoutError) as exc:
-        return f"[error] 编辑器桥通信失败：{exc}", "", ""
+        return f"[error] 编辑器桥通信失败：{exc}", "", "", AssetPreviewCache(items={})
 
     if response.get("status") != "error":
         result = response.get("result", response)
         items = result.get("assets") if isinstance(result, dict) else None
         if isinstance(items, list):
-            return records_from_bounds_payload(items), "scan_assets", f"枚举 {content_path}"
+            return (
+                records_from_bounds_payload(items),
+                "scan_assets",
+                f"枚举 {content_path}",
+                preview_cache_from_scan_items(items),
+            )
 
     # scan_assets 不可用（旧插件未实现）→ 回退刷新存量清单
     if existing is None or not existing.assets:
@@ -473,14 +485,15 @@ def _gather_scan_records(content_path: str, existing: Manifest | None):
             "请重编含 scan_assets 的 UnrealMCP 插件后再扫描",
             "",
             "",
+            AssetPreviewCache(items={}),
         )
     records, failures = _refresh_existing_records(existing, content_path)
     if isinstance(records, str):
-        return records, "", ""
+        return records, "", "", AssetPreviewCache(items={})
     note = "桥未提供 scan_assets，回退按现有清单逐件刷新（发现不了新增资产）"
     if failures:
         note += f"；{len(failures)} 件读取失败：{', '.join(failures[:5])}"
-    return records, "get_mesh_bounds 回退", note
+    return records, "get_mesh_bounds 回退", note, AssetPreviewCache(items={})
 
 
 def _refresh_existing_records(existing: Manifest, content_path: str):
@@ -532,7 +545,7 @@ def wb_asset_scan(
         return "[error] content_path 不能为空"
 
     existing = load_manifest(_MANIFEST) if _MANIFEST.exists() else None
-    records, mode, note = _gather_scan_records(content_path, existing)
+    records, mode, note, preview_cache = _gather_scan_records(content_path, existing)
     if isinstance(records, str):
         return records  # 错误/环境未就绪标记，直接回传
     if not records:
@@ -548,6 +561,10 @@ def wb_asset_scan(
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(emit_yaml(new_manifest), encoding="utf-8")
         lines.append(f"已写出 manifest → {target}（{report.total} 件）")
+        if preview_cache:
+            cache_path = preview_cache_path_for_manifest(target)
+            write_asset_preview_cache(preview_cache, cache_path)
+            lines.append(f"已写出 preview cache → {cache_path}（{len(preview_cache.items)} 件）")
     else:
         lines.append(f"预览模式：未写盘。确认无误后用 apply=true 写出到 {target}")
 
@@ -561,6 +578,8 @@ def wb_asset_scan(
         "resized": len(report.resized),
         "needs_review": len(report.needs_review),
         "applied": bool(apply),
+        "preview_asset_count": len(preview_cache.items),
+        "preview_cache_path": str(preview_cache_path_for_manifest(target)) if preview_cache else "",
     }
     lines.append(f"[facts] {json.dumps(facts, ensure_ascii=False)}")
     return "\n".join(lines)

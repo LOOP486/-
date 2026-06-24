@@ -127,6 +127,13 @@
   `path_test.path_length` 契约合并时会保留 `gte/min` 数值边界，避免已达标路径被误当
   `equals=true` 反复判失败。完整视觉档最终一次通过，两个可恢复 `wb_build` LayoutError 均由 agent
   自行回退重建后收口，没有人工介入。
+- [x] B8. compiler 级本地视觉预览（2026-06-22）：新增 `whitebox_render_preview`，从
+  `layout_json` / `layout_path` / `layout_artifact` 经白盒 compiler 生成 placements，再渲染
+  top/iso contact sheet 并写入 `render_preview` fact。白盒视觉门禁默认改为
+  `render_preview + vision_review`，不再依赖 UE 活动视口；显式 `walls[]` DSL 会先做墙图拓扑检查，
+  在 facts 中写入 `wall_topology` 并用 `render_preview.ok=false` 阻断断角、孤立墙段、近距未连接等
+  高危输入；`render_preview` 明确标记为 AABB 低保真预览，不显示真实 StaticMesh 外形。
+- [ ] B9. props/cover 自动生成链路暂缓：当前效果未达标，本轮提交不包含该链路；后续需要重新设计可校验接口。
 - [ ] C. 平面图输入：从手绘/平面图/草图识别房间、门窗与连通关系，生成布局 DSL；透视图仅作风格/
   语义参考。
   - [x] v1 前置链路（2026-06-22）：`run --floorplan` 接入本地图片，已从 vision 优先改为
@@ -139,10 +146,17 @@
     墙体 SVG、半透明原图叠加预览、`layout_walls.json` 与 `floorplan_wall_extraction` facts；新增
     `floorplan_svg_to_grid_dsl`，可直接把已确认的 `wall_lines.svg` line 坐标映射为整数格 `walls`
     DSL，并输出 `snap_report.json` 供后续白盒构建步骤调用。
+  - [x] artifact 直连白盒工具（2026-06-22）：runner 白盒工具面为 `wb_build` / `wb_validate`
+    增加受控 `layout_path` / `layout_artifact` 参数，普通 agent 流程可把
+    `floorplan_extract_walls` 产出的 `layout_walls.json` 路径直接交给白盒落地工具，无需额外
+    `read` 工具或手工粘贴完整 JSON。
+  - [x] compiler 墙图拓扑检查（2026-06-22）：`whitebox_render_preview` 对 `walls[]` layout 生成
+    图结构 metrics，检测断角近距未连接、孤立墙段、共线重叠、T/cross junction 与连通组件数；
+    平面图增强任务默认要求检查 `render_preview.wall_topology`，不再把明显坏的墙线输入直接交给视觉模型兜底。
   - [x] 门宽尺度标定工具（2026-06-22）：新增 `floorplan_calibrate_doors_to_grid_dsl`，允许
     vision/图像算法先输出门洞端点候选，再用常规平开门约 1m/1 格反推 `units_per_grid`，重新生成
-    `walls` DSL；可选把匹配到连续墙段的门写入 `walls[].openings`，并输出
-    `door_calibration_report.json` 记录使用/剔除的门候选和未匹配开口。
+  `walls` DSL；可选把匹配到连续墙段的门写入 `walls[].openings`，并输出
+  `door_calibration_report.json` 记录使用/剔除的门候选和未匹配开口。
   - [x] UE 在线验收（2026-06-22，run
     `20260622-121606_根据这张平面图生成默认-slab-白盒-拓扑优先`）：真实 `test.png` 跑通
     `floorplan_recognition.ok=true`、`wb_validate.ok=true`、`screenshot.framing_ok=true`、
