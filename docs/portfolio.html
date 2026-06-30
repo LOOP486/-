@@ -1,0 +1,1743 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ue5agent 作品集展示</title>
+  <meta
+    name="description"
+    content="ue5agent 是面向 UE5 游戏开发的 AI Agent 工具链，覆盖 C++ 编译闭环、蓝图只读理解、白盒关卡搭建、平面图输入与验证证据链。"
+  >
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f8f8;
+      --paper: #ffffff;
+      --paper-2: #eef4f3;
+      --ink: #121820;
+      --muted: #5e6b75;
+      --faint: #8b98a3;
+      --line: #d8e0df;
+      --line-strong: #b6c5c1;
+      --teal: #0f8f7c;
+      --teal-dark: #0a6f64;
+      --cyan: #15a4b8;
+      --blue: #2e5f9f;
+      --amber: #c47a1c;
+      --green: #0e7c4f;
+      --shadow: 0 18px 48px rgba(16, 24, 32, 0.10);
+      --radius: 8px;
+      --wrap: min(1180px, calc(100vw - 48px));
+      font-family: "Inter", "Segoe UI", "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        linear-gradient(rgba(18, 24, 32, 0.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(18, 24, 32, 0.035) 1px, transparent 1px),
+        var(--bg);
+      background-size: 36px 36px;
+      line-height: 1.6;
+      letter-spacing: 0;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    a:focus-visible,
+    .button:focus-visible,
+    .nav-links a:focus-visible,
+    .footer-links a:focus-visible {
+      outline: 3px solid rgba(21, 164, 184, 0.72);
+      outline-offset: 4px;
+      border-radius: 6px;
+    }
+
+    img {
+      display: block;
+      max-width: 100%;
+    }
+
+    code {
+      padding: 0.1em 0.32em;
+      border: 1px solid rgba(184, 197, 195, 0.68);
+      border-radius: 4px;
+      background: rgba(238, 244, 243, 0.72);
+      color: #26333b;
+      font: 0.92em/1.4 "Cascadia Mono", "Consolas", "SFMono-Regular", monospace;
+    }
+
+    .site-header {
+      position: sticky;
+      top: 0;
+      z-index: 30;
+      border-bottom: 1px solid rgba(216, 224, 223, 0.82);
+      background: rgba(246, 248, 248, 0.92);
+      backdrop-filter: blur(16px);
+    }
+
+    .nav {
+      width: var(--wrap);
+      min-height: 68px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 780;
+      font-size: 22px;
+      line-height: 1;
+    }
+
+    .brand-mark {
+      width: 28px;
+      height: 28px;
+      display: inline-grid;
+      place-items: center;
+      color: #fff;
+      background: var(--ink);
+      border-radius: 6px;
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+    }
+
+    .brand-mark svg {
+      width: 18px;
+      height: 18px;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 26px;
+      color: var(--muted);
+      font-size: 14px;
+      white-space: nowrap;
+    }
+
+    .nav-links a {
+      padding: 8px 0;
+      border-bottom: 2px solid transparent;
+    }
+
+    .nav-links a:hover {
+      color: var(--ink);
+      border-color: var(--teal);
+    }
+
+    .hero {
+      position: relative;
+      min-height: calc(100vh - 68px);
+      overflow: hidden;
+      border-bottom: 1px solid var(--line);
+      background:
+        linear-gradient(110deg, rgba(246, 248, 248, 0.98) 0%, rgba(246, 248, 248, 0.94) 43%, rgba(246, 248, 248, 0.64) 74%, rgba(246, 248, 248, 0.88) 100%);
+    }
+
+    .hero:before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(rgba(46, 95, 159, 0.055) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(46, 95, 159, 0.05) 1px, transparent 1px);
+      background-size: 54px 54px;
+      mask-image: linear-gradient(90deg, rgba(0, 0, 0, 0.32), rgba(0, 0, 0, 0.95));
+      pointer-events: none;
+    }
+
+    .hero-asset {
+      position: absolute;
+      right: max(24px, calc((100vw - 1180px) / 2 - 18px));
+      top: 96px;
+      width: min(520px, 36vw);
+      aspect-ratio: 2.1 / 1;
+      border: 1px solid rgba(99, 115, 126, 0.24);
+      border-radius: var(--radius);
+      overflow: hidden;
+      box-shadow: var(--shadow);
+      transform: perspective(1200px) rotateX(3deg) rotateY(-7deg);
+      transform-origin: center;
+      opacity: 0.86;
+      background: var(--paper);
+    }
+
+    .hero-asset img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      filter: saturate(0.86) contrast(1.02);
+    }
+
+    .hero-asset:after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, rgba(246, 248, 248, 0.26), rgba(246, 248, 248, 0.02) 46%, rgba(246, 248, 248, 0.36));
+      pointer-events: none;
+    }
+
+    .hero-inner {
+      position: relative;
+      z-index: 2;
+      width: var(--wrap);
+      min-height: calc(100vh - 68px);
+      margin: 0 auto;
+      padding: 92px 0 56px;
+      display: grid;
+      align-content: center;
+    }
+
+    .hero-copy {
+      width: min(700px, 100%);
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin: 0;
+    }
+
+    h1 {
+      max-width: 720px;
+      font-size: clamp(42px, 6.6vw, 78px);
+      line-height: 0.98;
+      letter-spacing: 0;
+      font-weight: 820;
+    }
+
+    .accent-text {
+      color: var(--teal);
+    }
+
+    .title-line {
+      display: block;
+    }
+
+    .hero-subtitle {
+      max-width: 620px;
+      margin-top: 28px;
+      color: #34404a;
+      font-size: clamp(17px, 2vw, 21px);
+      line-height: 1.9;
+    }
+
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      margin-top: 34px;
+    }
+
+    .button {
+      min-height: 48px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 0 18px;
+      border: 1px solid var(--ink);
+      border-radius: 6px;
+      background: var(--ink);
+      color: #fff;
+      font-size: 15px;
+      font-weight: 700;
+      box-shadow: 0 10px 22px rgba(18, 24, 32, 0.16);
+    }
+
+    .button.secondary {
+      background: rgba(255, 255, 255, 0.84);
+      color: var(--ink);
+      box-shadow: none;
+    }
+
+    .button svg {
+      width: 18px;
+      height: 18px;
+      stroke-width: 2;
+    }
+
+    .hero-stats {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 1px;
+      width: min(850px, 100%);
+      margin-top: 54px;
+      border: 1px solid var(--line);
+      background: var(--line);
+    }
+
+    .stat {
+      min-height: 104px;
+      padding: 18px 18px 16px;
+      background: rgba(255, 255, 255, 0.86);
+    }
+
+    .stat strong {
+      display: block;
+      color: var(--ink);
+      font-size: clamp(26px, 4vw, 36px);
+      line-height: 1;
+      font-weight: 820;
+    }
+
+    .stat span {
+      display: block;
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .section {
+      border-bottom: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.74);
+    }
+
+    .section.alt {
+      background: rgba(238, 244, 243, 0.62);
+    }
+
+    .section-inner {
+      width: var(--wrap);
+      margin: 0 auto;
+      padding: 84px 0;
+    }
+
+    .section-head {
+      display: grid;
+      grid-template-columns: minmax(0, 0.85fr) minmax(260px, 0.7fr);
+      gap: 60px;
+      align-items: end;
+      margin-bottom: 42px;
+    }
+
+    .section-kicker {
+      width: 26px;
+      height: 6px;
+      margin-bottom: 18px;
+      background: linear-gradient(90deg, var(--teal), var(--cyan));
+      border-radius: 2px;
+    }
+
+    h2 {
+      font-size: clamp(30px, 4vw, 52px);
+      line-height: 1.12;
+      font-weight: 800;
+      letter-spacing: 0;
+    }
+
+    .section-head p {
+      color: var(--muted);
+      font-size: 16px;
+      line-height: 1.9;
+    }
+
+    .problem-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      border: 1px solid var(--line);
+      background: var(--line);
+      gap: 1px;
+    }
+
+    .problem {
+      min-height: 250px;
+      padding: 26px;
+      background: rgba(255, 255, 255, 0.92);
+    }
+
+    .problem .num {
+      color: var(--teal);
+      font-size: 14px;
+      font-weight: 800;
+    }
+
+    .problem h3,
+    .feature h3,
+    .timeline-card h3,
+    .evidence-card h3 {
+      margin-top: 18px;
+      font-size: 19px;
+      line-height: 1.35;
+      font-weight: 780;
+      letter-spacing: 0;
+    }
+
+    .problem p,
+    .feature p,
+    .timeline-card p,
+    .evidence-card p {
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.8;
+    }
+
+    .architecture {
+      display: grid;
+      grid-template-columns: 0.72fr 1fr;
+      gap: 42px;
+      align-items: stretch;
+    }
+
+    .layer-list {
+      border: 1px solid var(--line);
+      background: var(--line);
+      display: grid;
+      gap: 1px;
+    }
+
+    .layer {
+      display: grid;
+      grid-template-columns: 58px 1fr;
+      gap: 20px;
+      align-items: start;
+      padding: 22px;
+      background: rgba(255, 255, 255, 0.92);
+    }
+
+    .layer-index {
+      color: var(--teal);
+      font-size: 18px;
+      font-weight: 820;
+      line-height: 1;
+    }
+
+    .layer h3 {
+      margin: 0;
+      font-size: 18px;
+      line-height: 1.35;
+    }
+
+    .layer p {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .flow {
+      position: relative;
+      min-height: 530px;
+      padding: 26px;
+      border: 1px solid var(--line);
+      background:
+        linear-gradient(rgba(15, 143, 124, 0.06) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(15, 143, 124, 0.055) 1px, transparent 1px),
+        rgba(255, 255, 255, 0.88);
+      background-size: 28px 28px;
+      overflow: hidden;
+    }
+
+    .flow-line {
+      position: absolute;
+      left: 50%;
+      top: 62px;
+      bottom: 62px;
+      width: 2px;
+      background: linear-gradient(var(--teal), var(--blue), var(--amber));
+      opacity: 0.42;
+    }
+
+    .flow-node {
+      position: relative;
+      width: min(420px, 100%);
+      margin: 0 auto 18px;
+      padding: 16px 18px;
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius);
+      background: rgba(255, 255, 255, 0.96);
+      box-shadow: 0 8px 18px rgba(18, 24, 32, 0.06);
+    }
+
+    .flow-node h3 {
+      margin: 0;
+      font-size: 16px;
+      line-height: 1.35;
+    }
+
+    .flow-node p {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .flow-node:nth-child(2n) {
+      transform: translateX(-68px);
+    }
+
+    .flow-node:nth-child(2n + 1) {
+      transform: translateX(68px);
+    }
+
+    .flow-node.pass {
+      border-color: rgba(14, 124, 79, 0.42);
+    }
+
+    .flow-node.recover {
+      border-color: rgba(196, 122, 28, 0.48);
+    }
+
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      border: 1px solid var(--line);
+      background: var(--line);
+      gap: 1px;
+    }
+
+    .feature {
+      min-height: 220px;
+      padding: 24px;
+      background: rgba(255, 255, 255, 0.94);
+    }
+
+    .feature-symbol {
+      width: 42px;
+      height: 42px;
+      display: grid;
+      place-items: center;
+      border: 1px solid rgba(15, 143, 124, 0.42);
+      border-radius: 7px;
+      color: var(--teal-dark);
+      font-size: 13px;
+      font-weight: 820;
+    }
+
+    .workflow {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 1px;
+      border: 1px solid var(--line);
+      background: var(--line);
+    }
+
+    .functional-showcase {
+      margin-top: 42px;
+    }
+
+    .showcase-head {
+      display: grid;
+      grid-template-columns: minmax(0, 0.72fr) minmax(260px, 0.48fr);
+      gap: 34px;
+      align-items: end;
+      margin-bottom: 20px;
+    }
+
+    .showcase-head h3 {
+      font-size: clamp(24px, 3vw, 34px);
+      line-height: 1.18;
+      font-weight: 800;
+    }
+
+    .showcase-head p {
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.85;
+    }
+
+    .showcase-layout {
+      display: grid;
+      grid-template-columns: 0.9fr 1.4fr;
+      gap: 1px;
+      border: 1px solid var(--line);
+      background: var(--line);
+    }
+
+    .showcase-map,
+    .showcase-card {
+      background: rgba(255, 255, 255, 0.94);
+    }
+
+    .showcase-map {
+      padding: 24px;
+    }
+
+    .showcase-map h4,
+    .showcase-card h4 {
+      margin: 0;
+      font-size: 18px;
+      line-height: 1.35;
+      font-weight: 780;
+    }
+
+    .showcase-map p,
+    .showcase-card p {
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.78;
+    }
+
+    .showcase-flow {
+      display: grid;
+      gap: 10px;
+      margin-top: 20px;
+    }
+
+    .showcase-step {
+      display: grid;
+      grid-template-columns: 42px 1fr;
+      gap: 12px;
+      align-items: start;
+      padding: 12px;
+      border: 1px solid rgba(184, 197, 195, 0.58);
+      border-radius: var(--radius);
+      background: rgba(238, 244, 243, 0.58);
+    }
+
+    .showcase-step strong {
+      display: grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      border-radius: 6px;
+      background: var(--ink);
+      color: #fff;
+      font-size: 13px;
+      line-height: 1;
+    }
+
+    .showcase-step span {
+      display: block;
+      color: var(--ink);
+      font-size: 14px;
+      font-weight: 760;
+      line-height: 1.35;
+    }
+
+    .showcase-step small {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    .showcase-cards {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 1px;
+      background: var(--line);
+    }
+
+    .showcase-card {
+      min-width: 0;
+      padding: 22px;
+    }
+
+    .showcase-placeholder {
+      position: relative;
+      display: grid;
+      place-items: center;
+      aspect-ratio: 16 / 10;
+      margin-bottom: 18px;
+      overflow: hidden;
+      border: 1px dashed rgba(94, 107, 117, 0.48);
+      border-radius: var(--radius);
+      background:
+        linear-gradient(rgba(46, 95, 159, 0.08) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(15, 143, 124, 0.09) 1px, transparent 1px),
+        rgba(238, 244, 243, 0.78);
+      background-size: 22px 22px;
+      color: var(--muted);
+      text-align: center;
+      font-size: 13px;
+      font-weight: 720;
+      line-height: 1.5;
+    }
+
+    .showcase-placeholder:before {
+      content: "";
+      position: absolute;
+      inset: 14px;
+      border: 1px solid rgba(15, 143, 124, 0.28);
+      border-radius: 6px;
+      pointer-events: none;
+    }
+
+    .showcase-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 16px;
+    }
+
+    .showcase-tags span {
+      display: inline-flex;
+      align-items: center;
+      min-height: 26px;
+      padding: 0 9px;
+      border: 1px solid rgba(184, 197, 195, 0.7);
+      border-radius: 5px;
+      background: rgba(238, 244, 243, 0.64);
+      color: #35434b;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .shot {
+      background: var(--paper);
+      min-width: 0;
+    }
+
+    .shot-media {
+      aspect-ratio: 16 / 9;
+      background: var(--paper-2);
+      overflow: hidden;
+    }
+
+    .shot-media img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .shot:first-child .shot-media img {
+      object-position: center;
+    }
+
+    .shot-copy {
+      padding: 20px 22px 24px;
+      min-height: 172px;
+    }
+
+    .shot-copy strong {
+      display: block;
+      color: var(--teal-dark);
+      font-size: 13px;
+      letter-spacing: 0;
+    }
+
+    .shot-copy h3 {
+      margin-top: 10px;
+      font-size: 20px;
+      line-height: 1.35;
+    }
+
+    .shot-copy p {
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.75;
+    }
+
+    .evidence-layout {
+      display: grid;
+      grid-template-columns: 0.95fr 1.05fr;
+      gap: 34px;
+      align-items: start;
+    }
+
+    .terminal {
+      border: 1px solid #1e2934;
+      border-radius: var(--radius);
+      background: #101820;
+      color: #d7efe9;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .terminal-head {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 38px;
+      padding: 0 14px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      color: #9eb2bc;
+      font-size: 12px;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 99px;
+      background: #5fbfa9;
+    }
+
+    pre {
+      margin: 0;
+      padding: 20px;
+      overflow-x: auto;
+      font: 13px/1.7 "Cascadia Mono", "Consolas", "SFMono-Regular", monospace;
+      white-space: pre;
+    }
+
+    .prompt {
+      color: #9ee4d3;
+    }
+
+    .ok {
+      color: #7fd18c;
+    }
+
+    .evidence-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .evidence-card {
+      min-height: 176px;
+      padding: 22px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.92);
+      border-radius: var(--radius);
+    }
+
+    .evidence-card .metric {
+      display: block;
+      color: var(--ink);
+      font-size: 36px;
+      line-height: 1;
+      font-weight: 820;
+    }
+
+    .evidence-card h3 {
+      margin-top: 14px;
+    }
+
+    .timeline {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 1px;
+      border: 1px solid var(--line);
+      background: var(--line);
+    }
+
+    .timeline-card {
+      position: relative;
+      min-height: 292px;
+      padding: 24px 20px;
+      background: rgba(255, 255, 255, 0.94);
+    }
+
+    .timeline-card:before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 4px;
+      background: var(--teal);
+    }
+
+    .timeline-card.planned:before {
+      background: var(--amber);
+    }
+
+    .timeline-card.optimizing:before {
+      background: var(--blue);
+    }
+
+    .status {
+      color: var(--teal-dark);
+      font-size: 13px;
+      font-weight: 780;
+    }
+
+    .timeline-card.planned .status {
+      color: var(--amber);
+    }
+
+    .timeline-card.optimizing .status {
+      color: var(--blue);
+    }
+
+    .timeline-card ul {
+      margin: 14px 0 0;
+      padding: 0;
+      list-style: none;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.72;
+    }
+
+    .timeline-card li + li {
+      margin-top: 8px;
+    }
+
+    .value-strip {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 1px;
+      border: 1px solid var(--line);
+      background: var(--line);
+    }
+
+    .value {
+      min-height: 150px;
+      padding: 22px;
+      background: rgba(255, 255, 255, 0.94);
+    }
+
+    .value strong {
+      display: block;
+      font-size: 17px;
+      line-height: 1.35;
+    }
+
+    .value span {
+      display: block;
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.7;
+    }
+
+    .boundary {
+      display: grid;
+      grid-template-columns: 0.78fr 1fr;
+      gap: 1px;
+      border: 1px solid var(--line);
+      background: var(--line);
+    }
+
+    .boundary-copy,
+    .boundary-list {
+      padding: 30px;
+      background: rgba(255, 255, 255, 0.94);
+    }
+
+    .boundary-copy h2 {
+      margin: 0;
+      font-size: 28px;
+      line-height: 1.25;
+    }
+
+    .boundary-copy p {
+      margin-top: 14px;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.85;
+    }
+
+    .boundary-list {
+      display: grid;
+      gap: 14px;
+    }
+
+    .boundary-item {
+      display: grid;
+      grid-template-columns: 18px 1fr;
+      gap: 12px;
+      align-items: start;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.75;
+    }
+
+    .boundary-item:before {
+      content: "";
+      width: 9px;
+      height: 9px;
+      margin-top: 9px;
+      border-radius: 2px;
+      background: var(--amber);
+    }
+
+    .footer {
+      background: #111820;
+      color: #e9f1ef;
+    }
+
+    .footer-inner {
+      width: var(--wrap);
+      margin: 0 auto;
+      padding: 54px 0;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 34px;
+      align-items: center;
+    }
+
+    .footer h2 {
+      font-size: clamp(26px, 4vw, 42px);
+      max-width: 720px;
+    }
+
+    .footer p {
+      margin-top: 16px;
+      color: #a8b8bd;
+      max-width: 720px;
+    }
+
+    .footer-links {
+      display: grid;
+      gap: 12px;
+      min-width: 220px;
+    }
+
+    .footer-links a {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      min-height: 46px;
+      padding: 0 14px;
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      border-radius: 6px;
+      color: #fff;
+      font-weight: 700;
+      font-size: 14px;
+    }
+
+    .small-note {
+      margin-top: 22px;
+      color: var(--faint);
+      font-size: 12px;
+      line-height: 1.7;
+    }
+
+    @media (max-width: 1040px) {
+      .nav {
+        min-height: auto;
+        padding: 12px 0 10px;
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .nav-links {
+        display: flex;
+        width: 100%;
+        gap: 18px;
+        overflow-x: auto;
+        padding-bottom: 4px;
+        scrollbar-width: none;
+      }
+
+      .nav-links::-webkit-scrollbar {
+        display: none;
+      }
+
+      .nav-links a {
+        flex: 0 0 auto;
+      }
+
+      .hero {
+        min-height: auto;
+      }
+
+      .hero-inner {
+        min-height: 0;
+        padding: 76px 0 44px;
+      }
+
+      .hero-asset {
+        position: relative;
+        right: auto;
+        top: auto;
+        width: var(--wrap);
+        margin: 0 auto 34px;
+        transform: none;
+        opacity: 1;
+      }
+
+      .hero-copy {
+        width: 100%;
+      }
+
+      h1 {
+        max-width: 13ch;
+      }
+
+      .section-head,
+      .showcase-head,
+      .architecture,
+      .evidence-layout,
+      .showcase-layout,
+      .boundary,
+      .footer-inner {
+        grid-template-columns: 1fr;
+      }
+
+      .feature-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .showcase-cards {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .timeline {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .value-strip {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 720px) {
+      :root {
+        --wrap: min(100vw - 28px, 1180px);
+      }
+
+      .hero-inner,
+      .section-inner {
+        padding-top: 58px;
+        padding-bottom: 58px;
+      }
+
+      .hero-stats,
+      .problem-grid,
+      .feature-grid,
+      .workflow,
+      .showcase-cards,
+      .evidence-grid,
+      .timeline,
+      .value-strip {
+        grid-template-columns: 1fr;
+      }
+
+      .hero-actions {
+        display: grid;
+      }
+
+      .button {
+        width: 100%;
+      }
+
+      h1 {
+        font-size: 38px;
+        line-height: 1.04;
+      }
+
+      .flow {
+        min-height: 0;
+      }
+
+      .flow-line {
+        display: none;
+      }
+
+      .flow-node,
+      .flow-node:nth-child(2n),
+      .flow-node:nth-child(2n + 1) {
+        transform: none;
+      }
+
+      .footer-links {
+        min-width: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <nav class="nav" aria-label="页面导航">
+      <a class="brand" href="#top" aria-label="ue5agent 首页">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <path d="M5 12h14M12 5v14M7.5 7.5l9 9M16.5 7.5l-9 9"></path>
+          </svg>
+        </span>
+        ue5agent
+      </a>
+      <div class="nav-links">
+        <a href="#position">定位</a>
+        <a href="#architecture">架构</a>
+        <a href="#capabilities">能力</a>
+        <a href="#functional-showcase">展示</a>
+        <a href="#evidence">证据</a>
+        <a href="#roadmap">路线</a>
+      </div>
+    </nav>
+  </header>
+
+  <main id="top">
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-asset" aria-hidden="true">
+        <img src="assets/portfolio/whitebox-contact-sheet.png" alt="">
+      </div>
+      <div class="hero-inner">
+        <div class="hero-copy">
+          <h1 id="hero-title"><span class="title-line">面向 UE5 开发的</span><span class="title-line"><span class="accent-text">AI Agent</span> 工具链</span></h1>
+          <p class="hero-subtitle">
+            ue5agent 把 C++ 编译闭环、蓝图只读理解、白盒关卡生成、平面图输入和验证证据链组织成一个可扩展的工程代理系统，让工具结果能够被追踪、校验和复盘。
+          </p>
+          <div class="hero-actions">
+            <a class="button" href="#evidence">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+                <path d="M5 12h14"></path>
+                <path d="m13 6 6 6-6 6"></path>
+              </svg>
+              查看验证证据
+            </a>
+            <a class="button secondary" href="#architecture">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+                <path d="M4 7h16M4 12h16M4 17h16"></path>
+              </svg>
+              浏览架构设计
+            </a>
+          </div>
+        </div>
+
+        <div class="hero-stats" aria-label="项目摘要数据">
+          <div class="stat">
+            <strong>0-3</strong>
+            <span>Phase 主线已完成，覆盖核心骨架、编辑器桥、白盒搭建与行为闭环。</span>
+          </div>
+          <div class="stat">
+            <strong>663</strong>
+            <span>当前静态扫描到的 test_ 函数，覆盖核心循环、执行器、MCP、白盒与安全边界。</span>
+          </div>
+          <div class="stat">
+            <strong>6/6</strong>
+            <span>SPC/DST 标准空间评测通过，视觉档一次通过率记录为 1.0。</span>
+          </div>
+          <div class="stat">
+            <strong>4/4</strong>
+            <span>首份 UE 在线评测基线通过，平均迭代 1.5，人工干预 0。</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="position" aria-labelledby="position-title">
+      <div class="section-inner">
+        <div class="section-head">
+          <div>
+            <div class="section-kicker" aria-hidden="true"></div>
+            <h2 id="position-title">项目解决的不是“让模型懂 UE”，而是让它能在 UE 工程里闭环。</h2>
+          </div>
+          <p>
+            普通 coding agent 在 UE5 场景里常被二进制资产、长验证链路和空间坐标错误卡住。ue5agent 的核心思路是把高层判断留给模型，把坐标、权限、验证和证据交给确定性管线。
+          </p>
+        </div>
+
+        <div class="problem-grid">
+          <article class="problem">
+            <span class="num">01</span>
+            <h3>蓝图与资产不可直接读写</h3>
+            <p>通过编辑器桥导出蓝图 overview、pseudocode、graph 和引用关系，坚持只读理解，不让模型直接编辑节点。</p>
+          </article>
+          <article class="problem">
+            <span class="num">02</span>
+            <h3>编译通过不代表行为正确</h3>
+            <p>把 UBT、PIE、功能测试、输出日志、NavMesh、path_test 和视觉审查都沉淀成结构化证据，作为报告依据。</p>
+          </article>
+          <article class="problem">
+            <span class="num">03</span>
+            <h3>LLM 直接吐坐标风险高</h3>
+            <p>采用布局 DSL、资产清单、白盒编译器、校验器和摆放模板求解器，把白盒结构与陈设变成可回归的程序逻辑。</p>
+          </article>
+        </div>
+
+      </div>
+    </section>
+
+    <section class="section alt" id="architecture" aria-labelledby="architecture-title">
+      <div class="section-inner">
+        <div class="section-head">
+          <div>
+            <div class="section-kicker" aria-hidden="true"></div>
+            <h2 id="architecture-title">四层架构：Agent Kernel → MCP 工具层 → UE5 工程 → 知识层。</h2>
+          </div>
+          <p>
+            <code>TaskRunner</code> 处理宏观阶段状态机，<code>AgentLoop</code> 处理步骤内工具调用循环。核心循环只依赖 <code>ChatModel</code> 协议，模型接入通过适配层完成。
+          </p>
+        </div>
+
+        <div class="architecture">
+          <div class="layer-list" aria-label="架构分层">
+            <article class="layer">
+              <span class="layer-index">01</span>
+              <div>
+                <h3>Agent Kernel</h3>
+                <p>plan → execute → verify → recover → report，包含模型路由、权限、上下文压缩、证据信封和恢复策略。</p>
+              </div>
+            </article>
+            <article class="layer">
+              <span class="layer-index">02</span>
+              <div>
+                <h3>MCP 工具层</h3>
+                <p>挂载外部工具服务，用统一工具注册、参数校验、权限网关和错误回传连接 UE 能力。</p>
+              </div>
+            </article>
+            <article class="layer">
+              <span class="layer-index">03</span>
+              <div>
+                <h3>UE5 工程</h3>
+                <p>编辑器桥、UBT 编译、PIE、功能测试、白盒落地和视口证据都在真实工程里运行。</p>
+              </div>
+            </article>
+            <article class="layer">
+              <span class="layer-index">04</span>
+              <div>
+                <h3>知识层</h3>
+                <p>资产清单、关卡尺度规则、项目文档、ADR、运行日志和评测基线沉淀可复用的领域知识。</p>
+              </div>
+            </article>
+          </div>
+
+          <div class="flow" aria-label="关键执行流程">
+            <div class="flow-line" aria-hidden="true"></div>
+            <article class="flow-node">
+              <h3>用户目标 / 平面图 / 需求文本</h3>
+              <p>输入被规划器转成带工具范围、验收条件和预算的执行步骤。</p>
+            </article>
+            <article class="flow-node">
+              <h3>受限工具面 + 步内循环</h3>
+              <p>每步只暴露需要的工具面，模型在步骤内反复调用工具直到达成契约。</p>
+            </article>
+            <article class="flow-node">
+              <h3>MCP / 本地工具执行</h3>
+              <p>UBT、蓝图只读、白盒构建/校验、本地预览、PIE、path_test 等工具统一回传。</p>
+            </article>
+            <article class="flow-node pass">
+              <h3>结构化证据与验收器</h3>
+              <p>确定性规则先判，再按需要让模型审查补充；通过后进入报告。</p>
+            </article>
+            <article class="flow-node recover">
+              <h3>恢复 / 重试 / 回滚</h3>
+              <p>桥接断开、部分副作用、证据缺失等错误会进入不同恢复策略。</p>
+            </article>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="capabilities" aria-labelledby="capabilities-title">
+      <div class="section-inner">
+        <div class="section-head">
+          <div>
+            <div class="section-kicker" aria-hidden="true"></div>
+            <h2 id="capabilities-title">核心能力围绕 UE5 真实工作流设计。</h2>
+          </div>
+          <p>
+            这些模块不是单点 demo，而是被执行器、工具权限、证据验收和评测基准串起来的工程能力。
+          </p>
+        </div>
+
+        <div class="feature-grid">
+          <article class="feature">
+            <span class="feature-symbol">C++</span>
+            <h3>编译闭环</h3>
+            <p>封装 UBT 调用并解析结构化诊断，支持真实 UE 工程编译成功、工具链缺失和注入错误样本。</p>
+          </article>
+          <article class="feature">
+            <span class="feature-symbol">蓝图</span>
+            <h3>蓝图只读理解</h3>
+            <p>概览、伪代码、节点图和引用查找分层读取蓝图，减少上下文压力和节点编辑风险。</p>
+          </article>
+          <article class="feature">
+            <span class="feature-symbol">DSL</span>
+            <h3>白盒关卡搭建</h3>
+            <p>LLM 输出拓扑层布局，白盒编译器生成摆放结果，校验器检查重叠、连通、门洞和关卡尺度。</p>
+          </article>
+          <article class="feature">
+            <span class="feature-symbol">图像</span>
+            <h3>平面图输入 v1</h3>
+            <p>从图片提取墙线，输出 SVG、网格化布局和预览产物，再接入白盒构建与校验。</p>
+          </article>
+          <article class="feature">
+            <span class="feature-symbol">MCP</span>
+            <h3>工具协议化</h3>
+            <p>MCP 客户端挂载外部工具服务，自带构建、编辑器、白盒和仓库工具等工具面。</p>
+          </article>
+          <article class="feature">
+            <span class="feature-symbol">视觉</span>
+            <h3>视觉审查</h3>
+            <p>白盒视觉门禁默认走本地预览与视觉审查；缺少这些证据时，不能只凭程序校验收口。</p>
+          </article>
+          <article class="feature">
+            <span class="feature-symbol">权限</span>
+            <h3>权限与回滚</h3>
+            <p>只读、安全写、工程写、危险操作四级分权；工程写操作走自动快照，白盒批量生成有整批回滚策略。</p>
+          </article>
+          <article class="feature">
+            <span class="feature-symbol">评测</span>
+            <h3>评测基准</h3>
+            <p>UE 在线评测、SPC/DST 空间评测、陈设评测和离线测试共同覆盖稳定性与回归。</p>
+          </article>
+        </div>
+
+      </div>
+    </section>
+
+    <section class="section alt" aria-labelledby="workflow-title">
+      <div class="section-inner">
+        <div class="section-head">
+          <div>
+            <div class="section-kicker" aria-hidden="true"></div>
+            <h2 id="workflow-title">从平面图到白盒，再到 UE 视口证据。</h2>
+          </div>
+          <p>
+            作品集里最容易说明价值的路径，是展示输入、确定性中间产物和真实编辑器证据之间的关系。
+          </p>
+        </div>
+
+        <div class="workflow">
+          <article class="shot">
+            <div class="shot-media">
+              <img src="assets/portfolio/floorplan-source.png" alt="平面图输入示例">
+            </div>
+            <div class="shot-copy">
+              <strong>Step 01</strong>
+              <h3>平面图作为结构输入</h3>
+              <p>v1 以图像算法优先提取墙体和门宽标定，失败时再保守回退到拓扑安全布局。</p>
+            </div>
+          </article>
+          <article class="shot">
+            <div class="shot-media">
+              <img src="assets/portfolio/whitebox-contact-sheet.png" alt="白盒本地多视角预览">
+            </div>
+            <div class="shot-copy">
+              <strong>Step 02</strong>
+              <h3>编译器级本地预览</h3>
+              <p>本地预览生成俯视 / 等距多视角图，同时保留墙体拓扑、几何保真度和布局证据。</p>
+            </div>
+          </article>
+          <article class="shot">
+            <div class="shot-media">
+              <img src="assets/portfolio/ue-viewport-openings.png" alt="UE 视口中的白盒结构截图">
+            </div>
+            <div class="shot-copy">
+              <strong>Step 03</strong>
+              <h3>UE 在线验收</h3>
+              <p>真实编辑器链路可继续跑白盒校验、NavMesh、path_test、截图和视觉审查。</p>
+            </div>
+          </article>
+        </div>
+
+        <div class="functional-showcase" id="functional-showcase">
+          <div class="showcase-head">
+            <div>
+              <h3>功能展示不只看代码结构，也看它怎么把 UE5 任务拆成白盒结果。</h3>
+            </div>
+            <p>
+              这一层适合放在作品集里当“可见能力”展示：先露出用户能得到什么，再展示中间产物、工具证据和后续可替换的真实截图。
+            </p>
+          </div>
+
+          <div class="showcase-layout">
+            <article class="showcase-map">
+              <h4>一次任务的可视化链路</h4>
+              <p>从需求到结果保持白盒：模型负责意图和修正，确定性工具负责坐标、编译、校验和取证。</p>
+              <div class="showcase-flow" aria-label="功能展示链路">
+                <div class="showcase-step">
+                  <strong>01</strong>
+                  <div>
+                    <span>读项目上下文</span>
+                    <small>读取蓝图、资产、日志、测试列表和已有运行事实。</small>
+                  </div>
+                </div>
+                <div class="showcase-step">
+                  <strong>02</strong>
+                  <div>
+                    <span>生成可校验中间产物</span>
+                    <small>输出布局 DSL、空间语义 brief、C++ 改动计划或蓝图分析摘要。</small>
+                  </div>
+                </div>
+                <div class="showcase-step">
+                  <strong>03</strong>
+                  <div>
+                    <span>工具执行并回传事实</span>
+                    <small>UBT、白盒构建、蓝图只读、功能测试、NavMesh 和 path_test 都写入证据链。</small>
+                  </div>
+                </div>
+                <div class="showcase-step">
+                  <strong>04</strong>
+                  <div>
+                    <span>失败恢复或报告结果</span>
+                    <small>证据不足时重试、回滚或补取证；通过后输出可复盘报告。</small>
+                  </div>
+                </div>
+              </div>
+            </article>
+
+            <div class="showcase-cards">
+              <article class="showcase-card" id="whitebox-showcase">
+                <div class="showcase-placeholder">
+                  白盒布局 / 视口截图占位<br>
+                  后续替换为 UE 或本地预览图
+                </div>
+                <h4>白盒关卡生成功能</h4>
+                <p>展示从文字或平面图生成房间、门窗、动线、掩体与陈设的结果，同时保留 layout、placements、预览图和验证指标。</p>
+                <div class="showcase-tags" aria-label="白盒展示标签">
+                  <span>layout DSL</span>
+                  <span>render_preview</span>
+                  <span>wb_validate</span>
+                </div>
+              </article>
+
+              <article class="showcase-card" id="blueprint-reader-demo">
+                <div class="showcase-placeholder">
+                  蓝图阅读面板占位<br>
+                  overview / pseudocode / graph
+                </div>
+                <h4>蓝图阅读与引用追踪</h4>
+                <p>用 overview、伪代码、节点图和引用查找解释蓝图做了什么、谁在使用它，并坚持只读边界，避免让模型直接改节点。</p>
+                <div class="showcase-tags" aria-label="蓝图展示标签">
+                  <span>bp_overview</span>
+                  <span>bp_graph</span>
+                  <span>bp_find_usages</span>
+                </div>
+              </article>
+
+              <article class="showcase-card" id="cpp-mechanism-demo">
+                <div class="showcase-placeholder">
+                  C++ 机制编写占位<br>
+                  编译诊断 / 功能测试 / 日志
+                </div>
+                <h4>C++ 机制编写闭环</h4>
+                <p>把玩法机制优先落到 C++，再通过 UHT、UBT、PIE、功能测试和输出日志收口，让“能编译”与“能运行”分开验收。</p>
+                <div class="showcase-tags" aria-label="C++ 展示标签">
+                  <span>UHT / UBT</span>
+                  <span>PIE</span>
+                  <span>Functional Test</span>
+                </div>
+              </article>
+
+              <article class="showcase-card">
+                <div class="showcase-placeholder">
+                  证据链占位<br>
+                  trace / facts / 恢复报告
+                </div>
+                <h4>证据链与恢复展示</h4>
+                <p>把工具调用、结构化事实、截图、评测结果和恢复路径放在同一条链路里，展示 agent 不是口头完成，而是留下可检查结果。</p>
+                <div class="showcase-tags" aria-label="证据展示标签">
+                  <span>facts</span>
+                  <span>trace</span>
+                  <span>rollback</span>
+                </div>
+              </article>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="evidence" aria-labelledby="evidence-title">
+      <div class="section-inner">
+        <div class="section-head">
+          <div>
+            <div class="section-kicker" aria-hidden="true"></div>
+            <h2 id="evidence-title">可信度来自命令、测试、评测和真实 UE 证据。</h2>
+          </div>
+          <p>
+            页面数据来自本仓库 README、roadmap、CHANGELOG、CI 配置和测试目录静态扫描；已经完成的能力和后续方向分开展示。
+          </p>
+        </div>
+
+        <div class="evidence-layout">
+          <div class="terminal" aria-label="日常检查命令">
+            <div class="terminal-head">
+              <span class="dot"></span>
+              <span class="dot"></span>
+              <span class="dot"></span>
+              <span>scripts/check.ps1</span>
+            </div>
+            <pre><span class="prompt">PS&gt;</span> .\scripts\check.ps1
+uv run ruff check src tests
+uv run ruff format src tests --check
+uv run pytest -q
+
+<span class="prompt">PS&gt;</span> .\scripts\check.ps1 -Types
+uv run mypy src
+
+<span class="ok">CI:</span> uv sync --dev
+<span class="ok">CI:</span> ruff + format check + mypy + pytest</pre>
+          </div>
+
+          <div class="evidence-grid">
+            <article class="evidence-card">
+              <span class="metric">44</span>
+              <h3>测试文件</h3>
+              <p>静态扫描到 44 个 <code>tests/test_*.py</code>，覆盖核心循环、执行器、权限、MCP、白盒、平面图与安全。</p>
+            </article>
+            <article class="evidence-card">
+              <span class="metric">663</span>
+              <h3>测试函数</h3>
+              <p>当前静态扫描到 663 个 test_ 函数；roadmap 也记录过 497 个单测全绿的离线回归节点。</p>
+            </article>
+            <article class="evidence-card">
+              <span class="metric">6/6</span>
+              <h3>空间评测</h3>
+              <p>SPC/DST 标准结构评测基线 6/6 通过，视觉档 6/6 通过，人工干预记录为 0。</p>
+            </article>
+            <article class="evidence-card">
+              <span class="metric">4854</span>
+              <h3>UE 测试列表</h3>
+              <p>CHANGELOG 记录真实 <code>functest_list</code> 可列出 4854 个测试，并完成正负向功能测试验证。</p>
+            </article>
+          </div>
+        </div>
+
+        <p class="small-note">
+          关键依据：README 当前状态、docs/roadmap.md Phase 0-3 与白盒优化条目、CHANGELOG.md 未发布段、.github/workflows/ci.yml、scripts/check.ps1。平面图能力仍按 v1 / 拓扑优先表述。
+        </p>
+      </div>
+    </section>
+
+    <section class="section alt" id="roadmap" aria-labelledby="roadmap-title">
+      <div class="section-inner">
+        <div class="section-head">
+          <div>
+            <div class="section-kicker" aria-hidden="true"></div>
+            <h2 id="roadmap-title">阶段路线：主线完成，继续打磨白盒与交互体验。</h2>
+          </div>
+          <p>
+            展示时可以把 Phase 0-3 作为已交付能力，把 B11 顶层收口、平面图精细识别、流式输出和会话恢复放在后续计划。
+          </p>
+        </div>
+
+        <div class="timeline">
+          <article class="timeline-card">
+            <span class="status">已完成</span>
+            <h3>Phase 0<br>核心骨架</h3>
+            <ul>
+              <li>模型无关核心循环</li>
+              <li>MCP 客户端</li>
+              <li>权限网关</li>
+              <li>UBT 编译闭环</li>
+            </ul>
+          </article>
+          <article class="timeline-card">
+            <span class="status">已完成</span>
+            <h3>Phase 1<br>编辑器桥</h3>
+            <ul>
+              <li>桥接 UE 编辑器</li>
+              <li>蓝图只读导出</li>
+              <li>资产 / 日志 / 截图</li>
+              <li>引用查找真机验证</li>
+            </ul>
+          </article>
+          <article class="timeline-card">
+            <span class="status">已完成</span>
+            <h3>Phase 2<br>白盒搭建</h3>
+            <ul>
+              <li>资产清单 + 布局 DSL</li>
+              <li>批量 spawn / rollback</li>
+              <li>校验器 + NavMesh</li>
+              <li>视觉迭代闭环</li>
+            </ul>
+          </article>
+          <article class="timeline-card">
+            <span class="status">已完成</span>
+            <h3>Phase 3<br>行为闭环</h3>
+            <ul>
+              <li>PIE / 功能测试</li>
+              <li>子代理隔离</li>
+              <li>UE 在线评测</li>
+              <li>持续集成门禁</li>
+            </ul>
+          </article>
+          <article class="timeline-card optimizing">
+            <span class="status">继续优化</span>
+            <h3>白盒增强<br>语义陈设</h3>
+            <ul>
+              <li>摆放模板计划</li>
+              <li>约束求解</li>
+              <li>候选区域过滤</li>
+              <li>几何验证补强</li>
+            </ul>
+          </article>
+          <article class="timeline-card planned">
+            <span class="status">规划中</span>
+            <h3>体验项<br>会话能力</h3>
+            <ul>
+              <li>平面图精细识别</li>
+              <li>流式输出</li>
+              <li>任务中断</li>
+              <li>会话持久化恢复</li>
+            </ul>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="value-title">
+      <div class="section-inner">
+        <div class="section-head">
+          <div>
+            <div class="section-kicker" aria-hidden="true"></div>
+            <h2 id="value-title">这个案例能展示什么能力。</h2>
+          </div>
+          <p>
+            作品集读者更关心你如何把复杂问题拆开、落到工具、跑出结果。ue5agent 可以作为一个完整案例，展示从系统设计到真实 UE 验证的工程能力。
+          </p>
+        </div>
+
+        <div class="value-strip">
+          <div class="value">
+            <strong>复杂问题拆解</strong>
+            <span>把 UE5 开发里的蓝图、资产、编译、关卡搭建和验证链路拆成清晰模块。</span>
+          </div>
+          <div class="value">
+            <strong>系统架构设计</strong>
+            <span>用 Agent Kernel、模型路由和 MCP 工具层组织长期可扩展的能力边界。</span>
+          </div>
+          <div class="value">
+            <strong>真实工具落地</strong>
+            <span>把 UBT、编辑器桥、白盒编译器、平面图工具和评测集接进同一条执行链。</span>
+          </div>
+          <div class="value">
+            <strong>质量闭环意识</strong>
+            <span>用权限、自动快照、结构化证据、CI 和评测基线让 AI 输出变成可检查的工程结果。</span>
+          </div>
+          <div class="value">
+            <strong>作品表达能力</strong>
+            <span>用真实截图、流程图、数据点和阶段路线，把技术项目讲成别人能快速理解的案例。</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section alt" aria-labelledby="boundary-title">
+      <div class="section-inner">
+        <div class="boundary">
+          <div class="boundary-copy">
+            <h2 id="boundary-title">亮点总结：从技术 demo 到可复盘的工程案例。</h2>
+            <p>
+              对外展示时，重点不是解释所有实现细节，而是让读者看到项目的目标、难点、方案、结果和下一步方向。
+            </p>
+          </div>
+          <div class="boundary-list">
+            <div class="boundary-item">把 UE5 项目中难以直接交给模型处理的环节，转化成可调用、可校验、可回滚的工具链。</div>
+            <div class="boundary-item">用平面图输入、白盒预览和 UE 视口截图展示实际产物，让页面有可感知的项目结果。</div>
+            <div class="boundary-item">用测试规模、CI、UE 在线评测和 SPC/DST 评测基线支撑可信度，避免只停留在概念展示。</div>
+            <div class="boundary-item">后续方向聚焦更强的平面图识别、更稳定的资产语义摆放，以及更顺滑的交互体验。</div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div>
+        <h2>ue5agent：把 UE5 Agent 从“会调用工具”推进到“能留下证据”。</h2>
+        <p>截至 2026-06-30，本页基于当前仓库文档与测试目录整理，适合作为作品集案例页或项目介绍入口。</p>
+      </div>
+      <div class="footer-links">
+        <a href="roadmap.md">路线图 <span aria-hidden="true">↗</span></a>
+        <a href="architecture/design.md">架构设计 <span aria-hidden="true">↗</span></a>
+        <a href="../README.md">项目 README <span aria-hidden="true">↗</span></a>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>
