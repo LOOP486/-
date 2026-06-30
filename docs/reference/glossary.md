@@ -4,6 +4,7 @@
 |---|---|
 | UnrealBuildTool（UBT，虚幻构建工具） | UE 的构建系统，`Build.bat` 是其入口 |
 | UnrealHeaderTool（UHT，虚幻头文件工具） | 处理 UPROPERTY/UFUNCTION 等反射宏的代码生成器 |
+| C++（C++，C++ 编程语言） | UE 玩法机制和插件命令常用的原生代码语言，本项目用它承载需要编译与运行验证的机制实现 |
 | Play In Editor（PIE，编辑器内运行） | 在编辑器里启动游戏运行态 |
 | Artificial Intelligence（AI，人工智能） | 本项目中的智能体能力来源，通常指由大语言模型驱动的规划、代码生成、审查与总结 |
 | Agent（智能体） | 能根据目标规划步骤、调用工具并基于证据报告结果的软件执行体 |
@@ -15,6 +16,7 @@
 | 蓝图（Blueprint） | UE 的可视化脚本，本项目只读分析（ADR-0003） |
 | AssetRegistry | UE 的资产注册表，支持按类型/路径查询与依赖分析 |
 | NavMesh | 导航网格，AI 寻路数据；本项目用它做白盒关卡可达性校验 |
+| path_test（路径测试） | UE 编辑器侧的两点导航可达性检查工具，用于判断白盒路线是否完整或部分可达 |
 | Live Coding | UE 的热编译；改头文件/反射宏时不可靠，需完整编译 |
 | 白盒（blockout/whitebox） | 用简单几何体/模块件快速搭出关卡结构验证玩法，再做美术替换 |
 | Opening Dressing（opening dressing，洞口补件） | 在白盒结构已切好的门窗洞口上，追加匹配宽度与墙向的门框/窗框资产 |

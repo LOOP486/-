@@ -6,7 +6,7 @@
   <title>ue5agent 作品集展示</title>
   <meta
     name="description"
-    content="ue5agent 是面向 UE5 游戏开发的 AI Agent 工具链，覆盖 C++ 编译闭环、蓝图只读理解、白盒关卡搭建、平面图输入与验证证据链。"
+    content="ue5agent 是面向关卡策划的 UE5 白盒原型助手，展示从平面图和玩法需求生成可验收白盒关卡、动线、陈设、蓝图阅读和 C++ 机制编写的能力。"
   >
   <style>
     :root {
@@ -1174,11 +1174,11 @@
         ue5agent
       </a>
       <div class="nav-links">
-        <a href="#position">定位</a>
-        <a href="#architecture">架构</a>
-        <a href="#capabilities">能力</a>
-        <a href="#functional-showcase">展示</a>
-        <a href="#evidence">证据</a>
+        <a href="#position">策划视角</a>
+        <a href="#capabilities">功能</a>
+        <a href="#functional-showcase">演示</a>
+        <a href="#evidence">验收</a>
+        <a href="#architecture">幕后</a>
         <a href="#roadmap">路线</a>
       </div>
     </nav>
@@ -1191,43 +1191,43 @@
       </div>
       <div class="hero-inner">
         <div class="hero-copy">
-          <h1 id="hero-title"><span class="title-line">面向 UE5 开发的</span><span class="title-line"><span class="accent-text">AI Agent</span> 工具链</span></h1>
+          <h1 id="hero-title"><span class="title-line">给关卡策划看的</span><span class="title-line"><span class="accent-text">UE5 白盒</span>原型助手</span></h1>
           <p class="hero-subtitle">
-            ue5agent 把 C++ 编译闭环、蓝图只读理解、白盒关卡生成、平面图输入和验证证据链组织成一个可扩展的工程代理系统，让工具结果能够被追踪、校验和复盘。
+            ue5agent 把平面图、玩法需求和已有工程上下文转成房间、门窗、动线、掩体、陈设和验收证据。作品集重点展示策划能看懂的白盒产物，而不是只讲内部实现。
           </p>
           <div class="hero-actions">
-            <a class="button" href="#evidence">
+            <a class="button" href="#functional-showcase">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
                 <path d="M5 12h14"></path>
                 <path d="m13 6 6 6-6 6"></path>
               </svg>
-              查看验证证据
+              看功能演示
             </a>
-            <a class="button secondary" href="#architecture">
+            <a class="button secondary" href="#evidence">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
                 <path d="M4 7h16M4 12h16M4 17h16"></path>
               </svg>
-              浏览架构设计
+              看验收证据
             </a>
           </div>
         </div>
 
         <div class="hero-stats" aria-label="项目摘要数据">
           <div class="stat">
-            <strong>0-3</strong>
-            <span>Phase 主线已完成，覆盖核心骨架、编辑器桥、白盒搭建与行为闭环。</span>
+            <strong>平面图</strong>
+            <span>从图片提取墙线、房间、门窗和比例标定，先生成可检查预览，再进入 UE 白盒。</span>
           </div>
           <div class="stat">
-            <strong>663</strong>
-            <span>当前静态扫描到的 test_ 函数，覆盖核心循环、执行器、MCP、白盒与安全边界。</span>
+            <strong>可走通</strong>
+            <span>出生点、目标点、主路线、NavMesh 与 path_test 一起验证，避免只做“看起来像”的关卡。</span>
           </div>
           <div class="stat">
-            <strong>6/6</strong>
-            <span>SPC/DST 标准空间评测通过，视觉档一次通过率记录为 1.0。</span>
+            <strong>可摆放</strong>
+            <span>掩体、桌椅、储物墙和活动区按门窗、路径和空间尺度约束生成白盒陈设草案。</span>
           </div>
           <div class="stat">
-            <strong>4/4</strong>
-            <span>首份 UE 在线评测基线通过，平均迭代 1.5，人工干预 0。</span>
+            <strong>可协作</strong>
+            <span>蓝图阅读和 C++ 玩法机制编写用于策划与程序沟通，结果用编译、运行和截图收口。</span>
           </div>
         </div>
       </div>
@@ -1238,28 +1238,28 @@
         <div class="section-head">
           <div>
             <div class="section-kicker" aria-hidden="true"></div>
-            <h2 id="position-title">项目解决的不是“让模型懂 UE”，而是让它能在 UE 工程里闭环。</h2>
+            <h2 id="position-title">项目解决的是策划白盒落地慢、难验收、难复盘。</h2>
           </div>
           <p>
-            普通 coding agent 在 UE5 场景里常被二进制资产、长验证链路和空间坐标错误卡住。ue5agent 的核心思路是把高层判断留给模型，把坐标、权限、验证和证据交给确定性管线。
+            对关卡策划来说，真正痛的是“想法有了，但 UE 里还没形”。ue5agent 把输入、生成、预览、验证和修正拆成可检查步骤，让白盒从概念变成能讨论的关卡样稿。
           </p>
         </div>
 
         <div class="problem-grid">
           <article class="problem">
             <span class="num">01</span>
-            <h3>蓝图与资产不可直接读写</h3>
-            <p>通过编辑器桥导出蓝图 overview、pseudocode、graph 和引用关系，坚持只读理解，不让模型直接编辑节点。</p>
+            <h3>平面图还原耗时</h3>
+            <p>墙体、门洞、房间关系和比例一旦手工摆错，后面的动线、陈设和截图都会反复返工。</p>
           </article>
           <article class="problem">
             <span class="num">02</span>
-            <h3>编译通过不代表行为正确</h3>
-            <p>把 UBT、PIE、功能测试、输出日志、NavMesh、path_test 和视觉审查都沉淀成结构化证据，作为报告依据。</p>
+            <h3>白盒好看不代表能玩</h3>
+            <p>通道宽度、门窗避让、出生点到目标点可达、掩体距离都需要验收，不应只靠一张截图判断。</p>
           </article>
           <article class="problem">
             <span class="num">03</span>
-            <h3>LLM 直接吐坐标风险高</h3>
-            <p>采用布局 DSL、资产清单、白盒编译器、校验器和摆放模板求解器，把白盒结构与陈设变成可回归的程序逻辑。</p>
+            <h3>策划与程序沟通成本高</h3>
+            <p>蓝图触发器、C++ 机制和测试结果需要翻译成策划能复盘的语言，避免“代码做了什么”说不清。</p>
           </article>
         </div>
 
@@ -1271,10 +1271,10 @@
         <div class="section-head">
           <div>
             <div class="section-kicker" aria-hidden="true"></div>
-            <h2 id="architecture-title">四层架构：Agent Kernel → MCP 工具层 → UE5 工程 → 知识层。</h2>
+            <h2 id="architecture-title">幕后保障：白盒结果可追踪、可回滚、可复盘。</h2>
           </div>
           <p>
-            <code>TaskRunner</code> 处理宏观阶段状态机，<code>AgentLoop</code> 处理步骤内工具调用循环。核心循环只依赖 <code>ChatModel</code> 协议，模型接入通过适配层完成。
+            给策划看的页面不需要先讲内部类名，但底层必须保证每次生成都有来源、有验收、有失败处理，才能放心把 AI 输出放进 UE 工作流。
           </p>
         </div>
 
@@ -1283,29 +1283,29 @@
             <article class="layer">
               <span class="layer-index">01</span>
               <div>
-                <h3>Agent Kernel</h3>
-                <p>plan → execute → verify → recover → report，包含模型路由、权限、上下文压缩、证据信封和恢复策略。</p>
+                <h3>任务规划</h3>
+                <p>把策划目标拆成可执行步骤，每一步都带输入、工具范围、验收条件和失败处理策略。</p>
               </div>
             </article>
             <article class="layer">
               <span class="layer-index">02</span>
               <div>
-                <h3>MCP 工具层</h3>
-                <p>挂载外部工具服务，用统一工具注册、参数校验、权限网关和错误回传连接 UE 能力。</p>
+                <h3>安全工具通道</h3>
+                <p>读蓝图、生成白盒、跑测试、取截图都走受控工具，危险操作需要明确权限和回滚路径。</p>
               </div>
             </article>
             <article class="layer">
               <span class="layer-index">03</span>
               <div>
                 <h3>UE5 工程</h3>
-                <p>编辑器桥、UBT 编译、PIE、功能测试、白盒落地和视口证据都在真实工程里运行。</p>
+                <p>白盒落地、编译、运行、功能测试、路径验证和视口截图都在真实工程里运行。</p>
               </div>
             </article>
             <article class="layer">
               <span class="layer-index">04</span>
               <div>
-                <h3>知识层</h3>
-                <p>资产清单、关卡尺度规则、项目文档、ADR、运行日志和评测基线沉淀可复用的领域知识。</p>
+                <h3>项目知识沉淀</h3>
+                <p>资产清单、关卡尺度规则、运行日志和评测基线会被复用，下一次生成不从零开始。</p>
               </div>
             </article>
           </div>
@@ -1313,24 +1313,24 @@
           <div class="flow" aria-label="关键执行流程">
             <div class="flow-line" aria-hidden="true"></div>
             <article class="flow-node">
-              <h3>用户目标 / 平面图 / 需求文本</h3>
-              <p>输入被规划器转成带工具范围、验收条件和预算的执行步骤。</p>
+              <h3>策划目标 / 平面图 / 玩法需求</h3>
+              <p>输入先被整理成空间目标、玩法目标和可验收条件。</p>
             </article>
             <article class="flow-node">
-              <h3>受限工具面 + 步内循环</h3>
-              <p>每步只暴露需要的工具面，模型在步骤内反复调用工具直到达成契约。</p>
+              <h3>拆成可检查步骤</h3>
+              <p>每一步只处理当前需要的资产、关卡、蓝图或机制任务，减少误改范围。</p>
             </article>
             <article class="flow-node">
-              <h3>MCP / 本地工具执行</h3>
-              <p>UBT、蓝图只读、白盒构建/校验、本地预览、PIE、path_test 等工具统一回传。</p>
+              <h3>调用 UE 与白盒工具</h3>
+              <p>生成结构、读取蓝图、编写机制、运行测试和取截图都回传明确结果。</p>
             </article>
             <article class="flow-node pass">
-              <h3>结构化证据与验收器</h3>
-              <p>确定性规则先判，再按需要让模型审查补充；通过后进入报告。</p>
+              <h3>形成验收证据</h3>
+              <p>路径、几何、截图、日志和测试结果汇总后，才进入可交付报告。</p>
             </article>
             <article class="flow-node recover">
-              <h3>恢复 / 重试 / 回滚</h3>
-              <p>桥接断开、部分副作用、证据缺失等错误会进入不同恢复策略。</p>
+              <h3>失败恢复或说明边界</h3>
+              <p>证据缺失、工具失败或结果不可信时，会重试、回滚或明确告诉策划卡在哪里。</p>
             </article>
           </div>
         </div>
@@ -1342,53 +1342,53 @@
         <div class="section-head">
           <div>
             <div class="section-kicker" aria-hidden="true"></div>
-            <h2 id="capabilities-title">核心能力围绕 UE5 真实工作流设计。</h2>
+            <h2 id="capabilities-title">策划能直接用到的功能，不止是代码能力。</h2>
           </div>
           <p>
-            这些模块不是单点 demo，而是被执行器、工具权限、证据验收和评测基准串起来的工程能力。
+            展示顺序按策划工作流组织：先把空间做出来，再检查能不能走、能不能玩，最后把蓝图和 C++ 机制变成协作材料。
           </p>
         </div>
 
         <div class="feature-grid">
           <article class="feature">
-            <span class="feature-symbol">C++</span>
-            <h3>编译闭环</h3>
-            <p>封装 UBT 调用并解析结构化诊断，支持真实 UE 工程编译成功、工具链缺失和注入错误样本。</p>
+            <span class="feature-symbol">图纸</span>
+            <h3>平面图转白盒结构</h3>
+            <p>从本地平面图提取墙线、房间关系和门洞，生成可审查预览，再转成 UE 白盒结构。</p>
+          </article>
+          <article class="feature">
+            <span class="feature-symbol">门窗</span>
+            <h3>门窗开口与比例标定</h3>
+            <p>用门洞端点和墙体方向反推尺度，检查断角、孤立墙和重叠墙，避免白盒结构一开始就偏掉。</p>
+          </article>
+          <article class="feature">
+            <span class="feature-symbol">动线</span>
+            <h3>动线可达性验收</h3>
+            <p>生成后检查出生点到目标点是否可达，结合 NavMesh、路线长度和关键节点报告说明哪里堵住了。</p>
+          </article>
+          <article class="feature">
+            <span class="feature-symbol">陈设</span>
+            <h3>白盒陈设与掩体草案</h3>
+            <p>按活动区、储物墙、桌椅、掩体和门窗避让规则生成草案，让房间不只是空盒子。</p>
+          </article>
+          <article class="feature">
+            <span class="feature-symbol">视图</span>
+            <h3>多视角白盒截图</h3>
+            <p>默认输出俯视、等距和 UE 视口证据，方便策划看房间尺度、门洞关系和路线清晰度。</p>
           </article>
           <article class="feature">
             <span class="feature-symbol">蓝图</span>
-            <h3>蓝图只读理解</h3>
-            <p>概览、伪代码、节点图和引用查找分层读取蓝图，减少上下文压力和节点编辑风险。</p>
+            <h3>蓝图阅读给策划看</h3>
+            <p>只读解释触发器、变量、事件流和引用关系，帮助策划判断某个关卡行为到底由谁控制。</p>
           </article>
           <article class="feature">
-            <span class="feature-symbol">DSL</span>
-            <h3>白盒关卡搭建</h3>
-            <p>LLM 输出拓扑层布局，白盒编译器生成摆放结果，校验器检查重叠、连通、门洞和关卡尺度。</p>
+            <span class="feature-symbol">C++</span>
+            <h3>C++ 玩法机制编写</h3>
+            <p>把新机制做成可编译、可运行、可暴露给蓝图的实现，再用日志、测试和运行结果给策划确认。</p>
           </article>
           <article class="feature">
-            <span class="feature-symbol">图像</span>
-            <h3>平面图输入 v1</h3>
-            <p>从图片提取墙线，输出 SVG、网格化布局和预览产物，再接入白盒构建与校验。</p>
-          </article>
-          <article class="feature">
-            <span class="feature-symbol">MCP</span>
-            <h3>工具协议化</h3>
-            <p>MCP 客户端挂载外部工具服务，自带构建、编辑器、白盒和仓库工具等工具面。</p>
-          </article>
-          <article class="feature">
-            <span class="feature-symbol">视觉</span>
-            <h3>视觉审查</h3>
-            <p>白盒视觉门禁默认走本地预览与视觉审查；缺少这些证据时，不能只凭程序校验收口。</p>
-          </article>
-          <article class="feature">
-            <span class="feature-symbol">权限</span>
-            <h3>权限与回滚</h3>
-            <p>只读、安全写、工程写、危险操作四级分权；工程写操作走自动快照，白盒批量生成有整批回滚策略。</p>
-          </article>
-          <article class="feature">
-            <span class="feature-symbol">评测</span>
-            <h3>评测基准</h3>
-            <p>UE 在线评测、SPC/DST 空间评测、陈设评测和离线测试共同覆盖稳定性与回归。</p>
+            <span class="feature-symbol">报告</span>
+            <h3>失败原因与证据报告</h3>
+            <p>把截图、路径验证、几何问题、测试结果和恢复动作汇总，方便下一轮改需求或改关卡。</p>
           </article>
         </div>
 
@@ -1400,10 +1400,10 @@
         <div class="section-head">
           <div>
             <div class="section-kicker" aria-hidden="true"></div>
-            <h2 id="workflow-title">从平面图到白盒，再到 UE 视口证据。</h2>
+            <h2 id="workflow-title">从平面图到可讨论的白盒样稿。</h2>
           </div>
           <p>
-            作品集里最容易说明价值的路径，是展示输入、确定性中间产物和真实编辑器证据之间的关系。
+            这条展示线适合给策划看：输入是什么、生成了什么、哪里能走、哪些截图能作为下一轮讨论依据。
           </p>
         </div>
 
@@ -1415,7 +1415,7 @@
             <div class="shot-copy">
               <strong>Step 01</strong>
               <h3>平面图作为结构输入</h3>
-              <p>v1 以图像算法优先提取墙体和门宽标定，失败时再保守回退到拓扑安全布局。</p>
+              <p>先识别墙线、房间和门窗，给策划一张可以核对的结构稿，而不是直接把不确定结果塞进关卡。</p>
             </div>
           </article>
           <article class="shot">
@@ -1424,8 +1424,8 @@
             </div>
             <div class="shot-copy">
               <strong>Step 02</strong>
-              <h3>编译器级本地预览</h3>
-              <p>本地预览生成俯视 / 等距多视角图，同时保留墙体拓扑、几何保真度和布局证据。</p>
+              <h3>生成白盒样稿</h3>
+              <p>用俯视和等距视角看房间、门洞、主路线、掩体和陈设草案，先判断关卡结构是否值得继续打磨。</p>
             </div>
           </article>
           <article class="shot">
@@ -1434,8 +1434,8 @@
             </div>
             <div class="shot-copy">
               <strong>Step 03</strong>
-              <h3>UE 在线验收</h3>
-              <p>真实编辑器链路可继续跑白盒校验、NavMesh、path_test、截图和视觉审查。</p>
+              <h3>UE 里验收结果</h3>
+              <p>进入真实编辑器后继续检查可达性、截图取景、路径堵塞和测试结果，让讨论有明确依据。</p>
             </div>
           </article>
         </div>
@@ -1443,44 +1443,44 @@
         <div class="functional-showcase" id="functional-showcase">
           <div class="showcase-head">
             <div>
-              <h3>功能展示不只看代码结构，也看它怎么把 UE5 任务拆成白盒结果。</h3>
+              <h3>功能性展示：策划能看到哪些产物。</h3>
             </div>
             <p>
-              这一层适合放在作品集里当“可见能力”展示：先露出用户能得到什么，再展示中间产物、工具证据和后续可替换的真实截图。
+              每张卡都对应一个可替换成真实截图的位置。先用占位图说明展示内容，后续可以逐步换成 UE 视口、蓝图阅读面板和验收报告截图。
             </p>
           </div>
 
           <div class="showcase-layout">
             <article class="showcase-map">
-              <h4>一次任务的可视化链路</h4>
-              <p>从需求到结果保持白盒：模型负责意图和修正，确定性工具负责坐标、编译、校验和取证。</p>
+              <h4>一次白盒任务从想法到验收</h4>
+              <p>策划给出平面图或玩法目标，工具交付可核对的关卡样稿、问题清单和下一轮修改依据。</p>
               <div class="showcase-flow" aria-label="功能展示链路">
                 <div class="showcase-step">
                   <strong>01</strong>
                   <div>
-                    <span>读项目上下文</span>
-                    <small>读取蓝图、资产、日志、测试列表和已有运行事实。</small>
+                    <span>输入需求与参考</span>
+                    <small>平面图、房间用途、主路线、目标点、机制说明和已有资产约束。</small>
                   </div>
                 </div>
                 <div class="showcase-step">
                   <strong>02</strong>
                   <div>
-                    <span>生成可校验中间产物</span>
-                    <small>输出布局 DSL、空间语义 brief、C++ 改动计划或蓝图分析摘要。</small>
+                    <span>生成可核对样稿</span>
+                    <small>墙线、房间、门窗、路线、出生点和关键交互位置先变成可审查白盒。</small>
                   </div>
                 </div>
                 <div class="showcase-step">
                   <strong>03</strong>
                   <div>
-                    <span>工具执行并回传事实</span>
-                    <small>UBT、白盒构建、蓝图只读、功能测试、NavMesh 和 path_test 都写入证据链。</small>
+                    <span>补玩法与陈设</span>
+                    <small>掩体、桌椅、储物墙、活动区和触发器说明按通路与门窗避让落位。</small>
                   </div>
                 </div>
                 <div class="showcase-step">
                   <strong>04</strong>
                   <div>
-                    <span>失败恢复或报告结果</span>
-                    <small>证据不足时重试、回滚或补取证；通过后输出可复盘报告。</small>
+                    <span>验收并输出报告</span>
+                    <small>用可达性、截图、测试和失败原因说明当前白盒能否进入下一轮。</small>
                   </div>
                 </div>
               </div>
@@ -1489,57 +1489,85 @@
             <div class="showcase-cards">
               <article class="showcase-card" id="whitebox-showcase">
                 <div class="showcase-placeholder">
-                  白盒布局 / 视口截图占位<br>
-                  后续替换为 UE 或本地预览图
+                  平面图 → 白盒结构占位图<br>
+                  墙线 / 房间 / 门窗 / 比例
                 </div>
-                <h4>白盒关卡生成功能</h4>
-                <p>展示从文字或平面图生成房间、门窗、动线、掩体与陈设的结果，同时保留 layout、placements、预览图和验证指标。</p>
+                <h4>平面图转白盒结构</h4>
+                <p>展示从平面图提取墙体、房间拓扑、门窗开口和尺度标定，再生成 UE 白盒结构的结果。</p>
                 <div class="showcase-tags" aria-label="白盒展示标签">
-                  <span>layout DSL</span>
-                  <span>render_preview</span>
-                  <span>wb_validate</span>
+                  <span>墙线提取</span>
+                  <span>门窗开口</span>
+                  <span>UE 白盒</span>
+                </div>
+              </article>
+
+              <article class="showcase-card" id="path-validation-demo">
+                <div class="showcase-placeholder">
+                  动线验收占位图<br>
+                  出生点 / 目标点 / 主路线
+                </div>
+                <h4>动线可达性验收</h4>
+                <p>把“能不能走到目标点”变成可检查结果，报告路线是否被门洞、陈设、楼梯或通道宽度卡住。</p>
+                <div class="showcase-tags" aria-label="动线展示标签">
+                  <span>NavMesh</span>
+                  <span>path_test</span>
+                  <span>路径长度</span>
+                </div>
+              </article>
+
+              <article class="showcase-card" id="furnishing-showcase">
+                <div class="showcase-placeholder">
+                  陈设与掩体占位图<br>
+                  活动区 / 储物墙 / 掩体线
+                </div>
+                <h4>白盒陈设与掩体草案</h4>
+                <p>在房间结构上补桌椅、储物墙、掩体和活动区，同时避让门窗、主路线和导航通道。</p>
+                <div class="showcase-tags" aria-label="陈设展示标签">
+                  <span>掩体规划</span>
+                  <span>门窗避让</span>
+                  <span>活动区</span>
                 </div>
               </article>
 
               <article class="showcase-card" id="blueprint-reader-demo">
                 <div class="showcase-placeholder">
                   蓝图阅读面板占位<br>
-                  overview / pseudocode / graph
+                  触发器 / 变量 / 引用关系
                 </div>
-                <h4>蓝图阅读与引用追踪</h4>
-                <p>用 overview、伪代码、节点图和引用查找解释蓝图做了什么、谁在使用它，并坚持只读边界，避免让模型直接改节点。</p>
+                <h4>蓝图阅读给策划看</h4>
+                <p>把触发器、事件流、变量和引用关系解释成策划能复盘的说明，同时坚持只读边界，不直接改蓝图节点。</p>
                 <div class="showcase-tags" aria-label="蓝图展示标签">
-                  <span>bp_overview</span>
-                  <span>bp_graph</span>
-                  <span>bp_find_usages</span>
+                  <span>触发器说明</span>
+                  <span>谁在引用</span>
+                  <span>只读分析</span>
                 </div>
               </article>
 
               <article class="showcase-card" id="cpp-mechanism-demo">
                 <div class="showcase-placeholder">
-                  C++ 机制编写占位<br>
-                  编译诊断 / 功能测试 / 日志
+                  玩法机制验收占位图<br>
+                  编译 / 运行 / 日志
                 </div>
-                <h4>C++ 机制编写闭环</h4>
-                <p>把玩法机制优先落到 C++，再通过 UHT、UBT、PIE、功能测试和输出日志收口，让“能编译”与“能运行”分开验收。</p>
+                <h4>C++ 玩法机制编写</h4>
+                <p>把新玩法机制做成可编译、可运行、可暴露给蓝图的实现，并用测试、日志和运行截图给策划确认。</p>
                 <div class="showcase-tags" aria-label="C++ 展示标签">
-                  <span>UHT / UBT</span>
-                  <span>PIE</span>
-                  <span>Functional Test</span>
+                  <span>编译通过</span>
+                  <span>运行验证</span>
+                  <span>蓝图可用</span>
                 </div>
               </article>
 
               <article class="showcase-card">
                 <div class="showcase-placeholder">
-                  证据链占位<br>
-                  trace / facts / 恢复报告
+                  验收报告占位图<br>
+                  截图 / 问题 / 修复建议
                 </div>
-                <h4>证据链与恢复展示</h4>
-                <p>把工具调用、结构化事实、截图、评测结果和恢复路径放在同一条链路里，展示 agent 不是口头完成，而是留下可检查结果。</p>
+                <h4>截图证据与恢复报告</h4>
+                <p>把截图、路径验证、几何问题、测试结果和恢复动作汇总成一页，告诉策划“哪里通过、哪里还要改”。</p>
                 <div class="showcase-tags" aria-label="证据展示标签">
-                  <span>facts</span>
-                  <span>trace</span>
-                  <span>rollback</span>
+                  <span>截图证据</span>
+                  <span>问题清单</span>
+                  <span>下一步</span>
                 </div>
               </article>
             </div>
@@ -1553,10 +1581,10 @@
         <div class="section-head">
           <div>
             <div class="section-kicker" aria-hidden="true"></div>
-            <h2 id="evidence-title">可信度来自命令、测试、评测和真实 UE 证据。</h2>
+            <h2 id="evidence-title">验收证据说明它不是概念图。</h2>
           </div>
           <p>
-            页面数据来自本仓库 README、roadmap、CHANGELOG、CI 配置和测试目录静态扫描；已经完成的能力和后续方向分开展示。
+            对策划展示时，重点是白盒是否可走、截图是否能看、问题是否可复盘；测试规模和命令输出作为可信度支撑。
           </p>
         </div>
 
@@ -1582,30 +1610,30 @@ uv run mypy src
 
           <div class="evidence-grid">
             <article class="evidence-card">
+              <span class="metric">6/6</span>
+              <h3>空间评测</h3>
+              <p>SPC/DST 标准空间评测通过，覆盖房间结构、动线约束、几何校验和视觉审查结果。</p>
+            </article>
+            <article class="evidence-card">
+              <span class="metric">4/4</span>
+              <h3>UE 在线验收</h3>
+              <p>首份 UE 在线评测基线通过，记录平均迭代 1.5、人工干预 0，说明链路能在真实编辑器里跑完。</p>
+            </article>
+            <article class="evidence-card">
               <span class="metric">44</span>
               <h3>测试文件</h3>
-              <p>静态扫描到 44 个 <code>tests/test_*.py</code>，覆盖核心循环、执行器、权限、MCP、白盒、平面图与安全。</p>
+              <p>静态扫描到 44 个 <code>tests/test_*.py</code>，覆盖核心循环、权限、白盒、平面图和安全边界。</p>
             </article>
             <article class="evidence-card">
               <span class="metric">663</span>
-              <h3>测试函数</h3>
-              <p>当前静态扫描到 663 个 test_ 函数；roadmap 也记录过 497 个单测全绿的离线回归节点。</p>
-            </article>
-            <article class="evidence-card">
-              <span class="metric">6/6</span>
-              <h3>空间评测</h3>
-              <p>SPC/DST 标准结构评测基线 6/6 通过，视觉档 6/6 通过，人工干预记录为 0。</p>
-            </article>
-            <article class="evidence-card">
-              <span class="metric">4854</span>
-              <h3>UE 测试列表</h3>
-              <p>CHANGELOG 记录真实 <code>functest_list</code> 可列出 4854 个测试，并完成正负向功能测试验证。</p>
+              <h3>回归测试函数</h3>
+              <p>当前静态扫描到 663 个 test_ 函数，用来防止工具、权限、白盒生成和报告链路在迭代中退化。</p>
             </article>
           </div>
         </div>
 
         <p class="small-note">
-          关键依据：README 当前状态、docs/roadmap.md Phase 0-3 与白盒优化条目、CHANGELOG.md 未发布段、.github/workflows/ci.yml、scripts/check.ps1。平面图能力仍按 v1 / 拓扑优先表述。
+          关键依据：README 当前状态、docs/roadmap.md 已交付能力与白盒优化条目、CHANGELOG.md 未发布段、.github/workflows/ci.yml、scripts/check.ps1。平面图能力仍按 v1 / 拓扑优先表述。
         </p>
       </div>
     </section>
@@ -1615,71 +1643,71 @@ uv run mypy src
         <div class="section-head">
           <div>
             <div class="section-kicker" aria-hidden="true"></div>
-            <h2 id="roadmap-title">阶段路线：主线完成，继续打磨白盒与交互体验。</h2>
+            <h2 id="roadmap-title">当前能展示什么，后续打磨什么。</h2>
           </div>
           <p>
-            展示时可以把 Phase 0-3 作为已交付能力，把 B11 顶层收口、平面图精细识别、流式输出和会话恢复放在后续计划。
+            页面不需要把内部阶段讲满，只要让读者知道哪些功能已经能形成作品截图，哪些还在增强体验和稳定性。
           </p>
         </div>
 
         <div class="timeline">
           <article class="timeline-card">
             <span class="status">已完成</span>
-            <h3>Phase 0<br>核心骨架</h3>
+            <h3>平面图<br>生成白盒</h3>
             <ul>
-              <li>模型无关核心循环</li>
-              <li>MCP 客户端</li>
-              <li>权限网关</li>
-              <li>UBT 编译闭环</li>
+              <li>墙线与房间识别</li>
+              <li>门窗开口标定</li>
+              <li>本地多视角预览</li>
+              <li>UE 白盒落地</li>
             </ul>
           </article>
           <article class="timeline-card">
             <span class="status">已完成</span>
-            <h3>Phase 1<br>编辑器桥</h3>
+            <h3>可玩的<br>白盒样稿</h3>
             <ul>
-              <li>桥接 UE 编辑器</li>
-              <li>蓝图只读导出</li>
-              <li>资产 / 日志 / 截图</li>
-              <li>引用查找真机验证</li>
+              <li>出生点与目标点</li>
+              <li>主路线 marker</li>
+              <li>掩体 / 柱子 / 楼梯</li>
+              <li>NavMesh 与路径验证</li>
             </ul>
           </article>
           <article class="timeline-card">
             <span class="status">已完成</span>
-            <h3>Phase 2<br>白盒搭建</h3>
+            <h3>蓝图<br>阅读说明</h3>
             <ul>
-              <li>资产清单 + 布局 DSL</li>
-              <li>批量 spawn / rollback</li>
-              <li>校验器 + NavMesh</li>
-              <li>视觉迭代闭环</li>
+              <li>触发器概览</li>
+              <li>变量与事件流</li>
+              <li>引用关系查找</li>
+              <li>只读分析报告</li>
             </ul>
           </article>
           <article class="timeline-card">
             <span class="status">已完成</span>
-            <h3>Phase 3<br>行为闭环</h3>
+            <h3>C++ 机制<br>验收闭环</h3>
             <ul>
-              <li>PIE / 功能测试</li>
-              <li>子代理隔离</li>
-              <li>UE 在线评测</li>
-              <li>持续集成门禁</li>
+              <li>机制代码生成</li>
+              <li>编译诊断修复</li>
+              <li>运行与功能测试</li>
+              <li>日志证据汇总</li>
             </ul>
           </article>
           <article class="timeline-card optimizing">
             <span class="status">继续优化</span>
-            <h3>白盒增强<br>语义陈设</h3>
+            <h3>陈设更像<br>可玩关卡</h3>
             <ul>
-              <li>摆放模板计划</li>
-              <li>约束求解</li>
-              <li>候选区域过滤</li>
+              <li>房间用途识别</li>
+              <li>掩体与活动区布局</li>
+              <li>门窗与通路避让</li>
               <li>几何验证补强</li>
             </ul>
           </article>
           <article class="timeline-card planned">
             <span class="status">规划中</span>
-            <h3>体验项<br>会话能力</h3>
+            <h3>展示体验<br>继续补强</h3>
             <ul>
               <li>平面图精细识别</li>
+              <li>更多真实截图</li>
               <li>流式输出</li>
-              <li>任务中断</li>
               <li>会话持久化恢复</li>
             </ul>
           </article>
@@ -1692,33 +1720,33 @@ uv run mypy src
         <div class="section-head">
           <div>
             <div class="section-kicker" aria-hidden="true"></div>
-            <h2 id="value-title">这个案例能展示什么能力。</h2>
+            <h2 id="value-title">这个案例能展示的作品能力。</h2>
           </div>
           <p>
-            作品集读者更关心你如何把复杂问题拆开、落到工具、跑出结果。ue5agent 可以作为一个完整案例，展示从系统设计到真实 UE 验证的工程能力。
+            给策划或技术美术看时，重点是你能把模糊需求变成可检查关卡产物，也能把工程能力翻译成对设计迭代有用的证据。
           </p>
         </div>
 
         <div class="value-strip">
           <div class="value">
-            <strong>复杂问题拆解</strong>
-            <span>把 UE5 开发里的蓝图、资产、编译、关卡搭建和验证链路拆成清晰模块。</span>
+            <strong>需求转关卡</strong>
+            <span>把平面图、玩法目标和房间用途拆成白盒结构、路线、门窗和陈设草案。</span>
           </div>
           <div class="value">
-            <strong>系统架构设计</strong>
-            <span>用 Agent Kernel、模型路由和 MCP 工具层组织长期可扩展的能力边界。</span>
+            <strong>白盒表达</strong>
+            <span>用俯视、等距、UE 视口和验收报告展示关卡结果，而不是只展示工具调用。</span>
           </div>
           <div class="value">
-            <strong>真实工具落地</strong>
-            <span>把 UBT、编辑器桥、白盒编译器、平面图工具和评测集接进同一条执行链。</span>
+            <strong>协作解释</strong>
+            <span>把蓝图和 C++ 机制翻译成策划能讨论的行为说明、引用关系和运行证据。</span>
           </div>
           <div class="value">
-            <strong>质量闭环意识</strong>
-            <span>用权限、自动快照、结构化证据、CI 和评测基线让 AI 输出变成可检查的工程结果。</span>
+            <strong>验收意识</strong>
+            <span>用可达性、几何、截图、测试和失败恢复说明结果是否能进入下一轮迭代。</span>
           </div>
           <div class="value">
-            <strong>作品表达能力</strong>
-            <span>用真实截图、流程图、数据点和阶段路线，把技术项目讲成别人能快速理解的案例。</span>
+            <strong>持续打磨</strong>
+            <span>先用占位图组织展示位，再逐步替换成真实截图、蓝图面板和机制验收片段。</span>
           </div>
         </div>
       </div>
@@ -1728,16 +1756,16 @@ uv run mypy src
       <div class="section-inner">
         <div class="boundary">
           <div class="boundary-copy">
-            <h2 id="boundary-title">亮点总结：从技术 demo 到可复盘的工程案例。</h2>
+            <h2 id="boundary-title">亮点总结：让策划先看到功能，再看到可信度。</h2>
             <p>
-              对外展示时，重点不是解释所有实现细节，而是让读者看到项目的目标、难点、方案、结果和下一步方向。
+              这个页面的重点不是把所有内部实现讲完，而是让读者快速判断它能不能帮助关卡白盒从想法走到 UE 验收。
             </p>
           </div>
           <div class="boundary-list">
-            <div class="boundary-item">把 UE5 项目中难以直接交给模型处理的环节，转化成可调用、可校验、可回滚的工具链。</div>
-            <div class="boundary-item">用平面图输入、白盒预览和 UE 视口截图展示实际产物，让页面有可感知的项目结果。</div>
-            <div class="boundary-item">用测试规模、CI、UE 在线评测和 SPC/DST 评测基线支撑可信度，避免只停留在概念展示。</div>
-            <div class="boundary-item">后续方向聚焦更强的平面图识别、更稳定的资产语义摆放，以及更顺滑的交互体验。</div>
+            <div class="boundary-item">先展示平面图转白盒、动线验收、陈设掩体、蓝图阅读和 C++ 机制这些可见功能。</div>
+            <div class="boundary-item">每个功能都预留截图位，后续可以直接替换成真实 UE 视口、蓝图阅读面板和验收报告。</div>
+            <div class="boundary-item">测试规模、CI、UE 在线评测和空间评测仍作为可信度支撑，但不抢功能展示的位置。</div>
+            <div class="boundary-item">后续方向聚焦更精细的平面图识别、更稳定的语义陈设，以及更顺滑的交互体验。</div>
           </div>
         </div>
       </div>
@@ -1747,8 +1775,8 @@ uv run mypy src
   <footer class="footer">
     <div class="footer-inner">
       <div>
-        <h2>ue5agent：把 UE5 Agent 从“会调用工具”推进到“能留下证据”。</h2>
-        <p>截至 2026-06-30，本页基于当前仓库文档与测试目录整理，适合作为作品集案例页或项目介绍入口。</p>
+        <h2>ue5agent：把关卡想法推进到可验收的 UE5 白盒样稿。</h2>
+        <p>截至 2026-06-30，本页基于当前仓库文档与测试目录整理，适合作为面向关卡策划的作品集案例页。</p>
       </div>
       <div class="footer-links">
         <a href="roadmap.md">路线图 <span aria-hidden="true">↗</span></a>
